@@ -1,0 +1,138 @@
+"""PetScan source URL handling and JSON record extraction."""
+
+import json
+from typing import Any, Dict, List, Mapping, Optional, Sequence, Tuple
+from urllib.parse import urlencode
+from urllib.request import Request, urlopen
+
+from django.conf import settings
+
+from ._service_errors import PetscanServiceError
+
+HTTP_USER_AGENT = "PetscanSparqlEndpoint (https://meta.wikimedia.org/wiki/user:Zache)"
+_PETSCAN_RESERVED_QUERY_PARAMS = {"psid", "format", "query", "refresh"}
+
+
+def _normalize_petscan_params(params: Optional[Mapping[str, Any]]) -> Dict[str, List[str]]:
+    normalized = {}  # type: Dict[str, List[str]]
+    if not params or not isinstance(params, Mapping):
+        return normalized
+
+    for key, raw_value in params.items():
+        text_key = str(key).strip()
+        if not text_key:
+            continue
+        if text_key.lower() in _PETSCAN_RESERVED_QUERY_PARAMS:
+            continue
+
+        values = []  # type: List[str]
+        if isinstance(raw_value, (list, tuple, set)):
+            for item in raw_value:
+                text_value = str(item).strip()
+                if text_value:
+                    values.append(text_value)
+        else:
+            text_value = str(raw_value).strip()
+            if text_value:
+                values.append(text_value)
+
+        if values:
+            normalized[text_key] = values
+
+    return normalized
+
+
+def _build_petscan_url(psid: int, petscan_params: Optional[Mapping[str, Any]] = None) -> str:
+    endpoint = str(settings.PETSCAN_ENDPOINT).rstrip("/")
+    normalized_params = _normalize_petscan_params(petscan_params)
+    query_pairs = [("psid", str(psid)), ("format", "json")]
+    for key in sorted(normalized_params.keys()):
+        for value in normalized_params[key]:
+            query_pairs.append((key, value))
+    query = urlencode(query_pairs)
+    return "{}/?{}".format(endpoint, query)
+
+
+def _fetch_petscan_json(
+    psid: int,
+    petscan_params: Optional[Mapping[str, Any]] = None,
+) -> Tuple[Dict[str, Any], str]:
+    source_url = _build_petscan_url(psid, petscan_params=petscan_params)
+    request = Request(
+        source_url,
+        headers={
+            "Accept": "application/json",
+            "User-Agent": HTTP_USER_AGENT,
+        },
+    )
+    timeout = int(getattr(settings, "PETSCAN_TIMEOUT_SECONDS", 30))
+
+    try:
+        with urlopen(request, timeout=timeout) as response:  # nosec B310
+            raw = response.read()
+    except Exception as exc:
+        raise PetscanServiceError("Failed to fetch PetScan data: {}".format(exc)) from exc
+
+    try:
+        payload = json.loads(raw.decode("utf-8"))
+    except Exception as exc:
+        raise PetscanServiceError("PetScan returned non-JSON payload.") from exc
+
+    if not isinstance(payload, dict):
+        raise PetscanServiceError("Unexpected PetScan JSON format (expected object).")
+
+    return payload, source_url
+
+
+def _collect_record_lists(node: Any, collector: List[List[Dict[str, Any]]], depth: int = 0) -> None:
+    if depth > 8:
+        return
+    if isinstance(node, list):
+        dict_rows = [row for row in node if isinstance(row, dict)]
+        if dict_rows:
+            collector.append(dict_rows)
+        for value in node:
+            _collect_record_lists(value, collector, depth + 1)
+        return
+    if isinstance(node, dict):
+        for value in node.values():
+            _collect_record_lists(value, collector, depth + 1)
+
+
+def _score_records(records: Sequence[Mapping[str, Any]]) -> int:
+    keys_of_interest = {
+        "id",
+        "pageid",
+        "title",
+        "len",
+        "namespace",
+        "nstext",
+        "qid",
+        "wikidata",
+        "wiki",
+    }
+    found_keys = set()
+    for row in records[:20]:
+        found_keys.update(set(row.keys()) & keys_of_interest)
+    return len(records) * 10 + len(found_keys)
+
+
+def _extract_records(payload: Dict[str, Any]) -> List[Dict[str, Any]]:
+    candidates = []  # type: List[List[Dict[str, Any]]]
+
+    if isinstance(payload.get("*"), list):
+        direct = [row for row in payload["*"] if isinstance(row, dict)]
+        if direct:
+            candidates.append(direct)
+
+    if isinstance(payload.get("pages"), list):
+        direct_pages = [row for row in payload["pages"] if isinstance(row, dict)]
+        if direct_pages:
+            candidates.append(direct_pages)
+
+    _collect_record_lists(payload, candidates)
+    if not candidates:
+        raise PetscanServiceError("Could not locate row data in PetScan JSON payload.")
+
+    best = max(candidates, key=_score_records)
+    return best
