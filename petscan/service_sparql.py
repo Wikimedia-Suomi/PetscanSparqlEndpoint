@@ -3,7 +3,15 @@
 import re
 from typing import Any, Dict
 
-from ._service_errors import PetscanServiceError
+from .service_errors import PetscanServiceError
+
+__all__ = [
+    "contains_service_clause",
+    "query_type",
+    "serialize_ask",
+    "serialize_graph",
+    "serialize_select",
+]
 
 _QUERY_TYPES = {"SELECT", "ASK", "CONSTRUCT", "DESCRIBE"}
 _SPARQL_COMMENT_LINE_RE = re.compile(r"(?m)^\s*#.*$")
@@ -15,7 +23,7 @@ _SERVICE_CLAUSE_RE = re.compile(
 )
 
 
-def _query_type(query: str) -> str:
+def query_type(query: str) -> str:
     remaining = _SPARQL_COMMENT_LINE_RE.sub("", query)
 
     # Strip SPARQL prologue declarations to avoid matching query-form keywords
@@ -42,7 +50,7 @@ def _query_type(query: str) -> str:
     raise PetscanServiceError("SPARQL query must contain SELECT, ASK, CONSTRUCT, or DESCRIBE.")
 
 
-def _contains_service_clause(query: str) -> bool:
+def contains_service_clause(query: str) -> bool:
     clean_query = re.sub(r"(?m)^\s*#.*$", "", query)
     return bool(_SERVICE_CLAUSE_RE.search(clean_query))
 
@@ -122,7 +130,7 @@ def _term_to_ntriples(term: Any) -> str:
     return '"{}"'.format(str(term).replace('"', '\\"'))
 
 
-def _serialize_select(result: Any) -> Dict[str, Any]:
+def serialize_select(result: Any) -> Dict[str, Any]:
     variables = [_variable_name(v) for v in getattr(result, "variables", [])]
     rows = []  # type: list[Dict[str, Any]]
 
@@ -151,7 +159,7 @@ def _serialize_select(result: Any) -> Dict[str, Any]:
     }
 
 
-def _serialize_ask(result: Any) -> Dict[str, Any]:
+def serialize_ask(result: Any) -> Dict[str, Any]:
     if isinstance(result, bool):
         return {"head": {}, "boolean": result}
 
@@ -170,7 +178,7 @@ def _serialize_ask(result: Any) -> Dict[str, Any]:
     raise PetscanServiceError("ASK result could not be serialized.")
 
 
-def _serialize_graph(result: Any) -> str:
+def serialize_graph(result: Any) -> str:
     lines = []  # type: list[str]
 
     for triple in result:

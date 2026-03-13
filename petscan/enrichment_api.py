@@ -1,30 +1,10 @@
 import json
-import re
 from time import perf_counter
-from typing import Dict, Mapping, Optional, Sequence
+from typing import Dict, Mapping, Sequence
 from urllib.parse import urlencode
 from urllib.request import Request, urlopen
 
-_QID_RE = re.compile(r"Q([1-9][0-9]*)", re.IGNORECASE)
-
-
-def _normalize_page_title(value: object) -> str:
-    text = str(value or "").strip()
-    if not text:
-        return ""
-    return text.lstrip(":").replace(" ", "_")
-
-
-def _normalize_qid(value: object) -> Optional[str]:
-    if value is None:
-        return None
-    text = str(value).strip()
-    if not text:
-        return None
-    match = _QID_RE.search(text)
-    if not match:
-        return None
-    return "Q{}".format(match.group(1))
+from .normalization import normalize_page_title, normalize_qid
 
 
 def _resolve_title_alias(title: str, alias_map: Mapping[str, str]) -> str:
@@ -96,8 +76,8 @@ def fetch_wikibase_items_for_site_api(
         for entry in entries:
             if not isinstance(entry, Mapping):
                 continue
-            source_title = _normalize_page_title(entry.get("from"))
-            target_title = _normalize_page_title(entry.get("to"))
+            source_title = normalize_page_title(entry.get("from"))
+            target_title = normalize_page_title(entry.get("to"))
             if source_title and target_title:
                 alias_map[source_title] = target_title
 
@@ -107,19 +87,19 @@ def fetch_wikibase_items_for_site_api(
         for page in pages:
             if not isinstance(page, Mapping):
                 continue
-            title = _normalize_page_title(page.get("title"))
+            title = normalize_page_title(page.get("title"))
             if not title:
                 continue
             pageprops = page.get("pageprops")
             if not isinstance(pageprops, Mapping):
                 continue
-            qid = _normalize_qid(pageprops.get("wikibase_item"))
+            qid = normalize_qid(pageprops.get("wikibase_item"))
             if qid is not None:
                 page_qids[title] = qid
 
     resolved = {}  # type: Dict[str, str]
     for input_title in titles:
-        normalized_input = _normalize_page_title(input_title)
+        normalized_input = normalize_page_title(input_title)
         if not normalized_input:
             continue
         final_title = _resolve_title_alias(normalized_input, alias_map)

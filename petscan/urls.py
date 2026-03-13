@@ -4,7 +4,6 @@ from . import views
 
 urlpatterns = [
     path("", views.index, name="index"),
-    path("api/load", views.load_psid, name="load_psid"),
-    path("api/query", views.run_query, name="run_query"),
+    path("api/structure", views.structure_endpoint, name="structure_endpoint"),
     path("sparql", views.sparql_endpoint, name="sparql_endpoint"),
 ]

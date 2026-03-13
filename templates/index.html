@@ -17,7 +17,7 @@
       <header class="hero" role="banner">
         <h1>PetScan SPARQL Endpoint</h1>
         <p>
-          Load a PetScan result into Oxigraph and run SPARQL queries directly in the browser.
+          Run SPARQL queries against PetScan data directly in the browser.
         </p>
       </header>
 
@@ -51,6 +51,21 @@
             PetScan JSON results: not loaded for this psid yet.
           </p>
 
+          <label for="petscan-extra-params">PetScan extra GET params</label>
+          <input
+            id="petscan-extra-params"
+            type="text"
+            inputmode="url"
+            spellcheck="false"
+            placeholder="category=Turku&language=fi"
+            v-model.trim="petscanGetParams"
+            aria-describedby="petscan-extra-help"
+          />
+          <p id="petscan-extra-help" class="help">
+            Optional query-string pairs forwarded to PetScan (except reserved keys:
+            <code>psid</code>, <code>format</code>, <code>query</code>, <code>refresh</code>).
+          </p>
+
           <label for="query">SPARQL query</label>
           <textarea
             id="query"
@@ -71,8 +86,8 @@
           </label>
 
           <div class="actions">
-            <button type="button" class="secondary" :disabled="isBusy" @click="loadDataset">
-              Load dataset
+            <button type="button" class="secondary" :disabled="isBusy" @click="loadStructure">
+              Load data structure
             </button>
             <button type="submit" class="primary" :disabled="isBusy">
               Run query
@@ -91,7 +106,7 @@
             Open loaded data overview
           </button>
           <p class="help" v-if="!canShowStructure">
-            Load data for this psid to see queryable fields and predicates.
+            Load data structure for this psid to see queryable fields and predicates.
           </p>
         </div>
       </section>

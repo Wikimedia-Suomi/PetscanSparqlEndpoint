@@ -7,13 +7,20 @@ from urllib.request import Request, urlopen
 
 from django.conf import settings
 
-from ._service_errors import PetscanServiceError
+from .service_errors import PetscanServiceError
 
 HTTP_USER_AGENT = "PetscanSparqlEndpoint (https://meta.wikimedia.org/wiki/user:Zache)"
 _PETSCAN_RESERVED_QUERY_PARAMS = {"psid", "format", "query", "refresh"}
+__all__ = [
+    "HTTP_USER_AGENT",
+    "build_petscan_url",
+    "extract_records",
+    "fetch_petscan_json",
+    "normalize_petscan_params",
+]
 
 
-def _normalize_petscan_params(params: Optional[Mapping[str, Any]]) -> Dict[str, List[str]]:
+def normalize_petscan_params(params: Optional[Mapping[str, Any]]) -> Dict[str, List[str]]:
     normalized = {}  # type: Dict[str, List[str]]
     if not params or not isinstance(params, Mapping):
         return normalized
@@ -42,9 +49,9 @@ def _normalize_petscan_params(params: Optional[Mapping[str, Any]]) -> Dict[str, 
     return normalized
 
 
-def _build_petscan_url(psid: int, petscan_params: Optional[Mapping[str, Any]] = None) -> str:
+def build_petscan_url(psid: int, petscan_params: Optional[Mapping[str, Any]] = None) -> str:
     endpoint = str(settings.PETSCAN_ENDPOINT).rstrip("/")
-    normalized_params = _normalize_petscan_params(petscan_params)
+    normalized_params = normalize_petscan_params(petscan_params)
     query_pairs = [("psid", str(psid)), ("format", "json")]
     for key in sorted(normalized_params.keys()):
         for value in normalized_params[key]:
@@ -53,11 +60,11 @@ def _build_petscan_url(psid: int, petscan_params: Optional[Mapping[str, Any]] = 
     return "{}/?{}".format(endpoint, query)
 
 
-def _fetch_petscan_json(
+def fetch_petscan_json(
     psid: int,
     petscan_params: Optional[Mapping[str, Any]] = None,
 ) -> Tuple[Dict[str, Any], str]:
-    source_url = _build_petscan_url(psid, petscan_params=petscan_params)
+    source_url = build_petscan_url(psid, petscan_params=petscan_params)
     request = Request(
         source_url,
         headers={
@@ -117,7 +124,7 @@ def _score_records(records: Sequence[Mapping[str, Any]]) -> int:
     return len(records) * 10 + len(found_keys)
 
 
-def _extract_records(payload: Dict[str, Any]) -> List[Dict[str, Any]]:
+def extract_records(payload: Dict[str, Any]) -> List[Dict[str, Any]]:
     candidates = []  # type: List[List[Dict[str, Any]]]
 
     if isinstance(payload.get("*"), list):

@@ -1,24 +1,50 @@
 """GIL-link parsing, site normalization, and Wikidata lookup helpers."""
 
 import re
-from typing import Any, Dict, Iterable, List, Mapping, Optional, Sequence, Tuple
+from dataclasses import dataclass
+from typing import Any, Dict, Iterable, List, Mapping, Optional, Sequence, Set, Tuple
 from urllib.parse import quote, urlsplit
 
 from django.conf import settings
 
-from . import enrichment_sql as _enrichment_sql
-from ._service_source import HTTP_USER_AGENT
-from .enrichment_api import fetch_wikibase_items_for_site_api as _api_fetch_wikibase_items_for_site
+from . import enrichment_sql
+from .enrichment_api import fetch_wikibase_items_for_site_api
+from .normalization import normalize_page_title, normalize_qid
+from .service_source import HTTP_USER_AGENT
 
-_sql_fetch_wikibase_items_for_site = _enrichment_sql.fetch_wikibase_items_for_site_sql
-pymysql = _enrichment_sql.pymysql
-
-_QID_RE = re.compile(r"Q([1-9][0-9]*)", re.IGNORECASE)
 _SITE_TOKEN_RE = re.compile(r"^[a-z0-9_-]+$")
 _HOST_LABEL_RE = re.compile(r"^(?!-)[a-z0-9-]{1,63}(?<!-)$")
 _MAX_TITLES_PER_MEDIAWIKI_BATCH = 50
-_LOOKUP_BACKEND_API = "api"
-_LOOKUP_BACKEND_TOOLFORGE_SQL = "toolforge_sql"
+LOOKUP_BACKEND_API = "api"
+LOOKUP_BACKEND_TOOLFORGE_SQL = "toolforge_sql"
+__all__ = [
+    "LOOKUP_BACKEND_API",
+    "LOOKUP_BACKEND_TOOLFORGE_SQL",
+    "build_gil_link_wikidata_map",
+    "extract_qid",
+    "fetch_wikibase_items_for_site",
+    "iter_gil_link_enrichment",
+    "iter_gil_link_uris",
+    "normalize_page_title",
+    "site_to_mediawiki_api_url",
+    "wikidata_lookup_backend",
+]
+
+
+@dataclass(frozen=True)
+class GilLinkTarget:
+    link_uri: str
+    site: str
+    namespace: int
+    api_title: str
+    db_title: str
+
+
+@dataclass(frozen=True)
+class SiteLookupTarget:
+    namespace: int
+    api_title: str
+    db_title: str
 
 
 def _split_pipe_values(text: str) -> List[str]:
@@ -30,19 +56,7 @@ def _split_pipe_values(text: str) -> List[str]:
     return values
 
 
-def _normalize_qid(value: Any) -> Optional[str]:
-    if value is None:
-        return None
-    text = str(value).strip()
-    if not text:
-        return None
-    match = _QID_RE.search(text)
-    if not match:
-        return None
-    return "Q{}".format(match.group(1))
-
-
-def _extract_qid(record: Mapping[str, Any]) -> Optional[str]:
+def extract_qid(record: Mapping[str, Any]) -> Optional[str]:
     candidates = [
         record.get("wikidata_id"),
         record.get("qid"),
@@ -54,18 +68,10 @@ def _extract_qid(record: Mapping[str, Any]) -> Optional[str]:
         candidates.append(metadata.get("wikidata"))
 
     for candidate in candidates:
-        qid = _normalize_qid(candidate)
+        qid = normalize_qid(candidate)
         if qid is not None:
             return qid
     return None
-
-
-def _normalize_page_title(value: Any) -> str:
-    text = str(value or "").strip()
-    if not text:
-        return ""
-    # Some inputs use a leading ":" for main-namespace titles.
-    return text.lstrip(":").replace(" ", "_")
 
 
 def _parse_gil_link_target(link: str) -> Optional[Tuple[str, int, str]]:
@@ -78,7 +84,7 @@ def _parse_gil_link_target(link: str) -> Optional[Tuple[str, int, str]]:
         namespace = int(str(parts[1]).strip())
     except Exception:
         return None
-    title = _normalize_page_title(parts[2])
+    title = normalize_page_title(parts[2])
     if not site or not title:
         return None
     return site, namespace, title
@@ -153,7 +159,7 @@ def _site_to_mediawiki_domain(site: str) -> Optional[str]:
     return None
 
 
-def _site_to_mediawiki_api_url(site: str) -> Optional[str]:
+def site_to_mediawiki_api_url(site: str) -> Optional[str]:
     domain = _site_to_mediawiki_domain(site)
     if domain is None:
         return None
@@ -171,7 +177,7 @@ def _site_to_mediawiki_api_url(site: str) -> Optional[str]:
 
 def _gil_link_uri(site: str, title: str) -> Optional[str]:
     domain = _site_to_mediawiki_domain(site)
-    normalized_title = _normalize_page_title(title)
+    normalized_title = normalize_page_title(title)
     if domain is None or not normalized_title:
         return None
     encoded_title = quote(normalized_title, safe=":_/()-.,")
@@ -179,18 +185,18 @@ def _gil_link_uri(site: str, title: str) -> Optional[str]:
 
 
 def _namespace_db_title(namespace: int, title: str) -> str:
-    normalized_title = _normalize_page_title(title)
+    normalized_title = normalize_page_title(title)
     if namespace != 0 and ":" in normalized_title:
         return normalized_title.split(":", 1)[1]
     return normalized_title
 
 
-def _iter_gil_link_targets(record: Mapping[str, Any]) -> List[Tuple[str, str, int, str, str]]:
+def _iter_gil_link_targets(record: Mapping[str, Any]) -> List[GilLinkTarget]:
     raw_gil = record.get("gil")
     if not isinstance(raw_gil, str):
         return []
 
-    targets = []  # type: List[Tuple[str, str, int, str, str]]
+    targets = []  # type: List[GilLinkTarget]
     seen = set()
     for raw_link in _split_pipe_values(raw_gil):
         parsed = _parse_gil_link_target(raw_link)
@@ -201,26 +207,31 @@ def _iter_gil_link_targets(record: Mapping[str, Any]) -> List[Tuple[str, str, in
         if not link_uri or link_uri in seen:
             continue
         seen.add(link_uri)
-        targets.append((link_uri, site, namespace, title, _namespace_db_title(namespace, title)))
+        targets.append(
+            GilLinkTarget(
+                link_uri=link_uri,
+                site=site,
+                namespace=namespace,
+                api_title=title,
+                db_title=_namespace_db_title(namespace, title),
+            )
+        )
     return targets
 
 
-def _iter_gil_link_uris(record: Mapping[str, Any]) -> List[str]:
-    return [
-        link_uri
-        for link_uri, _site, _namespace, _api_title, _db_title in _iter_gil_link_targets(record)
-    ]
+def iter_gil_link_uris(record: Mapping[str, Any]) -> List[str]:
+    return [target.link_uri for target in _iter_gil_link_targets(record)]
 
 
-def _iter_gil_link_enrichment(
+def iter_gil_link_enrichment(
     record: Mapping[str, Any],
     gil_link_wikidata_map: Optional[Mapping[str, str]] = None,
 ) -> List[Tuple[str, Optional[str]]]:
     enriched = []  # type: List[Tuple[str, Optional[str]]]
-    for link_uri in _iter_gil_link_uris(record):
+    for link_uri in iter_gil_link_uris(record):
         qid = None
         if gil_link_wikidata_map is not None:
-            qid = _normalize_qid(gil_link_wikidata_map.get(link_uri))
+            qid = normalize_qid(gil_link_wikidata_map.get(link_uri))
         enriched.append((link_uri, qid))
     return enriched
 
@@ -232,18 +243,18 @@ def _chunked(values: Sequence[str], size: int) -> Iterable[List[str]]:
         yield list(values[index : index + size])
 
 
-def _wikidata_lookup_backend() -> str:
+def wikidata_lookup_backend() -> str:
     configured = str(getattr(settings, "WIKIDATA_LOOKUP_BACKEND", "") or "").strip().lower()
-    if configured in {_LOOKUP_BACKEND_API, _LOOKUP_BACKEND_TOOLFORGE_SQL}:
+    if configured in {LOOKUP_BACKEND_API, LOOKUP_BACKEND_TOOLFORGE_SQL}:
         return configured
     if bool(getattr(settings, "TOOLFORGE_USE_REPLICA", False)):
-        return _LOOKUP_BACKEND_TOOLFORGE_SQL
-    return _LOOKUP_BACKEND_API
+        return LOOKUP_BACKEND_TOOLFORGE_SQL
+    return LOOKUP_BACKEND_API
 
 
 def _fetch_wikibase_items_for_site_api(api_url: str, titles: Sequence[str]) -> Dict[str, str]:
     timeout = int(getattr(settings, "PETSCAN_TIMEOUT_SECONDS", 30))
-    return _api_fetch_wikibase_items_for_site(
+    return fetch_wikibase_items_for_site_api(
         api_url,
         titles,
         user_agent=HTTP_USER_AGENT,
@@ -253,12 +264,13 @@ def _fetch_wikibase_items_for_site_api(api_url: str, titles: Sequence[str]) -> D
 
 def _fetch_wikibase_items_for_site_sql(
     site: str,
-    targets: Sequence[Tuple[int, str, str]],
+    targets: Sequence[SiteLookupTarget],
 ) -> Dict[str, str]:
     timeout = int(getattr(settings, "PETSCAN_TIMEOUT_SECONDS", 30))
-    return _sql_fetch_wikibase_items_for_site(
+    sql_targets = [(target.namespace, target.api_title, target.db_title) for target in targets]
+    return enrichment_sql.fetch_wikibase_items_for_site_sql(
         site,
-        targets,
+        sql_targets,
         timeout_seconds=timeout,
         replica_host=str(getattr(settings, "TOOLFORGE_REPLICA_HOST", "tools.db.svc.wikimedia.cloud")),
         replica_cnf=str(getattr(settings, "TOOLFORGE_REPLICA_CNF", "") or "").strip(),
@@ -267,21 +279,21 @@ def _fetch_wikibase_items_for_site_sql(
     )
 
 
-def _fetch_wikibase_items_for_site(
+def fetch_wikibase_items_for_site(
     site: str,
-    targets: Sequence[Tuple[int, str, str]],
+    targets: Sequence[SiteLookupTarget],
     backend: str,
 ) -> Dict[str, str]:
     if not targets:
         return {}
 
-    if backend == _LOOKUP_BACKEND_TOOLFORGE_SQL:
+    if backend == LOOKUP_BACKEND_TOOLFORGE_SQL:
         return _fetch_wikibase_items_for_site_sql(site, targets)
 
-    api_url = _site_to_mediawiki_api_url(site)
+    api_url = site_to_mediawiki_api_url(site)
     if api_url is None:
         return {}
-    titles = sorted({_normalize_page_title(api_title) for _ns, api_title, _db in targets if api_title})
+    titles = sorted({normalize_page_title(target.api_title) for target in targets if target.api_title})
     resolved = {}  # type: Dict[str, str]
     for batch in _chunked(titles, _MAX_TITLES_PER_MEDIAWIKI_BATCH):
         batch_result = _fetch_wikibase_items_for_site_api(api_url, batch)
@@ -306,7 +318,89 @@ def _direct_wikidata_qid_for_target(
         return None
 
     for candidate in (api_title, db_title):
-        normalized_title = _normalize_page_title(candidate)
+        normalized_title = normalize_page_title(candidate)
         if re.fullmatch(r"Q[1-9][0-9]*", normalized_title, flags=re.IGNORECASE):
             return "Q{}".format(normalized_title[1:])
     return None
+
+
+def _collect_lookup_inputs(
+    records: Sequence[Mapping[str, Any]],
+) -> Tuple[Dict[str, GilLinkTarget], Dict[str, Set[SiteLookupTarget]], Dict[str, str]]:
+    link_targets_by_uri = {}  # type: Dict[str, GilLinkTarget]
+    site_lookup_targets = {}  # type: Dict[str, Set[SiteLookupTarget]]
+    direct_qids_by_link = {}  # type: Dict[str, str]
+
+    for row in records:
+        for target in _iter_gil_link_targets(row):
+            link_targets_by_uri[target.link_uri] = target
+            direct_qid = _direct_wikidata_qid_for_target(
+                target.site,
+                target.namespace,
+                target.api_title,
+                target.db_title,
+            )
+            if direct_qid is not None:
+                direct_qids_by_link[target.link_uri] = direct_qid
+                continue
+
+            site_lookup_targets.setdefault(target.site, set()).add(
+                SiteLookupTarget(
+                    namespace=target.namespace,
+                    api_title=target.api_title,
+                    db_title=target.db_title,
+                )
+            )
+
+    return link_targets_by_uri, site_lookup_targets, direct_qids_by_link
+
+
+def _resolve_site_title_qids(
+    site_lookup_targets: Mapping[str, Set[SiteLookupTarget]],
+) -> Dict[Tuple[str, str], str]:
+    resolved_qids_by_site_title = {}  # type: Dict[Tuple[str, str], str]
+    backend = wikidata_lookup_backend()
+
+    for site, targets in site_lookup_targets.items():
+        ordered_targets = sorted(
+            targets,
+            key=lambda item: (item.namespace, item.api_title, item.db_title),
+        )
+        result = fetch_wikibase_items_for_site(site, ordered_targets, backend=backend)
+        for title, qid in result.items():
+            normalized_title = normalize_page_title(title)
+            normalized_qid = normalize_qid(qid)
+            if normalized_title and normalized_qid:
+                resolved_qids_by_site_title[(site, normalized_title)] = normalized_qid
+
+    return resolved_qids_by_site_title
+
+
+def _attach_resolved_qids(
+    link_targets_by_uri: Mapping[str, GilLinkTarget],
+    direct_qids_by_link: Mapping[str, str],
+    resolved_qids_by_site_title: Mapping[Tuple[str, str], str],
+) -> Dict[str, str]:
+    link_to_qid = dict(direct_qids_by_link)
+
+    for link_uri, target in link_targets_by_uri.items():
+        if link_uri in link_to_qid:
+            continue
+
+        resolved_qid = resolved_qids_by_site_title.get((target.site, normalize_page_title(target.api_title)))
+        if resolved_qid is not None:
+            link_to_qid[link_uri] = resolved_qid
+
+    return link_to_qid
+
+
+def build_gil_link_wikidata_map(
+    records: Sequence[Mapping[str, Any]],
+) -> Dict[str, str]:
+    link_targets_by_uri, site_lookup_targets, direct_qids_by_link = _collect_lookup_inputs(records)
+    resolved_qids_by_site_title = _resolve_site_title_qids(site_lookup_targets)
+    return _attach_resolved_qids(
+        link_targets_by_uri,
+        direct_qids_by_link,
+        resolved_qids_by_site_title,
+    )

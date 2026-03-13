@@ -11,7 +11,8 @@ A Django application with a static HTML + Vue interface that:
 
 - No authentication/login required
 - Mobile-friendly, accessible query UI
-- API endpoints for loading and querying
+- SPARQL protocol endpoint for querying
+- Structure metadata endpoint for loaded PetScan data
 - SPARQL endpoint supporting `GET` and `POST`
 
 ## Requirements
@@ -63,33 +64,6 @@ Security-related Django settings are configured via environment variables:
 - `data/examples/petscan-43641756.json`
 - `data/examples/petscan-43642782.json`
 
-## API Endpoints
-
-### `POST /api/load`
-Loads a PetScan result into Oxigraph for a `psid`.
-
-Request body:
-
-```json
-{
-  "psid": 43641756,
-  "refresh": true
-}
-```
-
-### `POST /api/query`
-Runs a SPARQL query for a `psid`.
-
-Request body:
-
-```json
-{
-  "psid": 43641756,
-  "query": "SELECT ?item WHERE { ?item a <https://petscan.wmcloud.org/ontology/Page> } LIMIT 10",
-  "refresh": false
-}
-```
-
 ## SPARQL Endpoint
 
 ### URL
@@ -102,6 +76,8 @@ Request body:
 - `query` (required): SPARQL query (for `GET`) or in the request body (for `POST`)
 - `refresh` (optional): `1/true` to force reloading PetScan data before query
 - any additional URL query parameters are forwarded to PetScan JSON fetch (except reserved keys `psid`, `format`, `query`, `refresh`)
+- `POST /sparql` must use `Content-Type: application/sparql-query`
+- In the web UI, use the **PetScan extra GET params** field (example: `category=Turku&language=fi`) to simulate `SERVICE` URI parameters.
 
 ### Example `GET`
 
@@ -123,6 +99,26 @@ SELECT ?item ?title WHERE {
   }
 }
 LIMIT 20
+```
+
+## Structure Endpoint
+
+### URL
+
+`/api/structure`
+
+### Parameters
+
+- `psid` (required): PetScan ID whose loaded structure metadata should be returned
+- `refresh` (optional): `1/true` to force reload before returning structure metadata
+- any additional URL query parameters are forwarded to PetScan JSON fetch (except reserved keys `psid`, `format`, `query`, `refresh`)
+
+### Example `GET`
+
+```bash
+curl --get 'http://127.0.0.1:8000/api/structure' \
+  --data-urlencode 'psid=43641756' \
+  --data-urlencode 'category=Turku'
 ```
 
 ## Data Model Notes

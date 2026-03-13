@@ -1,8 +1,9 @@
 import os
-import re
 from time import perf_counter
 from types import ModuleType
 from typing import Any, Dict, List, Optional, Sequence, Tuple, cast
+
+from .normalization import normalize_page_title, normalize_qid
 
 _pymysql_module: Optional[ModuleType]
 try:
@@ -11,28 +12,6 @@ except ImportError:  # pragma: no cover - optional dependency
     _pymysql_module = None
 
 pymysql = cast(Any, _pymysql_module)
-
-
-_QID_RE = re.compile(r"Q([1-9][0-9]*)", re.IGNORECASE)
-
-
-def _normalize_page_title(value: object) -> str:
-    text = str(value or "").strip()
-    if not text:
-        return ""
-    return text.lstrip(":").replace(" ", "_")
-
-
-def _normalize_qid(value: object) -> Optional[str]:
-    if value is None:
-        return None
-    text = str(value).strip()
-    if not text:
-        return None
-    match = _QID_RE.search(text)
-    if not match:
-        return None
-    return "Q{}".format(match.group(1))
 
 
 def fetch_wikibase_items_for_site_sql(
@@ -67,7 +46,7 @@ def fetch_wikibase_items_for_site_sql(
     unique_pairs = []
     seen_pairs = set()
     for namespace, _api_title, db_title in targets:
-        normalized_db_title = _normalize_page_title(db_title)
+        normalized_db_title = normalize_page_title(db_title)
         key = (int(namespace), normalized_db_title)
         if not normalized_db_title or key in seen_pairs:
             continue
@@ -131,16 +110,16 @@ def fetch_wikibase_items_for_site_sql(
         if not isinstance(row, (tuple, list)) or len(row) < 3:
             continue
         namespace = int(row[0])
-        db_title = _normalize_page_title(row[1])
-        qid = _normalize_qid(row[2])
+        db_title = normalize_page_title(row[1])
+        qid = normalize_qid(row[2])
         if db_title and qid is not None:
             qid_by_pair[(namespace, db_title)] = qid
 
     resolved = {}  # type: Dict[str, str]
     for namespace, api_title, db_title in targets:
-        key = (int(namespace), _normalize_page_title(db_title))
+        key = (int(namespace), normalize_page_title(db_title))
         qid = qid_by_pair.get(key)
-        normalized_api_title = _normalize_page_title(api_title)
+        normalized_api_title = normalize_page_title(api_title)
         if normalized_api_title and qid is not None:
             resolved[normalized_api_title] = qid
     return resolved

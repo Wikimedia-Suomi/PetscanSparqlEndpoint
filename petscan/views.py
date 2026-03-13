@@ -10,25 +10,19 @@ from . import service as petscan_service
 
 
 @dataclass(frozen=True)
-class SparqlRequest:
-    psid_value: Any
-    query: str
+class RequestContext:
+    psid: int
     refresh: bool
     petscan_params: Dict[str, List[str]]
 
 
+@dataclass(frozen=True)
+class SparqlRequest(RequestContext):
+    query: str
+
+
 def index(request: HttpRequest) -> HttpResponse:
     return render(request, "index.html")
-
-
-def _parse_json_body(request: HttpRequest) -> Dict[str, Any]:
-    if not request.body:
-        return {}
-    try:
-        decoded = request.body.decode("utf-8")
-        return json.loads(decoded)
-    except Exception as exc:
-        raise ValueError("Request body must be valid JSON.") from exc
 
 
 def _parse_psid(value: Any) -> int:
@@ -60,58 +54,8 @@ def _json_error(message: str, status: int = 400) -> JsonResponse:
     return JsonResponse({"error": message}, status=status)
 
 
-@csrf_exempt
-def load_psid(request: HttpRequest) -> JsonResponse:
-    if request.method != "POST":
-        return _json_error("Method not allowed. Use POST.", status=405)
-
-    try:
-        payload = _parse_json_body(request)
-        psid = _parse_psid(payload.get("psid"))
-        refresh = _parse_bool(payload.get("refresh"), default=False)
-        meta = petscan_service.ensure_loaded(psid, refresh=refresh)
-    except ValueError as exc:
-        return _json_error(str(exc), status=400)
-    except petscan_service.PetscanServiceError as exc:
-        return _json_error(str(exc), status=502)
-
-    return JsonResponse({"psid": psid, "meta": meta})
-
-
-@csrf_exempt
-def run_query(request: HttpRequest) -> JsonResponse:
-    if request.method != "POST":
-        return _json_error("Method not allowed. Use POST.", status=405)
-
-    try:
-        payload = _parse_json_body(request)
-        psid = _parse_psid(payload.get("psid"))
-        query = str(payload.get("query", "")).strip()
-        if not query:
-            raise ValueError("query must not be empty.")
-        refresh = _parse_bool(payload.get("refresh"), default=False)
-
-        execution = petscan_service.execute_query(psid, query, refresh=refresh)
-    except ValueError as exc:
-        return _json_error(str(exc), status=400)
-    except petscan_service.PetscanServiceError as exc:
-        return _json_error(str(exc), status=502)
-
-    result_payload: Any
-    if execution["result_format"] == "sparql-json":
-        result_payload = execution["sparql_json"]
-    else:
-        result_payload = execution["ntriples"]
-
-    return JsonResponse(
-        {
-            "psid": psid,
-            "query_type": execution["query_type"],
-            "result_format": execution["result_format"],
-            "result": result_payload,
-            "meta": execution["meta"],
-        }
-    )
+def _text_error(message: str, status: int = 400) -> HttpResponse:
+    return HttpResponse(message, status=status, content_type="text/plain; charset=utf-8")
 
 
 def _extract_forwarded_petscan_params(request: HttpRequest) -> Dict[str, List[str]]:
@@ -125,44 +69,62 @@ def _extract_forwarded_petscan_params(request: HttpRequest) -> Dict[str, List[st
     return forwarded
 
 
+def _parse_request_context(request: HttpRequest) -> RequestContext:
+    return RequestContext(
+        psid=_parse_psid(request.GET.get("psid")),
+        refresh=_parse_bool(request.GET.get("refresh"), default=False),
+        petscan_params=_extract_forwarded_petscan_params(request),
+    )
+
+
+def _parse_sparql_query(request: HttpRequest) -> str:
+    if request.method == "GET":
+        return request.GET.get("query", "").strip()
+
+    content_type = (request.content_type or "").split(";", 1)[0].strip().lower()
+    if content_type != "application/sparql-query":
+        raise ValueError("POST /sparql requires Content-Type: application/sparql-query.")
+
+    return request.body.decode("utf-8").strip()
+
+
 def _parse_sparql_request(request: HttpRequest) -> SparqlRequest:
-    psid_value = request.GET.get("psid")
-    query = request.GET.get("query", "").strip()
-    refresh = _parse_bool(request.GET.get("refresh"), default=False)
-    petscan_params = _extract_forwarded_petscan_params(request)
+    context = _parse_request_context(request)
+    query = _parse_sparql_query(request)
+    if not query:
+        raise ValueError("query must not be empty.")
+    return SparqlRequest(
+        psid=context.psid,
+        refresh=context.refresh,
+        petscan_params=context.petscan_params,
+        query=query,
+    )
 
-    if request.method == "POST":
-        content_type = (request.content_type or "").split(";", 1)[0].strip().lower()
 
-        if content_type == "application/sparql-query":
-            body_query = request.body.decode("utf-8").strip()
-            if body_query:
-                query = body_query
-            if psid_value is None:
-                psid_value = request.headers.get("X-Petscan-Psid")
+@csrf_exempt
+def structure_endpoint(request: HttpRequest) -> JsonResponse:
+    if request.method != "GET":
+        return _json_error("Method not allowed. Use GET.", status=405)
 
-        elif content_type == "application/json":
-            payload = _parse_json_body(request)
-            if payload.get("query") is not None:
-                query = str(payload.get("query")).strip()
-            if payload.get("psid") is not None:
-                psid_value = payload.get("psid")
-            refresh = _parse_bool(payload.get("refresh"), default=refresh)
+    try:
+        request_context = _parse_request_context(request)
+        meta = petscan_service.ensure_loaded(
+            request_context.psid,
+            refresh=request_context.refresh,
+            petscan_params=request_context.petscan_params,
+        )
+    except ValueError as exc:
+        return _json_error(str(exc), status=400)
+    except petscan_service.PetscanServiceError as exc:
+        return _json_error(str(exc), status=502)
 
-        else:
-            if request.POST.get("query"):
-                query = request.POST.get("query", "").strip()
-            if request.POST.get("psid"):
-                psid_value = request.POST.get("psid")
-            refresh = _parse_bool(request.POST.get("refresh"), default=refresh)
-
-    return SparqlRequest(psid_value=psid_value, query=query, refresh=refresh, petscan_params=petscan_params)
+    return JsonResponse({"psid": request_context.psid, "meta": meta})
 
 
 def _add_cors_headers(response: HttpResponse) -> HttpResponse:
     response["Access-Control-Allow-Origin"] = "*"
     response["Access-Control-Allow-Methods"] = "GET, POST, OPTIONS"
-    response["Access-Control-Allow-Headers"] = "Content-Type, Accept, X-Petscan-Psid"
+    response["Access-Control-Allow-Headers"] = "Content-Type, Accept"
     return response
 
 
@@ -178,22 +140,16 @@ def sparql_endpoint(request: HttpRequest) -> HttpResponse:
 
     try:
         parsed_request = _parse_sparql_request(request)
-        psid = _parse_psid(parsed_request.psid_value)
-        if not parsed_request.query:
-            raise ValueError("query must not be empty.")
-
         execution = petscan_service.execute_query(
-            psid,
+            parsed_request.psid,
             parsed_request.query,
             refresh=parsed_request.refresh,
             petscan_params=parsed_request.petscan_params,
         )
     except ValueError as exc:
-        response = HttpResponse(str(exc), status=400, content_type="text/plain; charset=utf-8")
-        return _add_cors_headers(response)
+        return _add_cors_headers(_text_error(str(exc), status=400))
     except petscan_service.PetscanServiceError as exc:
-        response = HttpResponse(str(exc), status=502, content_type="text/plain; charset=utf-8")
-        return _add_cors_headers(response)
+        return _add_cors_headers(_text_error(str(exc), status=502))
 
     if execution["result_format"] == "sparql-json":
         body = json.dumps(execution["sparql_json"])  # SPARQL Results JSON format

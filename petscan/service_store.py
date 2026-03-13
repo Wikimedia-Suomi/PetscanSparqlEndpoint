@@ -9,9 +9,16 @@ from django.conf import settings
 
 _lock_guard = threading.Lock()
 _psid_locks = {}  # type: Dict[int, threading.Lock]
+__all__ = [
+    "get_psid_lock",
+    "has_existing_store",
+    "meta_path",
+    "read_meta",
+    "store_path",
+]
 
 
-def _get_psid_lock(psid: int) -> threading.Lock:
+def get_psid_lock(psid: int) -> threading.Lock:
     with _lock_guard:
         if psid not in _psid_locks:
             _psid_locks[psid] = threading.Lock()
@@ -24,16 +31,16 @@ def _store_root() -> Path:
     return path
 
 
-def _store_path(psid: int) -> Path:
+def store_path(psid: int) -> Path:
     return _store_root() / str(psid)
 
 
-def _meta_path(psid: int) -> Path:
-    return _store_path(psid) / "meta.json"
+def meta_path(psid: int) -> Path:
+    return store_path(psid) / "meta.json"
 
 
-def _read_meta(psid: int) -> Dict[str, Any]:
-    path = _meta_path(psid)
+def read_meta(psid: int) -> Dict[str, Any]:
+    path = meta_path(psid)
     if not path.exists():
         return {}
     try:
@@ -42,5 +49,5 @@ def _read_meta(psid: int) -> Dict[str, Any]:
         return {}
 
 
-def _has_existing_store(psid: int) -> bool:
-    return _meta_path(psid).exists()
+def has_existing_store(psid: int) -> bool:
+    return meta_path(psid).exists()

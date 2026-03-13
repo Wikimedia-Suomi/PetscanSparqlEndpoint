@@ -23,6 +23,7 @@
           "LIMIT 50",
         ].join("\n"),
         refreshBeforeQuery: false,
+        petscanGetParams: "",
         isBusy: false,
         statusMessage: "Ready.",
         queryType: "",
@@ -63,30 +64,92 @@
         }
         return JSON.stringify(this.result, null, 2);
       },
+      forwardedPetscanParams: function () {
+        var raw = String(this.petscanGetParams || "").trim();
+        if (!raw) {
+          return [];
+        }
+
+        var normalized = raw.charAt(0) === "?" ? raw.slice(1) : raw;
+        var parsed;
+        try {
+          parsed = new URLSearchParams(normalized);
+        } catch (_err) {
+          return [];
+        }
+        var reserved = {
+          psid: true,
+          format: true,
+          query: true,
+          refresh: true,
+        };
+        var entries = [];
+
+        parsed.forEach(function (value, key) {
+          var normalizedKey = String(key || "").trim();
+          var normalizedValue = String(value || "").trim();
+          if (!normalizedKey || !normalizedValue) {
+            return;
+          }
+          if (reserved[normalizedKey.toLowerCase()]) {
+            return;
+          }
+          entries.push([normalizedKey, normalizedValue]);
+        });
+
+        return entries;
+      },
+      forwardedPetscanQueryString: function () {
+        if (!this.forwardedPetscanParams.length) {
+          return "";
+        }
+        var params = new URLSearchParams();
+        this.forwardedPetscanParams.forEach(function (entry) {
+          params.append(entry[0], entry[1]);
+        });
+        return params.toString();
+      },
       endpointPreview: function () {
         var base = window.location.origin + "/sparql";
-        if (!this.psid) {
-          return base + "?psid=<psid>";
+        var psid = String(this.psid || "").trim();
+        var extraQuery = this.forwardedPetscanQueryString;
+        if (!psid) {
+          return extraQuery ? base + "?psid=<psid>&" + extraQuery : base + "?psid=<psid>";
         }
-        return base + "?psid=" + encodeURIComponent(this.psid);
+
+        var params = new URLSearchParams();
+        params.set("psid", psid);
+        this.forwardedPetscanParams.forEach(function (entry) {
+          params.append(entry[0], entry[1]);
+        });
+        return base + "?" + params.toString();
       },
       petscanQueryUrl: function () {
         var psid = String(this.psid || "").trim();
         if (!psid) {
           return "https://petscan.wmcloud.org/";
         }
-        return "https://petscan.wmcloud.org/?psid=" + encodeURIComponent(psid);
+
+        var params = new URLSearchParams();
+        params.set("psid", psid);
+        this.forwardedPetscanParams.forEach(function (entry) {
+          params.append(entry[0], entry[1]);
+        });
+        return "https://petscan.wmcloud.org/?" + params.toString();
       },
       petscanJsonUrl: function () {
         var psid = String(this.psid || "").trim();
         if (!psid) {
           return "https://petscan.wmcloud.org/";
         }
-        return (
-          "https://petscan.wmcloud.org/?psid=" +
-          encodeURIComponent(psid) +
-          "&format=json"
-        );
+
+        var params = new URLSearchParams();
+        params.set("psid", psid);
+        params.set("format", "json");
+        this.forwardedPetscanParams.forEach(function (entry) {
+          params.append(entry[0], entry[1]);
+        });
+        return "https://petscan.wmcloud.org/?" + params.toString();
       },
       jsonResultCount: function () {
         var currentPsid = String(this.psid || "").trim();
@@ -165,14 +228,44 @@
       },
     },
     methods: {
-      apiPost: async function (path, payload) {
-        var response = await fetch(path, {
-          method: "POST",
+      inferQueryType: function (query) {
+        var remaining = String(query || "").replace(/^\s*#.*$/gm, "");
+
+        while (true) {
+          var prefixMatch = remaining.match(/^\s*PREFIX\s+[A-Za-z][A-Za-z0-9._-]*:\s*<[^>]*>/i);
+          if (prefixMatch) {
+            remaining = remaining.slice(prefixMatch[0].length);
+            continue;
+          }
+          var baseMatch = remaining.match(/^\s*BASE\s*<[^>]*>/i);
+          if (baseMatch) {
+            remaining = remaining.slice(baseMatch[0].length);
+            continue;
+          }
+          break;
+        }
+
+        var formMatch = remaining.match(/^\s*(SELECT|ASK|CONSTRUCT|DESCRIBE)\b/i);
+        if (!formMatch) {
+          return "";
+        }
+        return String(formMatch[1]).toUpperCase();
+      },
+      structureRequest: async function (psid, refresh) {
+        var params = new URLSearchParams();
+        params.set("psid", String(psid || "").trim());
+        if (refresh) {
+          params.set("refresh", "1");
+        }
+        this.forwardedPetscanParams.forEach(function (entry) {
+          params.append(entry[0], entry[1]);
+        });
+
+        var response = await fetch("/api/structure?" + params.toString(), {
+          method: "GET",
           headers: {
-            "Content-Type": "application/json",
             Accept: "application/json",
           },
-          body: JSON.stringify(payload),
         });
 
         var data;
@@ -188,19 +281,62 @@
 
         return data;
       },
-      loadDataset: async function () {
+      sparqlRequest: async function (psid, query, refresh) {
+        var params = new URLSearchParams();
+        params.set("psid", String(psid || "").trim());
+        if (refresh) {
+          params.set("refresh", "1");
+        }
+        this.forwardedPetscanParams.forEach(function (entry) {
+          params.append(entry[0], entry[1]);
+        });
+
+        var response = await fetch("/sparql?" + params.toString(), {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/sparql-query",
+            Accept: "application/sparql-results+json, application/n-triples, text/plain",
+          },
+          body: String(query || ""),
+        });
+
+        var contentType = String(response.headers.get("Content-Type") || "").toLowerCase();
+        var bodyText = await response.text();
+
+        if (!response.ok) {
+          throw new Error(bodyText || "Request failed with status " + response.status + ".");
+        }
+
+        if (contentType.indexOf("application/sparql-results+json") !== -1) {
+          try {
+            return {
+              resultFormat: "sparql-json",
+              sparqlJson: JSON.parse(bodyText),
+            };
+          } catch (_err) {
+            throw new Error("SPARQL endpoint returned invalid JSON.");
+          }
+        }
+
+        return {
+          resultFormat: "n-triples",
+          ntriples: bodyText,
+        };
+      },
+      loadStructure: async function () {
         this.isBusy = true;
-        this.statusMessage = "Loading PetScan dataset...";
+        this.statusMessage = "Loading data structure...";
 
         try {
-          var payload = {
-            psid: this.psid,
-            refresh: true,
-          };
-          var data = await this.apiPost("/api/load", payload);
+          var data = await this.structureRequest(this.psid, this.refreshBeforeQuery);
           this.meta = data.meta || {};
           this.loadedPsid = String(data.psid || this.psid || "").trim();
-          this.statusMessage = "Dataset loaded (" + (this.meta.records || 0) + " records).";
+          this.statusMessage =
+            "Data structure loaded (" +
+            this.structureRowCount +
+            " rows, " +
+            this.structureFieldCount +
+            " fields).";
         } catch (err) {
           this.statusMessage = err.message;
         } finally {
@@ -212,18 +348,32 @@
         this.statusMessage = "Running query...";
 
         try {
-          var payload = {
-            psid: this.psid,
-            query: this.query,
-            refresh: this.refreshBeforeQuery,
-          };
+          this.queryType = this.inferQueryType(this.query);
+          var execution = await this.sparqlRequest(this.psid, this.query, this.refreshBeforeQuery);
+          this.resultFormat = execution.resultFormat;
 
-          var data = await this.apiPost("/api/query", payload);
-          this.queryType = data.query_type;
-          this.resultFormat = data.result_format;
-          this.result = data.result;
-          this.meta = data.meta || {};
-          this.loadedPsid = String(data.psid || this.psid || "").trim();
+          if (execution.resultFormat === "sparql-json") {
+            this.result = execution.sparqlJson;
+            if (!this.queryType) {
+              this.queryType =
+                this.result && Object.prototype.hasOwnProperty.call(this.result, "boolean")
+                  ? "ASK"
+                  : "SELECT";
+            }
+          } else {
+            this.result = execution.ntriples;
+            if (!this.queryType) {
+              this.queryType = "CONSTRUCT";
+            }
+          }
+
+          try {
+            var metaData = await this.structureRequest(this.psid, false);
+            this.meta = metaData.meta || {};
+            this.loadedPsid = String(metaData.psid || this.psid || "").trim();
+          } catch (_metaErr) {
+            // Keep query results even if metadata refresh fails.
+          }
 
           if (this.queryType === "SELECT") {
             this.statusMessage = "Query finished (" + this.selectRows.length + " rows).";
