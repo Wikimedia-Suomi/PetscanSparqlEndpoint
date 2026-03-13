@@ -5,7 +5,7 @@ import threading
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, Iterable, List, Mapping, Optional, Sequence, Tuple
-from urllib.parse import quote, urlencode
+from urllib.parse import quote, urlencode, urlsplit
 from urllib.request import Request, urlopen
 
 from django.conf import settings
@@ -42,8 +42,14 @@ HTTP_USER_AGENT = "PetscanSparqlEndpoint (https://meta.wikimedia.org/wiki/user:Z
 _QUERY_TYPES = {"SELECT", "ASK", "CONSTRUCT", "DESCRIBE"}
 _FIELD_NAME_RE = re.compile(r"[^0-9A-Za-z_]+")
 _QID_RE = re.compile(r"Q([1-9][0-9]*)", re.IGNORECASE)
+_SITE_TOKEN_RE = re.compile(r"^[a-z0-9_-]+$")
+_HOST_LABEL_RE = re.compile(r"^(?!-)[a-z0-9-]{1,63}(?<!-)$")
+_SPARQL_COMMENT_LINE_RE = re.compile(r"(?m)^\s*#.*$")
+_SPARQL_PREFIX_PROLOGUE_RE = re.compile(r"(?is)\A\s*PREFIX\s+[A-Za-z][A-Za-z0-9._-]*:\s*<[^>]*>")
+_SPARQL_BASE_PROLOGUE_RE = re.compile(r"(?is)\A\s*BASE\s*<[^>]*>")
+_SPARQL_QUERY_FORM_RE = re.compile(r"(?is)\A\s*(SELECT|ASK|CONSTRUCT|DESCRIBE)\b")
 _SERVICE_CLAUSE_RE = re.compile(
-    r"(?is)\bSERVICE\b(?:\s+SILENT\b)?\s*(?:<[^>]+>|[?$][A-Za-z_][A-Za-z0-9_]*)\s*\{"
+    r"(?is)\bSERVICE\b(?:\s+SILENT\b)?\s*(?:<[^>]+>|[?$][A-Za-z_][A-Za-z0-9_]*|[A-Za-z][A-Za-z0-9_-]*:[^\s{>]*)\s*\{"
 )
 _MAX_TITLES_PER_MEDIAWIKI_BATCH = 50
 _FIELD_RENAMES = {
@@ -361,6 +367,12 @@ def _site_to_mediawiki_domain(site: str) -> Optional[str]:
     normalized_site = str(site or "").strip().lower()
     if not normalized_site:
         return None
+    if not _SITE_TOKEN_RE.fullmatch(normalized_site):
+        return None
+
+    def _build_valid_domain(prefix: str, domain: str) -> Optional[str]:
+        candidate = "{}.{}".format(prefix, domain)
+        return candidate if _is_valid_hostname(candidate) else None
 
     special_sites = {
         "commonswiki": "commons.wikimedia.org",
@@ -371,7 +383,8 @@ def _site_to_mediawiki_domain(site: str) -> Optional[str]:
         "mediawikiwiki": "www.mediawiki.org",
     }
     if normalized_site in special_sites:
-        return special_sites[normalized_site]
+        candidate = special_sites[normalized_site]
+        return candidate if _is_valid_hostname(candidate) else None
 
     suffix_domains = [
         ("wikivoyage", "wikivoyage.org"),
@@ -388,14 +401,14 @@ def _site_to_mediawiki_domain(site: str) -> Optional[str]:
             if not language_code:
                 return None
             language_code = language_code.replace("_", "-")
-            return "{}.{}".format(language_code, domain)
+            return _build_valid_domain(language_code, domain)
 
     if normalized_site.endswith("wiki"):
         language_code = normalized_site[:-4]
         if not language_code:
             return None
         language_code = language_code.replace("_", "-")
-        return "{}.wikipedia.org".format(language_code)
+        return _build_valid_domain(language_code, "wikipedia.org")
 
     return None
 
@@ -404,7 +417,35 @@ def _site_to_mediawiki_api_url(site: str) -> Optional[str]:
     domain = _site_to_mediawiki_domain(site)
     if domain is None:
         return None
-    return "https://{}/w/api.php".format(domain)
+
+    api_url = "https://{}/w/api.php".format(domain)
+    parsed = urlsplit(api_url)
+    if parsed.scheme != "https":
+        return None
+    if parsed.hostname != domain:
+        return None
+    if parsed.path != "/w/api.php":
+        return None
+    return api_url
+
+
+def _is_valid_hostname(hostname: str) -> bool:
+    text = str(hostname or "").strip().lower().rstrip(".")
+    if not text:
+        return False
+    if len(text) > 253:
+        return False
+    if any(char in text for char in ("/", "\\", ":", "@", " ")):
+        return False
+
+    labels = text.split(".")
+    if len(labels) < 2:
+        return False
+    for label in labels:
+        if not _HOST_LABEL_RE.fullmatch(label):
+            return False
+
+    return True
 
 
 def _gil_link_uri(site: str, title: str) -> Optional[str]:
@@ -858,6 +899,33 @@ def _meta_has_matching_source_params(meta: Mapping[str, Any], petscan_params: Ma
     return expected == actual
 
 
+def _meta_is_usable(meta: Mapping[str, Any], psid: int) -> bool:
+    if not isinstance(meta, Mapping) or not meta:
+        return False
+
+    meta_psid = meta.get("psid")
+    if not isinstance(meta_psid, int) or isinstance(meta_psid, bool) or meta_psid != psid:
+        return False
+
+    records = meta.get("records")
+    if not isinstance(records, int) or isinstance(records, bool) or records < 0:
+        return False
+
+    source_url = meta.get("source_url")
+    if not isinstance(source_url, str) or not source_url.strip():
+        return False
+
+    loaded_at = meta.get("loaded_at")
+    if not isinstance(loaded_at, str) or not loaded_at.strip():
+        return False
+
+    source_params = meta.get("source_params", {})
+    if not isinstance(source_params, Mapping):
+        return False
+
+    return True
+
+
 def ensure_loaded(
     psid: int,
     refresh: bool = False,
@@ -870,7 +938,7 @@ def ensure_loaded(
     with lock:
         if not refresh and _has_existing_store(psid):
             meta = _read_meta(psid)
-            if _meta_has_matching_source_params(meta, normalized_params):
+            if _meta_is_usable(meta, psid) and _meta_has_matching_source_params(meta, normalized_params):
                 return meta
 
         payload, source_url = _fetch_petscan_json(psid, petscan_params=normalized_params)
@@ -882,11 +950,29 @@ def ensure_loaded(
 
 
 def _query_type(query: str) -> str:
-    clean_query = re.sub(r"(?m)^\s*#.*$", "", query)
-    for token in re.findall(r"[A-Za-z]+", clean_query):
-        upper = token.upper()
-        if upper in _QUERY_TYPES:
-            return upper
+    remaining = _SPARQL_COMMENT_LINE_RE.sub("", query)
+
+    # Strip SPARQL prologue declarations to avoid matching query-form keywords
+    # inside prefixed names (for example `PREFIX select: <...>`).
+    while True:
+        prefix_match = _SPARQL_PREFIX_PROLOGUE_RE.match(remaining)
+        if prefix_match is not None:
+            remaining = remaining[prefix_match.end() :]
+            continue
+
+        base_match = _SPARQL_BASE_PROLOGUE_RE.match(remaining)
+        if base_match is not None:
+            remaining = remaining[base_match.end() :]
+            continue
+
+        break
+
+    form_match = _SPARQL_QUERY_FORM_RE.match(remaining)
+    if form_match is not None:
+        query_type = str(form_match.group(1)).upper()
+        if query_type in _QUERY_TYPES:
+            return query_type
+
     raise PetscanServiceError("SPARQL query must contain SELECT, ASK, CONSTRUCT, or DESCRIBE.")
 
 
@@ -1002,6 +1088,9 @@ def _serialize_select(result: Any) -> Dict[str, Any]:
 def _serialize_ask(result: Any) -> Dict[str, Any]:
     if isinstance(result, bool):
         return {"head": {}, "boolean": result}
+
+    if result is not None and result.__class__.__name__ == "QueryBoolean":
+        return {"head": {}, "boolean": bool(result)}
 
     # Some implementations expose ASK as iterable with one row; fallback handles that.
     try:

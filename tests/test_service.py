@@ -195,6 +195,26 @@ class PetscanServiceParsingTests(SimpleTestCase):
         self.assertEqual(parsed_query.get("category"), ["Turku"])
         self.assertEqual(parsed_query.get("language"), ["fi"])
 
+    def test_site_to_mediawiki_api_url_returns_valid_https_url(self):
+        url = service._site_to_mediawiki_api_url("enwiki")
+        parsed = urlparse(url)
+
+        self.assertEqual(parsed.scheme, "https")
+        self.assertEqual(parsed.netloc, "en.wikipedia.org")
+        self.assertEqual(parsed.path, "/w/api.php")
+
+    def test_site_to_mediawiki_api_url_rejects_malformed_site_tokens(self):
+        malformed_sites = [
+            "localhost/wiki",
+            "a/bwiki",
+            "foo..wiki",
+            "evil.comwiki",
+            "evil.com/wikivoyage",
+            " ",
+        ]
+        for site in malformed_sites:
+            self.assertIsNone(service._site_to_mediawiki_api_url(site), msg=site)
+
     def test_meta_source_params_must_match_requested_params(self):
         meta = {"source_params": {"category": ["Turku"], "language": ["fi"]}}
 
@@ -202,6 +222,44 @@ class PetscanServiceParsingTests(SimpleTestCase):
             service._meta_has_matching_source_params(meta, {"category": ["Turku"], "language": "fi"})
         )
         self.assertFalse(service._meta_has_matching_source_params(meta, {"category": ["Helsinki"]}))
+
+    @patch("petscan.service._build_store")
+    @patch("petscan.service._extract_records")
+    @patch("petscan.service._fetch_petscan_json")
+    @patch("petscan.service._ensure_oxigraph")
+    def test_ensure_loaded_rebuilds_when_meta_json_is_corrupt(
+        self,
+        _ensure_oxigraph_mock,
+        fetch_petscan_json_mock,
+        extract_records_mock,
+        build_store_mock,
+    ):
+        psid = 999987
+        store_path = service._store_path(psid)
+        meta_path = service._meta_path(psid)
+
+        fetch_petscan_json_mock.return_value = ({"*": [{"id": 1, "title": "Example"}]}, "https://example.invalid")
+        extract_records_mock.return_value = [{"id": 1, "title": "Example"}]
+        build_store_mock.return_value = {
+            "psid": psid,
+            "records": 1,
+            "source_url": "https://example.invalid",
+            "source_params": {},
+            "loaded_at": "2026-01-01T00:00:00+00:00",
+        }
+
+        try:
+            store_path.mkdir(parents=True, exist_ok=True)
+            meta_path.write_text("{invalid-json", encoding="utf-8")
+
+            result = service.ensure_loaded(psid, refresh=False)
+
+            self.assertEqual(result["psid"], psid)
+            fetch_petscan_json_mock.assert_called_once_with(psid, petscan_params={})
+            extract_records_mock.assert_called_once()
+            build_store_mock.assert_called_once()
+        finally:
+            shutil.rmtree(store_path, ignore_errors=True)
 
     @patch("petscan.service._wikidata_lookup_backend", return_value=service._LOOKUP_BACKEND_API)
     @patch("petscan.service._fetch_wikibase_items_for_site_api")
@@ -313,3 +371,61 @@ class PetscanServiceParsingTests(SimpleTestCase):
         }
         """
         self.assertFalse(service._contains_service_clause(query))
+
+    def test_detects_service_clause_with_prefixed_name(self):
+        query = """
+        PREFIX ex: <https://example.org/sparql>
+        SELECT * WHERE {
+          SERVICE ex: {
+            ?item ?p ?o .
+          }
+        }
+        """
+        self.assertTrue(service._contains_service_clause(query))
+
+    def test_detects_service_clause_with_wikibase_label_prefixed_name(self):
+        query = """
+        PREFIX wikibase: <http://wikiba.se/ontology#>
+        SELECT * WHERE {
+          SERVICE wikibase:label {
+            ?item ?p ?o .
+          }
+        }
+        """
+        self.assertTrue(service._contains_service_clause(query))
+
+    def test_query_type_ignores_prefix_name_that_matches_query_keyword(self):
+        query = """
+        PREFIX select: <http://example.org/ns#>
+        ASK { ?s ?p ?o }
+        """
+        self.assertEqual(service._query_type(query), "ASK")
+
+    def test_query_type_supports_base_and_prefix_prologue(self):
+        query = """
+        # comment line
+        BASE <http://example.org/base/>
+        PREFIX ask: <http://example.org/ns#>
+        CONSTRUCT { ?s ?p ?o } WHERE { ?s ?p ?o }
+        """
+        self.assertEqual(service._query_type(query), "CONSTRUCT")
+
+    def test_execute_query_handles_prefix_name_that_matches_query_keyword(self):
+        if service.Store is None:
+            self.skipTest("pyoxigraph is not installed")
+
+        psid = 999990
+        records = [{"id": 1, "title": "Example"}]
+        query = """
+        PREFIX select: <http://example.org/ns#>
+        ASK { ?s ?p ?o }
+        """
+
+        try:
+            service._build_store(psid, records, "https://example.invalid")
+            execution = service.execute_query(psid, query, refresh=False)
+            self.assertEqual(execution["query_type"], "ASK")
+            self.assertEqual(execution["result_format"], "sparql-json")
+            self.assertIn("boolean", execution["sparql_json"])
+        finally:
+            shutil.rmtree(service._store_path(psid), ignore_errors=True)
