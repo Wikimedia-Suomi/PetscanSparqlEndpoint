@@ -24,16 +24,18 @@ A Django application with a static HTML + Vue interface that:
 ```bash
 python3 -m venv .venv
 source .venv/bin/activate
-pip install -r requirements.txt
+pip install -r requirements.txt -r requirements-dev.txt
 export DJANGO_SECRET_KEY='dev-only-change-me'
+export OXIGRAPH_BASE_DIR="$PWD/data/oxigraph"
 ```
 
-### Run tests
+### Run tests (including lint, type-check and security scans)
 
 ```bash
 source .venv/bin/activate
 export DJANGO_SECRET_KEY='dev-only-change-me'
-python manage.py test
+export OXIGRAPH_BASE_DIR="$PWD/data/oxigraph"
+./scripts/run_tests.sh
 ```
 
 ### Run app
@@ -41,6 +43,7 @@ python manage.py test
 ```bash
 source .venv/bin/activate
 export DJANGO_SECRET_KEY='dev-only-change-me'
+export OXIGRAPH_BASE_DIR="$PWD/data/oxigraph"
 python manage.py runserver
 ```
 
@@ -53,6 +56,7 @@ Security-related Django settings are configured via environment variables:
 - `DJANGO_SECRET_KEY` (required)
 - `DJANGO_DEBUG` (`1/true/yes/on` enables debug; default: disabled)
 - `DJANGO_ALLOWED_HOSTS` (comma-separated list, example: `localhost,127.0.0.1,mydomain.tld`)
+- `OXIGRAPH_BASE_DIR` (required absolute path for Oxigraph store directory)
 
 ## Example PetScan JSON Files
 
@@ -97,6 +101,7 @@ Request body:
 - `psid` (required): PetScan ID whose Oxigraph dataset should be queried
 - `query` (required): SPARQL query (for `GET`) or in the request body (for `POST`)
 - `refresh` (optional): `1/true` to force reloading PetScan data before query
+- any additional URL query parameters are forwarded to PetScan JSON fetch (except reserved keys `psid`, `format`, `query`, `refresh`)
 
 ### Example `GET`
 
@@ -155,6 +160,7 @@ Behavior:
 - Links are grouped by wiki.
 - SQL lookup runs one parameterized query per wiki and closes the DB connection after the query.
 - API mode is still available with `WIKIDATA_LOOKUP_BACKEND=api`.
+- Set `OXIGRAPH_BASE_DIR` to the tool tmp path in Toolforge.
 
 ### Toolforge-only parity test
 
@@ -164,3 +170,7 @@ This test compares SQL and API lookup results for sample titles (including non-A
 export TOOLFORGE_INTEGRATION_TESTS=1
 ./.venv/bin/python manage.py test tests.test_toolforge_integration
 ```
+
+## License
+
+This project is licensed under the MIT License. See [LICENSE](LICENSE).

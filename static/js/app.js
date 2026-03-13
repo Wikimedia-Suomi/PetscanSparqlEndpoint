@@ -4,11 +4,14 @@
   }
 
   var createApp = window.Vue.createApp;
+  var hostname = window.location && window.location.hostname ? window.location.hostname.toLowerCase() : "";
+  var isLocalDevHost = hostname === "localhost" || hostname === "127.0.0.1";
+  var defaultPsid = isLocalDevHost ? "43641756" : "";
 
   var app = createApp({
     data: function () {
       return {
-        psid: "43641756",
+        psid: defaultPsid,
         query: [
           "PREFIX ps: <https://petscan.wmcloud.org/ontology/>",
           "SELECT ?item ?title ?ns",

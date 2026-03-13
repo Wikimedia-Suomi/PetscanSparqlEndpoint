@@ -5,7 +5,6 @@ from typing import Dict, Mapping, Optional, Sequence
 from urllib.parse import urlencode
 from urllib.request import Request, urlopen
 
-
 _QID_RE = re.compile(r"Q([1-9][0-9]*)", re.IGNORECASE)
 
 
@@ -70,7 +69,7 @@ def fetch_wikibase_items_for_site_api(
     started_at = perf_counter()
 
     try:
-        with urlopen(request, timeout=timeout_seconds) as response:
+        with urlopen(request, timeout=timeout_seconds) as response:  # nosec B310
             raw = response.read()
         payload = json.loads(raw.decode("utf-8"))
     except Exception as exc:

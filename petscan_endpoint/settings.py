@@ -1,5 +1,6 @@
-from pathlib import Path
 import os
+from pathlib import Path
+
 from django.core.exceptions import ImproperlyConfigured
 
 BASE_DIR = Path(__file__).resolve().parent.parent
@@ -82,7 +83,7 @@ DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 DATA_DIR = BASE_DIR / "data"
 PETSCAN_ENDPOINT = "https://petscan.wmcloud.org/"
 PETSCAN_TIMEOUT_SECONDS = 30
-OXIGRAPH_BASE_DIR = DATA_DIR / "oxigraph"
+OXIGRAPH_BASE_DIR = _required_env("OXIGRAPH_BASE_DIR")
 
 WIKIDATA_LOOKUP_BACKEND = os.getenv("WIKIDATA_LOOKUP_BACKEND", "api")
 TOOLFORGE_USE_REPLICA = os.getenv("TOOLFORGE_USE_REPLICA", "0") in {"1", "true", "TRUE", "yes", "on"}

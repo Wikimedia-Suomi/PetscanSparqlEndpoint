@@ -60,6 +60,34 @@ class ApiViewTests(SimpleTestCase):
         self.assertEqual(response.status_code, 200)
         self.assertIn("application/sparql-results+json", response["Content-Type"])
         self.assertEqual(json.loads(response.content.decode("utf-8"))["boolean"], True)
+        execute_query.assert_called_once_with(123, "ASK { ?s ?p ?o }", refresh=False, petscan_params={})
+
+    @patch("petscan.views.petscan_service.execute_query")
+    def test_sparql_endpoint_forwards_extra_query_params_to_petscan(self, execute_query):
+        execute_query.return_value = {
+            "query_type": "ASK",
+            "result_format": "sparql-json",
+            "sparql_json": {"head": {}, "boolean": True},
+            "meta": {},
+        }
+
+        response = self.client.get(
+            "/sparql",
+            data={
+                "psid": 123,
+                "query": "ASK { ?s ?p ?o }",
+                "category": "Turku",
+                "language": "fi",
+            },
+        )
+
+        self.assertEqual(response.status_code, 200)
+        execute_query.assert_called_once_with(
+            123,
+            "ASK { ?s ?p ?o }",
+            refresh=False,
+            petscan_params={"category": ["Turku"], "language": ["fi"]},
+        )
 
     @patch("petscan.views.petscan_service.execute_query")
     def test_query_endpoint_returns_400_for_service_clause(self, execute_query):

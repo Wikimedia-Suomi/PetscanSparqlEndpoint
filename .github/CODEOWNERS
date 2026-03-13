@@ -1,0 +1,7 @@
+# Default owner for all files in this repository.
+* zache-fi
+
+# Security-sensitive paths
+/petscan_endpoint/settings.py zache-fi
+/requirements*.txt zache-fi
+/.github/workflows/ zache-fi

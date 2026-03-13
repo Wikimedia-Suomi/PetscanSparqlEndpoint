@@ -1,7 +1,9 @@
 import json
 import shutil
 from pathlib import Path
+from typing import Any, Dict, List
 from unittest.mock import patch
+from urllib.parse import parse_qs, urlparse
 
 from django.conf import settings
 from django.test import SimpleTestCase
@@ -140,7 +142,7 @@ class PetscanServiceParsingTests(SimpleTestCase):
 
         first_row = records[0]
         rdf_fields = list(service._iter_scalar_fields(first_row))
-        fields_by_key = {}
+        fields_by_key: Dict[str, List[Any]] = {}
         for key, value in rdf_fields:
             fields_by_key.setdefault(key, []).append(value)
 
@@ -175,6 +177,31 @@ class PetscanServiceParsingTests(SimpleTestCase):
         self.assertIn("thumbnail_image", field_map)
         self.assertIn("coordinate_lat", field_map)
         self.assertIn("coordinate_lon", field_map)
+
+    def test_build_petscan_url_forwards_extra_query_params(self):
+        url = service._build_petscan_url(
+            43641756,
+            petscan_params={
+                "category": ["Turku"],
+                "language": "fi",
+                "psid": "999",
+                "format": "xml",
+            },
+        )
+        parsed_query = parse_qs(urlparse(url).query)
+
+        self.assertEqual(parsed_query.get("psid"), ["43641756"])
+        self.assertEqual(parsed_query.get("format"), ["json"])
+        self.assertEqual(parsed_query.get("category"), ["Turku"])
+        self.assertEqual(parsed_query.get("language"), ["fi"])
+
+    def test_meta_source_params_must_match_requested_params(self):
+        meta = {"source_params": {"category": ["Turku"], "language": ["fi"]}}
+
+        self.assertTrue(
+            service._meta_has_matching_source_params(meta, {"category": ["Turku"], "language": "fi"})
+        )
+        self.assertFalse(service._meta_has_matching_source_params(meta, {"category": ["Helsinki"]}))
 
     @patch("petscan.service._wikidata_lookup_backend", return_value=service._LOOKUP_BACKEND_API)
     @patch("petscan.service._fetch_wikibase_items_for_site_api")

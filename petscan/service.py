@@ -9,21 +9,26 @@ from urllib.parse import quote, urlencode
 from urllib.request import Request, urlopen
 
 from django.conf import settings
+
 from .enrichment_api import fetch_wikibase_items_for_site_api as _api_fetch_wikibase_items_for_site
 from .enrichment_sql import (
     fetch_wikibase_items_for_site_sql as _sql_fetch_wikibase_items_for_site,
-    pymysql,
 )
+from .enrichment_sql import (
+    pymysql as _sql_pymysql,
+)
+
+pymysql = _sql_pymysql
 
 try:
     from pyoxigraph import BlankNode, DefaultGraph, Literal, NamedNode, Quad, Store
 except ImportError:  # pragma: no cover - dependency check at runtime
-    BlankNode = None  # type: ignore[assignment]
-    DefaultGraph = None  # type: ignore[assignment]
-    Literal = None  # type: ignore[assignment]
-    NamedNode = None  # type: ignore[assignment]
-    Quad = None  # type: ignore[assignment]
-    Store = None  # type: ignore[assignment]
+    BlankNode = None  # type: ignore[misc,assignment]
+    DefaultGraph = None  # type: ignore[misc,assignment]
+    Literal = None  # type: ignore[misc,assignment]
+    NamedNode = None  # type: ignore[misc,assignment]
+    Quad = None  # type: ignore[misc,assignment]
+    Store = None  # type: ignore[misc,assignment]
 
 PREDICATE_BASE = "https://petscan.wmcloud.org/ontology/"
 ITEM_BASE = "https://petscan.wmcloud.org/psid"
@@ -46,6 +51,7 @@ _FIELD_RENAMES = {
 }
 _LOOKUP_BACKEND_API = "api"
 _LOOKUP_BACKEND_TOOLFORGE_SQL = "toolforge_sql"
+_PETSCAN_RESERVED_QUERY_PARAMS = {"psid", "format", "query", "refresh"}
 
 _lock_guard = threading.Lock()
 _psid_locks = {}  # type: Dict[int, threading.Lock]
@@ -83,14 +89,51 @@ def _meta_path(psid: int) -> Path:
     return _store_path(psid) / "meta.json"
 
 
-def _build_petscan_url(psid: int) -> str:
+def _normalize_petscan_params(params: Optional[Mapping[str, Any]]) -> Dict[str, List[str]]:
+    normalized = {}  # type: Dict[str, List[str]]
+    if not params or not isinstance(params, Mapping):
+        return normalized
+
+    for key, raw_value in params.items():
+        text_key = str(key).strip()
+        if not text_key:
+            continue
+        if text_key.lower() in _PETSCAN_RESERVED_QUERY_PARAMS:
+            continue
+
+        values = []  # type: List[str]
+        if isinstance(raw_value, (list, tuple, set)):
+            for item in raw_value:
+                text_value = str(item).strip()
+                if text_value:
+                    values.append(text_value)
+        else:
+            text_value = str(raw_value).strip()
+            if text_value:
+                values.append(text_value)
+
+        if values:
+            normalized[text_key] = values
+
+    return normalized
+
+
+def _build_petscan_url(psid: int, petscan_params: Optional[Mapping[str, Any]] = None) -> str:
     endpoint = str(settings.PETSCAN_ENDPOINT).rstrip("/")
-    query = urlencode({"psid": str(psid), "format": "json"})
+    normalized_params = _normalize_petscan_params(petscan_params)
+    query_pairs = [("psid", str(psid)), ("format", "json")]
+    for key in sorted(normalized_params.keys()):
+        for value in normalized_params[key]:
+            query_pairs.append((key, value))
+    query = urlencode(query_pairs)
     return "{}/?{}".format(endpoint, query)
 
 
-def _fetch_petscan_json(psid: int) -> Tuple[Dict[str, Any], str]:
-    source_url = _build_petscan_url(psid)
+def _fetch_petscan_json(
+    psid: int,
+    petscan_params: Optional[Mapping[str, Any]] = None,
+) -> Tuple[Dict[str, Any], str]:
+    source_url = _build_petscan_url(psid, petscan_params=petscan_params)
     request = Request(
         source_url,
         headers={
@@ -101,7 +144,7 @@ def _fetch_petscan_json(psid: int) -> Tuple[Dict[str, Any], str]:
     timeout = int(getattr(settings, "PETSCAN_TIMEOUT_SECONDS", 30))
 
     try:
-        with urlopen(request, timeout=timeout) as response:
+        with urlopen(request, timeout=timeout) as response:  # nosec B310
             raw = response.read()
     except Exception as exc:
         raise PetscanServiceError("Failed to fetch PetScan data: {}".format(exc)) from exc
@@ -210,7 +253,7 @@ def _record_page_id(record: Mapping[str, Any]) -> Optional[int]:
             continue
         try:
             page_id = int(str(value).strip())
-        except Exception:
+        except (TypeError, ValueError):
             continue
         if page_id > 0:
             return page_id
@@ -222,8 +265,9 @@ def _is_commons_file_record(record: Mapping[str, Any]) -> bool:
     if wiki_value and wiki_value in {"commonswiki", "commons.wikimedia.org"}:
         return True
 
+    namespace_value = record.get("namespace")
     try:
-        namespace = int(record.get("namespace")) if record.get("namespace") is not None else None
+        namespace = int(namespace_value) if namespace_value is not None else None
     except Exception:
         namespace = None
 
@@ -534,9 +578,9 @@ def _build_gil_link_wikidata_map(records: Sequence[Mapping[str, Any]]) -> Dict[s
     for link_uri, (site, _namespace, api_title, _db_title) in link_targets.items():
         if link_uri in link_to_qid:
             continue
-        qid = site_title_to_qid.get((site, _normalize_page_title(api_title)))
-        if qid is not None:
-            link_to_qid[link_uri] = qid
+        resolved_qid = site_title_to_qid.get((site, _normalize_page_title(api_title)))
+        if resolved_qid is not None:
+            link_to_qid[link_uri] = resolved_qid
 
     return link_to_qid
 
@@ -700,7 +744,12 @@ def _summarize_structure(
     }
 
 
-def _build_store(psid: int, records: Sequence[Mapping[str, Any]], source_url: str) -> Dict[str, Any]:
+def _build_store(
+    psid: int,
+    records: Sequence[Mapping[str, Any]],
+    source_url: str,
+    source_params: Optional[Mapping[str, Any]] = None,
+) -> Dict[str, Any]:
     store_path = _store_path(psid)
     if store_path.exists():
         shutil.rmtree(store_path)
@@ -781,6 +830,7 @@ def _build_store(psid: int, records: Sequence[Mapping[str, Any]], source_url: st
         "psid": psid,
         "records": len(records),
         "source_url": source_url,
+        "source_params": _normalize_petscan_params(source_params),
         "loaded_at": loaded_at,
         "structure": _summarize_structure(records, gil_link_wikidata_map=gil_link_wikidata_map),
     }
@@ -802,20 +852,33 @@ def _has_existing_store(psid: int) -> bool:
     return _meta_path(psid).exists()
 
 
-def ensure_loaded(psid: int, refresh: bool = False) -> Dict[str, Any]:
+def _meta_has_matching_source_params(meta: Mapping[str, Any], petscan_params: Mapping[str, Any]) -> bool:
+    expected = _normalize_petscan_params(petscan_params)
+    actual = _normalize_petscan_params(meta.get("source_params") if isinstance(meta, Mapping) else {})
+    return expected == actual
+
+
+def ensure_loaded(
+    psid: int,
+    refresh: bool = False,
+    petscan_params: Optional[Mapping[str, Any]] = None,
+) -> Dict[str, Any]:
     _ensure_oxigraph()
     lock = _get_psid_lock(psid)
+    normalized_params = _normalize_petscan_params(petscan_params)
 
     with lock:
         if not refresh and _has_existing_store(psid):
-            return _read_meta(psid)
+            meta = _read_meta(psid)
+            if _meta_has_matching_source_params(meta, normalized_params):
+                return meta
 
-        payload, source_url = _fetch_petscan_json(psid)
+        payload, source_url = _fetch_petscan_json(psid, petscan_params=normalized_params)
         records = _extract_records(payload)
         if not records:
             raise PetscanServiceError("PetScan returned zero rows for psid {}.".format(psid))
 
-        return _build_store(psid, records, source_url)
+        return _build_store(psid, records, source_url, source_params=normalized_params)
 
 
 def _query_type(query: str) -> str:
@@ -924,7 +987,7 @@ def _serialize_select(result: Any) -> Dict[str, Any]:
             for variable in variables:
                 try:
                     term = solution[variable]
-                except Exception:
+                except (KeyError, TypeError, IndexError):
                     continue
                 bindings[variable] = _term_to_sparql_binding(term)
 
@@ -977,12 +1040,17 @@ def _serialize_graph(result: Any) -> str:
     return "\n".join(lines) + ("\n" if lines else "")
 
 
-def execute_query(psid: int, query: str, refresh: bool = False) -> Dict[str, Any]:
+def execute_query(
+    psid: int,
+    query: str,
+    refresh: bool = False,
+    petscan_params: Optional[Mapping[str, Any]] = None,
+) -> Dict[str, Any]:
     _ensure_oxigraph()
     if _contains_service_clause(query):
         raise ValueError("SERVICE clauses are not allowed in this endpoint.")
 
-    meta = ensure_loaded(psid, refresh=refresh)
+    meta = ensure_loaded(psid, refresh=refresh, petscan_params=petscan_params)
 
     store = Store(str(_store_path(psid)))
     qtype = _query_type(query)

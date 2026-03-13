@@ -4,4 +4,7 @@ __pycache__/
 *.log
 .venv/
 venv/
+.mypy_cache/
+.ruff_cache/
+.pytest_cache/
 data/oxigraph/

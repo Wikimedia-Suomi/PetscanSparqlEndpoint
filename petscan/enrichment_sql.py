@@ -1,12 +1,16 @@
 import os
 import re
 from time import perf_counter
-from typing import Dict, Optional, Sequence, Tuple
+from types import ModuleType
+from typing import Any, Dict, List, Optional, Sequence, Tuple, cast
 
+_pymysql_module: Optional[ModuleType]
 try:
-    import pymysql
+    import pymysql as _pymysql_module
 except ImportError:  # pragma: no cover - optional dependency
-    pymysql = None  # type: ignore[assignment]
+    _pymysql_module = None
+
+pymysql = cast(Any, _pymysql_module)
 
 
 _QID_RE = re.compile(r"Q([1-9][0-9]*)", re.IGNORECASE)
@@ -36,9 +40,9 @@ def fetch_wikibase_items_for_site_sql(
     targets: Sequence[Tuple[int, str, str]],
     timeout_seconds: int,
     replica_host: str,
-    replica_cnf: str = "",
-    replica_user: str = "",
-    replica_password: str = "",
+    replica_cnf: Optional[str] = None,
+    replica_user: Optional[str] = None,
+    replica_password: Optional[str] = None,
 ) -> Dict[str, str]:
     if not targets or pymysql is None:
         return {}
@@ -74,21 +78,21 @@ def fetch_wikibase_items_for_site_sql(
         return {}
 
     placeholders = ", ".join(["(%s, %s)"] * len(unique_pairs))
-    sql = (
+    sql = (  # nosec B608
         "SELECT p.page_namespace, p.page_title, pp.pp_value "
         "FROM page AS p "
         "LEFT JOIN page_props AS pp "
         "ON pp.pp_page = p.page_id AND pp.pp_propname = %s "
         "WHERE (p.page_namespace, p.page_title) IN ({})"
     ).format(placeholders)
-    params = ["wikibase_item"]
+    params: List[Any] = ["wikibase_item"]
     for namespace, db_title in unique_pairs:
         params.extend([namespace, db_title])
 
     started_at = perf_counter()
     connection = None
     try:
-        connection = pymysql.connect(**connect_kwargs)
+        connection = pymysql.connect(**cast(Any, connect_kwargs))
         with connection.cursor() as cursor:
             cursor.execute(sql, params)
             rows = cursor.fetchall()
@@ -108,8 +112,8 @@ def fetch_wikibase_items_for_site_sql(
         if connection is not None:
             try:
                 connection.close()
-            except Exception:
-                pass
+            except Exception as exc:
+                print("[wikimedia-sql] CLOSE_ERROR {}".format(exc), flush=True)
 
     elapsed_ms = (perf_counter() - started_at) * 1000.0
     print(
