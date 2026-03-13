@@ -1,0 +1,99 @@
+from pathlib import Path
+import os
+from django.core.exceptions import ImproperlyConfigured
+
+BASE_DIR = Path(__file__).resolve().parent.parent
+
+
+def _env_bool(name: str, default: bool = False) -> bool:
+    value = os.getenv(name)
+    if value is None:
+        return default
+    return value.strip().lower() in {"1", "true", "yes", "on"}
+
+
+def _env_list(name: str, default):
+    value = os.getenv(name)
+    if value is None:
+        return list(default)
+    items = [item.strip() for item in value.split(",")]
+    return [item for item in items if item]
+
+
+def _required_env(name: str) -> str:
+    value = os.getenv(name, "").strip()
+    if not value:
+        raise ImproperlyConfigured("{} environment variable is required.".format(name))
+    return value
+
+
+SECRET_KEY = _required_env("DJANGO_SECRET_KEY")
+DEBUG = _env_bool("DJANGO_DEBUG", default=False)
+ALLOWED_HOSTS = _env_list("DJANGO_ALLOWED_HOSTS", default=["127.0.0.1", "localhost", "testserver"])
+
+INSTALLED_APPS = [
+    "django.contrib.contenttypes",
+    "django.contrib.staticfiles",
+    "petscan",
+]
+
+MIDDLEWARE = [
+    "django.middleware.security.SecurityMiddleware",
+    "django.middleware.common.CommonMiddleware",
+    "django.middleware.csrf.CsrfViewMiddleware",
+    "django.middleware.clickjacking.XFrameOptionsMiddleware",
+]
+
+ROOT_URLCONF = "petscan_endpoint.urls"
+
+TEMPLATES = [
+    {
+        "BACKEND": "django.template.backends.django.DjangoTemplates",
+        "DIRS": [BASE_DIR / "templates"],
+        "APP_DIRS": True,
+        "OPTIONS": {
+            "context_processors": [
+                "django.template.context_processors.request",
+            ],
+        },
+    },
+]
+
+WSGI_APPLICATION = "petscan_endpoint.wsgi.application"
+ASGI_APPLICATION = "petscan_endpoint.asgi.application"
+
+DATABASES = {
+    "default": {
+        "ENGINE": "django.db.backends.sqlite3",
+        "NAME": BASE_DIR / "db.sqlite3",
+    }
+}
+
+LANGUAGE_CODE = "en-us"
+TIME_ZONE = "UTC"
+USE_I18N = True
+USE_TZ = True
+
+STATIC_URL = "/static/"
+STATICFILES_DIRS = [BASE_DIR / "static"]
+
+DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
+
+DATA_DIR = BASE_DIR / "data"
+PETSCAN_ENDPOINT = "https://petscan.wmcloud.org/"
+PETSCAN_TIMEOUT_SECONDS = 30
+OXIGRAPH_BASE_DIR = DATA_DIR / "oxigraph"
+
+WIKIDATA_LOOKUP_BACKEND = os.getenv("WIKIDATA_LOOKUP_BACKEND", "api")
+TOOLFORGE_USE_REPLICA = os.getenv("TOOLFORGE_USE_REPLICA", "0") in {"1", "true", "TRUE", "yes", "on"}
+TOOLFORGE_REPLICA_HOST = os.getenv("TOOLFORGE_REPLICA_HOST", "tools.db.svc.wikimedia.cloud")
+TOOLFORGE_REPLICA_CNF = os.getenv("TOOLFORGE_REPLICA_CNF", "")
+TOOLFORGE_REPLICA_USER = os.getenv("TOOLFORGE_REPLICA_USER", "")
+TOOLFORGE_REPLICA_PASSWORD = os.getenv("TOOLFORGE_REPLICA_PASSWORD", "")
+TOOLFORGE_INTEGRATION_TESTS = os.getenv("TOOLFORGE_INTEGRATION_TESTS", "0") in {
+    "1",
+    "true",
+    "TRUE",
+    "yes",
+    "on",
+}
