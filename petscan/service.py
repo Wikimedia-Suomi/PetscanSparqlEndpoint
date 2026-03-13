@@ -1,24 +1,30 @@
+"""Service-layer orchestration for PetScan ingestion and SPARQL execution.
+
+Responsibilities:
+- fetch and normalize PetScan datasets
+- enrich GIL links with Wikidata IDs
+- build/load Oxigraph stores with metadata cache
+- execute and serialize read-only SPARQL queries
+"""
+
 import json
 import re
 import shutil
 import threading
+from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Dict, Iterable, List, Mapping, Optional, Sequence, Tuple
+from typing import Any, Dict, Iterable, List, Mapping, Optional, Sequence, Tuple, TypedDict, cast
 from urllib.parse import quote, urlencode, urlsplit
 from urllib.request import Request, urlopen
 
 from django.conf import settings
 
+from . import enrichment_sql as _enrichment_sql
 from .enrichment_api import fetch_wikibase_items_for_site_api as _api_fetch_wikibase_items_for_site
-from .enrichment_sql import (
-    fetch_wikibase_items_for_site_sql as _sql_fetch_wikibase_items_for_site,
-)
-from .enrichment_sql import (
-    pymysql as _sql_pymysql,
-)
 
-pymysql = _sql_pymysql
+_sql_fetch_wikibase_items_for_site = _enrichment_sql.fetch_wikibase_items_for_site_sql
+pymysql = _enrichment_sql.pymysql
 
 try:
     from pyoxigraph import BlankNode, DefaultGraph, Literal, NamedNode, Quad, Store
@@ -65,6 +71,78 @@ _psid_locks = {}  # type: Dict[int, threading.Lock]
 
 class PetscanServiceError(RuntimeError):
     pass
+
+
+class StructureField(TypedDict):
+    source_key: str
+    predicate: str
+    present_in_rows: int
+    primary_type: str
+    observed_types: List[str]
+
+
+class StructureSummary(TypedDict):
+    row_count: int
+    field_count: int
+    fields: List[StructureField]
+
+
+class StoreMeta(TypedDict):
+    psid: int
+    records: int
+    source_url: str
+    source_params: Dict[str, List[str]]
+    loaded_at: str
+    structure: StructureSummary
+
+
+class QueryExecution(TypedDict, total=False):
+    query_type: str
+    result_format: str
+    sparql_json: Dict[str, Any]
+    ntriples: str
+    meta: StoreMeta
+
+
+@dataclass(frozen=True)
+class StoreMetaModel:
+    psid: int
+    records: int
+    source_url: str
+    source_params: Dict[str, List[str]]
+    loaded_at: str
+    structure: StructureSummary
+
+    def to_dict(self) -> StoreMeta:
+        return {
+            "psid": self.psid,
+            "records": self.records,
+            "source_url": self.source_url,
+            "source_params": self.source_params,
+            "loaded_at": self.loaded_at,
+            "structure": self.structure,
+        }
+
+
+@dataclass(frozen=True)
+class QueryExecutionModel:
+    query_type: str
+    result_format: str
+    meta: StoreMeta
+    sparql_json: Optional[Dict[str, Any]] = None
+    ntriples: Optional[str] = None
+
+    def to_dict(self) -> QueryExecution:
+        payload: QueryExecution = {
+            "query_type": self.query_type,
+            "result_format": self.result_format,
+            "meta": self.meta,
+        }
+        if self.result_format == "sparql-json":
+            payload["sparql_json"] = self.sparql_json if self.sparql_json is not None else {}
+        else:
+            payload["ntriples"] = self.ntriples if self.ntriples is not None else ""
+        return payload
 
 
 def _ensure_oxigraph() -> None:
@@ -725,7 +803,7 @@ def _value_kind(value: Any) -> str:
 def _summarize_structure(
     records: Sequence[Mapping[str, Any]],
     gil_link_wikidata_map: Optional[Mapping[str, str]] = None,
-) -> Dict[str, Any]:
+) -> StructureSummary:
     field_info = {}  # type: Dict[str, Dict[str, Any]]
 
     for row in records:
@@ -759,7 +837,7 @@ def _summarize_structure(
             for kind in sorted({_value_kind(v) for v in values}):
                 type_counts[kind] = int(type_counts.get(kind, 0)) + 1
 
-    fields = []  # type: List[Dict[str, Any]]
+    fields: List[StructureField] = []
     for key in sorted(field_info.keys()):
         info = field_info[key]
         type_counts = info["type_counts"]
@@ -790,7 +868,7 @@ def _build_store(
     records: Sequence[Mapping[str, Any]],
     source_url: str,
     source_params: Optional[Mapping[str, Any]] = None,
-) -> Dict[str, Any]:
+) -> StoreMeta:
     store_path = _store_path(psid)
     if store_path.exists():
         shutil.rmtree(store_path)
@@ -867,14 +945,15 @@ def _build_store(
                     )
                 )
 
-    meta = {
-        "psid": psid,
-        "records": len(records),
-        "source_url": source_url,
-        "source_params": _normalize_petscan_params(source_params),
-        "loaded_at": loaded_at,
-        "structure": _summarize_structure(records, gil_link_wikidata_map=gil_link_wikidata_map),
-    }
+    meta_model = StoreMetaModel(
+        psid=psid,
+        records=len(records),
+        source_url=source_url,
+        source_params=_normalize_petscan_params(source_params),
+        loaded_at=loaded_at,
+        structure=_summarize_structure(records, gil_link_wikidata_map=gil_link_wikidata_map),
+    )
+    meta = meta_model.to_dict()
     _meta_path(psid).write_text(json.dumps(meta, indent=2), encoding="utf-8")
     return meta
 
@@ -930,7 +1009,7 @@ def ensure_loaded(
     psid: int,
     refresh: bool = False,
     petscan_params: Optional[Mapping[str, Any]] = None,
-) -> Dict[str, Any]:
+) -> StoreMeta:
     _ensure_oxigraph()
     lock = _get_psid_lock(psid)
     normalized_params = _normalize_petscan_params(petscan_params)
@@ -939,7 +1018,7 @@ def ensure_loaded(
         if not refresh and _has_existing_store(psid):
             meta = _read_meta(psid)
             if _meta_is_usable(meta, psid) and _meta_has_matching_source_params(meta, normalized_params):
-                return meta
+                return cast(StoreMeta, meta)
 
         payload, source_url = _fetch_petscan_json(psid, petscan_params=normalized_params)
         records = _extract_records(payload)
@@ -1134,7 +1213,7 @@ def execute_query(
     query: str,
     refresh: bool = False,
     petscan_params: Optional[Mapping[str, Any]] = None,
-) -> Dict[str, Any]:
+) -> QueryExecution:
     _ensure_oxigraph()
     if _contains_service_clause(query):
         raise ValueError("SERVICE clauses are not allowed in this endpoint.")
@@ -1150,27 +1229,27 @@ def execute_query(
         raise PetscanServiceError("SPARQL query failed: {}".format(exc)) from exc
 
     if qtype == "SELECT":
-        sparql_json = _serialize_select(raw_result)
-        return {
-            "query_type": qtype,
-            "result_format": "sparql-json",
-            "sparql_json": sparql_json,
-            "meta": meta,
-        }
+        result = QueryExecutionModel(
+            query_type=qtype,
+            result_format="sparql-json",
+            sparql_json=_serialize_select(raw_result),
+            meta=meta,
+        )
+        return result.to_dict()
 
     if qtype == "ASK":
-        sparql_json = _serialize_ask(raw_result)
-        return {
-            "query_type": qtype,
-            "result_format": "sparql-json",
-            "sparql_json": sparql_json,
-            "meta": meta,
-        }
+        result = QueryExecutionModel(
+            query_type=qtype,
+            result_format="sparql-json",
+            sparql_json=_serialize_ask(raw_result),
+            meta=meta,
+        )
+        return result.to_dict()
 
-    ntriples = _serialize_graph(raw_result)
-    return {
-        "query_type": qtype,
-        "result_format": "n-triples",
-        "ntriples": ntriples,
-        "meta": meta,
-    }
+    result = QueryExecutionModel(
+        query_type=qtype,
+        result_format="n-triples",
+        ntriples=_serialize_graph(raw_result),
+        meta=meta,
+    )
+    return result.to_dict()
