@@ -5,7 +5,7 @@ import shutil
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Dict, List, Mapping, Optional, Sequence
+from typing import Any, Dict, List, Mapping, Optional, Sequence, Set, Tuple
 
 from . import service_links as links
 from . import service_rdf as rdf
@@ -15,6 +15,7 @@ from .service_errors import PetscanServiceError
 from .service_types import StoreMeta, StoreMetaModel, StructureSummary
 
 __all__ = ["build_store"]
+_QUAD_BUFFER_TARGET = 20_000
 
 try:
     from pyoxigraph import DefaultGraph, Literal, NamedNode, Quad, Store
@@ -44,6 +45,11 @@ class _RecordWriteContext:
     psid: int
     loaded_at: str
     gil_link_wikidata_map: Mapping[str, str]
+    default_graph: Any
+    xsd_integer_type: Any
+    xsd_date_time_type: Any
+    psid_literal: Any
+    loaded_at_literal: Any
 
 
 def _reset_store_directory(psid: int) -> Path:
@@ -76,12 +82,21 @@ def _build_store_predicates() -> _StorePredicates:
 
 
 def _write_record_quads(
-    store_instance: Any,
     index: int,
     row: Mapping[str, Any],
     context: _RecordWriteContext,
-) -> Dict[str, List[Any]]:
-    row_fields: Dict[str, List[Any]] = {}
+) -> Tuple[Dict[str, Set[str]], List[Any]]:
+    row_field_kinds: Dict[str, Set[str]] = {}
+    row_quads: List[Any] = []
+
+    def _track_field_kind(key: str, value: Any) -> None:
+        kind = rdf.value_kind(value)
+        kinds = row_field_kinds.get(key)
+        if kinds is None:
+            row_field_kinds[key] = {kind}
+        else:
+            kinds.add(kind)
+
     predicates = context.predicates
     subject = rdf.item_subject(context.psid, row, index)
     resolved_gil_links = links.resolve_gil_links(
@@ -89,63 +104,73 @@ def _write_record_quads(
         gil_link_wikidata_map=context.gil_link_wikidata_map,
     )
     gil_link_uris = [link_uri for link_uri, _qid in resolved_gil_links]
-    store_instance.add(Quad(subject, predicates.rdf_type, predicates.page_class, DefaultGraph()))
-    store_instance.add(
+    row_quads.append(Quad(subject, predicates.rdf_type, predicates.page_class, context.default_graph))
+    row_quads.append(
         Quad(
             subject,
             predicates.psid,
-            Literal(str(context.psid), datatype=NamedNode(rdf.XSD_INTEGER_IRI)),
-            DefaultGraph(),
+            context.psid_literal,
+            context.default_graph,
         )
     )
-    store_instance.add(
+    row_quads.append(
         Quad(
             subject,
             predicates.position,
-            Literal(str(index), datatype=NamedNode(rdf.XSD_INTEGER_IRI)),
-            DefaultGraph(),
+            Literal(str(index), datatype=context.xsd_integer_type),
+            context.default_graph,
         )
     )
-    store_instance.add(
+    row_quads.append(
         Quad(
             subject,
             predicates.loaded_at,
-            Literal(context.loaded_at, datatype=NamedNode(rdf.XSD_DATE_TIME_IRI)),
-            DefaultGraph(),
+            context.loaded_at_literal,
+            context.default_graph,
         )
     )
     for key, value in rdf.iter_scalar_fields(row, gil_links=gil_link_uris):
-        row_fields.setdefault(key, []).append(value)
+        _track_field_kind(key, value)
         predicate = rdf.predicate_for(key)
         literal = rdf.literal_for(value)
-        store_instance.add(Quad(subject, predicate, literal, DefaultGraph()))
+        row_quads.append(Quad(subject, predicate, literal, context.default_graph))
 
     for link_uri, qid in resolved_gil_links:
-        row_fields.setdefault("gil_link", []).append(link_uri)
+        _track_field_kind("gil_link", link_uri)
         link_node = NamedNode(link_uri)
-        store_instance.add(Quad(subject, predicates.gil_link, link_node, DefaultGraph()))
+        row_quads.append(Quad(subject, predicates.gil_link, link_node, context.default_graph))
         if qid is not None:
-            row_fields.setdefault("gil_link_wikidata_id", []).append(qid)
-            row_fields.setdefault("gil_link_wikidata_entity", []).append(
-                "http://www.wikidata.org/entity/{}".format(qid)
-            )
-            store_instance.add(
+            _track_field_kind("gil_link_wikidata_id", qid)
+            entity_iri = "http://www.wikidata.org/entity/{}".format(qid)
+            _track_field_kind("gil_link_wikidata_entity", entity_iri)
+            row_quads.append(
                 Quad(
                     link_node,
                     predicates.gil_link_wikidata_id,
                     Literal(qid),
-                    DefaultGraph(),
+                    context.default_graph,
                 )
             )
-            store_instance.add(
+            row_quads.append(
                 Quad(
                     link_node,
                     predicates.gil_link_wikidata_entity,
-                    NamedNode("http://www.wikidata.org/entity/{}".format(qid)),
-                    DefaultGraph(),
+                    NamedNode(entity_iri),
+                    context.default_graph,
                 )
             )
-    return row_fields
+    return row_field_kinds, row_quads
+
+
+def _flush_quads(store_instance: Any, quad_buffer: Sequence[Any]) -> None:
+    if not quad_buffer:
+        return
+    bulk_extend = getattr(store_instance, "bulk_extend", None)
+    if callable(bulk_extend):
+        bulk_extend(quad_buffer)
+        return
+    for quad in quad_buffer:
+        store_instance.add(quad)
 
 
 def _build_store_meta(
@@ -189,16 +214,27 @@ def build_store(
         psid=psid,
         loaded_at=loaded_at,
         gil_link_wikidata_map=gil_link_wikidata_map,
+        default_graph=DefaultGraph(),
+        xsd_integer_type=NamedNode(rdf.XSD_INTEGER_IRI),
+        xsd_date_time_type=NamedNode(rdf.XSD_DATE_TIME_IRI),
+        psid_literal=Literal(str(psid), datatype=NamedNode(rdf.XSD_INTEGER_IRI)),
+        loaded_at_literal=Literal(loaded_at, datatype=NamedNode(rdf.XSD_DATE_TIME_IRI)),
     )
+    quad_buffer: List[Any] = []
 
     for index, row in enumerate(records):
-        row_fields = _write_record_quads(
-            store_instance=store_instance,
+        row_field_kinds, row_quads = _write_record_quads(
             index=index,
             row=row,
             context=write_context,
         )
-        structure_accumulator.add_row_fields(row_fields)
+        structure_accumulator.add_row_field_kinds(row_field_kinds)
+        quad_buffer.extend(row_quads)
+        if len(quad_buffer) >= _QUAD_BUFFER_TARGET:
+            _flush_quads(store_instance, quad_buffer)
+            quad_buffer = []
+
+    _flush_quads(store_instance, quad_buffer)
 
     meta = _build_store_meta(
         psid=psid,

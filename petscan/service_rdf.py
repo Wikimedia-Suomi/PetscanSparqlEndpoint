@@ -1,6 +1,7 @@
 """RDF field shaping and summary helpers for PetScan records."""
 
 import re
+from functools import lru_cache
 from typing import Any, Dict, Iterable, List, Mapping, Optional, Sequence, Tuple
 from urllib.parse import quote
 
@@ -34,7 +35,17 @@ __all__ = [
     "predicate_for",
     "StructureAccumulator",
     "summarize_structure",
+    "value_kind",
 ]
+
+if NamedNode is not None:
+    _XSD_INTEGER_NODE = NamedNode(XSD_INTEGER_IRI)
+    _XSD_DOUBLE_NODE = NamedNode(XSD_DOUBLE_IRI)
+    _XSD_BOOLEAN_NODE = NamedNode(XSD_BOOLEAN_IRI)
+else:  # pragma: no cover - dependency check at runtime
+    _XSD_INTEGER_NODE = None  # type: ignore[assignment]
+    _XSD_DOUBLE_NODE = None  # type: ignore[assignment]
+    _XSD_BOOLEAN_NODE = None  # type: ignore[assignment]
 
 _FIELD_NAME_RE = re.compile(r"[^0-9A-Za-z_]+")
 _FIELD_RENAMES = {
@@ -46,8 +57,10 @@ class StructureAccumulator:
     def __init__(self) -> None:
         self._field_info: Dict[str, Dict[str, Any]] = {}
 
-    def add_row_fields(self, row_fields: Mapping[str, Sequence[Any]]) -> None:
-        for key, values in row_fields.items():
+    def add_row_field_kinds(self, row_field_kinds: Mapping[str, Sequence[str]]) -> None:
+        for key, kinds in row_field_kinds.items():
+            if not kinds:
+                continue
             info = self._field_info.setdefault(
                 key,
                 {
@@ -60,8 +73,18 @@ class StructureAccumulator:
             info["present_in_rows"] += 1
 
             type_counts = info["type_counts"]
-            for kind in sorted({_value_kind(v) for v in values}):
+            for kind in kinds:
                 type_counts[kind] = int(type_counts.get(kind, 0)) + 1
+
+    def add_row_fields(self, row_fields: Mapping[str, Sequence[Any]]) -> None:
+        row_field_kinds: Dict[str, List[str]] = {}
+        for key, values in row_fields.items():
+            seen = set()
+            for value in values:
+                seen.add(value_kind(value))
+            if seen:
+                row_field_kinds[key] = list(seen)
+        self.add_row_field_kinds(row_field_kinds)
 
     def build_summary(self, row_count: int) -> StructureSummary:
         fields: List[StructureField] = []
@@ -90,6 +113,7 @@ class StructureAccumulator:
         }
 
 
+@lru_cache(maxsize=512)
 def _field_name(key: str) -> str:
     canonical = _FIELD_RENAMES.get(key, key)
     cleaned = _FIELD_NAME_RE.sub("_", canonical).strip("_")
@@ -100,17 +124,18 @@ def _field_name(key: str) -> str:
     return cleaned
 
 
+@lru_cache(maxsize=512)
 def predicate_for(key: str):
     return NamedNode(PREDICATE_BASE + _field_name(key))
 
 
 def literal_for(value: Any):
     if isinstance(value, bool):
-        return Literal("true" if value else "false", datatype=NamedNode(XSD_BOOLEAN_IRI))
+        return Literal("true" if value else "false", datatype=_XSD_BOOLEAN_NODE)
     if isinstance(value, int):
-        return Literal(str(value), datatype=NamedNode(XSD_INTEGER_IRI))
+        return Literal(str(value), datatype=_XSD_INTEGER_NODE)
     if isinstance(value, float):
-        return Literal(repr(value), datatype=NamedNode(XSD_DOUBLE_IRI))
+        return Literal(repr(value), datatype=_XSD_DOUBLE_NODE)
     return Literal(str(value))
 
 
@@ -153,7 +178,7 @@ def _is_commons_file_record(record: Mapping[str, Any]) -> bool:
     if wiki_value:
         return wiki_value in {"commonswiki", "commons.wikimedia.org"}
 
-    has_image_metadata = any(str(key).startswith("img_") for key in record.keys())
+    has_image_metadata = any(isinstance(key, str) and key.startswith("img_") for key in record)
 
     # PetScan media rows often omit explicit wiki while still representing Commons files.
     return has_image_metadata
@@ -206,13 +231,20 @@ def iter_scalar_fields(
     record: Mapping[str, Any],
     gil_links: Optional[Sequence[str]] = None,
 ) -> Iterable[Tuple[str, Any]]:
-    qid = links.extract_qid(record)
-    if qid is not None:
-        yield "qid", qid
-        yield "wikidata_entity", "https://www.wikidata.org/entity/{}".format(qid)
-
-    metadata = record.get("metadata")
+    record_get = record.get
+    metadata = record_get("metadata")
     metadata_map = metadata if isinstance(metadata, Mapping) else {}
+    if (
+        "wikidata_id" in record
+        or "qid" in record
+        or "q" in record
+        or "wikidata" in record
+        or "wikidata" in metadata_map
+    ):
+        qid = links.extract_qid(record)
+        if qid is not None:
+            yield "qid", qid
+            yield "wikidata_entity", "https://www.wikidata.org/entity/{}".format(qid)
 
     image_name = metadata_map.get("image")
     if isinstance(image_name, str) and image_name.strip():
@@ -243,16 +275,18 @@ def iter_scalar_fields(
             yield key, value
             continue
         if isinstance(value, list):
-            scalar_values = [
-                str(item)
-                for item in value
-                if isinstance(item, (str, int, float, bool)) and str(item).strip()
-            ]
+            scalar_values = []
+            for item in value:
+                if not isinstance(item, (str, int, float, bool)):
+                    continue
+                text = str(item).strip()
+                if text:
+                    scalar_values.append(text)
             if scalar_values:
                 yield key, "; ".join(scalar_values)
 
 
-def _value_kind(value: Any) -> str:
+def value_kind(value: Any) -> str:
     if isinstance(value, bool):
         return "boolean"
     if isinstance(value, int):
@@ -266,6 +300,11 @@ def _value_kind(value: Any) -> str:
     if isinstance(value, dict):
         return "object"
     return "other"
+
+
+def _value_kind(value: Any) -> str:
+    # Backward-compatible alias for internal callers.
+    return value_kind(value)
 
 
 def summarize_structure(
