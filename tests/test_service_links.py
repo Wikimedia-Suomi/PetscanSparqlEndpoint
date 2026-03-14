@@ -80,3 +80,29 @@ class ServiceLinksTests(ServiceTestCase):
         self.assertEqual(link_map.get("https://en.wikipedia.org/wiki/Albert_Einstein"), "Q937")
         self.assertEqual(len(fetch_mock.call_args_list), 1)
         self.assertIn("en.wikipedia.org", fetch_mock.call_args_list[0].args[0])
+
+    @patch("petscan.service_links.enrichment_sql.fetch_wikibase_items_for_site_sql")
+    def test_toolforge_sql_lookup_uses_wikidata_id_from_enriched_sql_payload(self, sql_fetch_mock):
+        sql_fetch_mock.return_value = {
+            "Albert_Einstein": {
+                "wikidata_id": "Q937",
+                "page_len": 886543,
+                "rev_timestamp": "20260314235959",
+            },
+            "Unknown_Page": {
+                "wikidata_id": None,
+                "page_len": 42,
+                "rev_timestamp": "20200101000000",
+            },
+        }
+
+        resolved = links.fetch_wikibase_items_for_site(
+            "enwiki",
+            [
+                links.SiteLookupTarget(namespace=0, api_title="Albert_Einstein", db_title="Albert_Einstein"),
+                links.SiteLookupTarget(namespace=0, api_title="Unknown_Page", db_title="Unknown_Page"),
+            ],
+            backend=links.LOOKUP_BACKEND_TOOLFORGE_SQL,
+        )
+
+        self.assertEqual(resolved, {"Albert_Einstein": "Q937"})

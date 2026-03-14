@@ -277,12 +277,20 @@ def _fetch_wikibase_items_for_site_sql(
 ) -> Dict[str, str]:
     timeout = int(getattr(settings, "PETSCAN_TIMEOUT_SECONDS", 30))
     sql_targets = [(target.namespace, target.api_title, target.db_title) for target in targets]
-    return enrichment_sql.fetch_wikibase_items_for_site_sql(
+    enriched_by_title = enrichment_sql.fetch_wikibase_items_for_site_sql(
         site,
         sql_targets,
         timeout_seconds=timeout,
         replica_cnf=str(getattr(settings, "TOOLFORGE_REPLICA_CNF", "") or "").strip(),
     )
+    resolved = {}  # type: Dict[str, str]
+    for title, enrichment in enriched_by_title.items():
+        if not isinstance(enrichment, Mapping):
+            continue
+        qid = _normalize_qid(enrichment.get("wikidata_id"))
+        if qid is not None:
+            resolved[title] = qid
+    return resolved
 
 
 def fetch_wikibase_items_for_site(
