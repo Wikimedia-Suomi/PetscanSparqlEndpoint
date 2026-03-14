@@ -95,6 +95,7 @@ def ensure_loaded(
     petscan_params: Optional[Mapping[str, Any]] = None,
 ) -> StoreMeta:
     _ensure_oxigraph()
+    store.prune_expired_stores(exclude_psids=[psid])
     lock = store.get_psid_lock(psid)
     normalized_params = source.normalize_petscan_params(petscan_params)
 

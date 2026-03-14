@@ -16,9 +16,6 @@
     <main id="app" class="page" v-cloak>
       <header class="hero" role="banner">
         <h1>PetScan SPARQL Endpoint</h1>
-        <p>
-          Run SPARQL queries against PetScan data directly in the browser.
-        </p>
       </header>
 
       <section class="card" aria-labelledby="query-heading">
@@ -156,8 +153,8 @@
           <code>[[ endpointPreview ]]</code>
         </p>
         <p>
-          For federated queries, include <code>psid</code> in the endpoint URL and send standard
-          SPARQL protocol requests to <code>/sparql</code>.
+          For federated queries, use path parameters in the endpoint URL, for example
+          <code>/sparql/psid=43641756&amp;categories=Turku</code>.
         </p>
       </section>
 

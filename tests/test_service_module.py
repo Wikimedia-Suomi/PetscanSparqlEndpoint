@@ -22,10 +22,12 @@ class ServiceModuleTests(ServiceTestCase):
     @patch("petscan.service.store_builder.build_store")
     @patch("petscan.service.source.extract_records")
     @patch("petscan.service.source.fetch_petscan_json")
+    @patch("petscan.service.store.prune_expired_stores")
     @patch("petscan.service._ensure_oxigraph")
     def test_ensure_loaded_rebuilds_when_meta_json_is_corrupt(
         self,
         _ensure_oxigraph_mock,
+        prune_expired_stores_mock,
         fetch_petscan_json_mock,
         extract_records_mock,
         build_store_mock,
@@ -55,6 +57,7 @@ class ServiceModuleTests(ServiceTestCase):
         result = service.ensure_loaded(psid, refresh=False)
 
         self.assertEqual(result["psid"], psid)
+        prune_expired_stores_mock.assert_called_once_with(exclude_psids=[psid])
         fetch_petscan_json_mock.assert_called_once_with(psid, petscan_params={})
         extract_records_mock.assert_called_once()
         build_store_mock.assert_called_once()

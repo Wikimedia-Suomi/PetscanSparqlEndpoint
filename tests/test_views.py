@@ -5,9 +5,17 @@ from unittest.mock import patch
 from django.test import SimpleTestCase
 
 API_STRUCTURE_PATH = "/api/structure"
-SPARQL_PATH = "/sparql"
+SPARQL_PATH = "/sparql/psid=123"
+SPARQL_FEDERATED_PATH = "/sparql/psid=43641756&categories=Turku"
 
 ASK_QUERY = "ASK { ?s ?p ?o }"
+FEDERATED_SUBQUERY = """
+SELECT ?item ?title WHERE {
+  ?item a <https://petscan.wmcloud.org/ontology/Page> .
+  OPTIONAL { ?item <https://petscan.wmcloud.org/ontology/title> ?title }
+}
+LIMIT 20
+""".strip()
 
 
 class ApiViewTests(SimpleTestCase):
@@ -65,7 +73,7 @@ class ApiViewTests(SimpleTestCase):
 
         response = self.client.get(
             SPARQL_PATH,
-            data={"psid": 123, "query": ASK_QUERY},
+            data={"query": ASK_QUERY},
         )
 
         self.assertEqual(response.status_code, 200)
@@ -78,7 +86,7 @@ class ApiViewTests(SimpleTestCase):
         execute_query.return_value = self._ask_execution_result()
 
         response = self.client.post(
-            SPARQL_PATH + "?psid=123&refresh=1",
+            SPARQL_PATH + "&refresh=1",
             data=ASK_QUERY,
             content_type="application/sparql-query",
         )
@@ -89,7 +97,7 @@ class ApiViewTests(SimpleTestCase):
 
     def test_sparql_endpoint_rejects_non_sparql_query_post_content_type(self):
         response = self.client.post(
-            SPARQL_PATH + "?psid=123",
+            SPARQL_PATH,
             data=json.dumps({"query": ASK_QUERY}),
             content_type="application/json",
         )
@@ -105,12 +113,9 @@ class ApiViewTests(SimpleTestCase):
         execute_query.return_value = self._ask_execution_result()
 
         response = self.client.get(
-            SPARQL_PATH,
+            "/sparql/psid=123&category=Turku&language=fi",
             data={
-                "psid": 123,
                 "query": ASK_QUERY,
-                "category": "Turku",
-                "language": "fi",
             },
         )
 
@@ -128,11 +133,35 @@ class ApiViewTests(SimpleTestCase):
 
         response = self.client.get(
             SPARQL_PATH,
-            data={"psid": 123, "query": "SELECT * WHERE { SERVICE <https://x> { ?s ?p ?o } }"},
+            data={"query": "SELECT * WHERE { SERVICE <https://x> { ?s ?p ?o } }"},
         )
 
         self.assertEqual(response.status_code, 400)
         self.assertEqual(
             response.content.decode("utf-8"),
             "SERVICE clauses are not allowed in this endpoint.",
+        )
+
+    @patch("petscan.views.petscan_service.execute_query")
+    def test_sparql_endpoint_accepts_federated_subquery_style_request(self, execute_query):
+        execute_query.return_value = {
+            "query_type": "SELECT",
+            "result_format": "sparql-json",
+            "sparql_json": {"head": {"vars": ["item", "title"]}, "results": {"bindings": []}},
+            "meta": {},
+        }
+
+        response = self.client.post(
+            SPARQL_FEDERATED_PATH,
+            data=FEDERATED_SUBQUERY,
+            content_type="application/sparql-query",
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertIn("application/sparql-results+json", response["Content-Type"])
+        execute_query.assert_called_once_with(
+            43641756,
+            FEDERATED_SUBQUERY,
+            refresh=False,
+            petscan_params={"categories": ["Turku"]},
         )

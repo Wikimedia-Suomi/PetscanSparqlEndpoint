@@ -99,30 +99,33 @@
 
         return entries;
       },
-      forwardedPetscanQueryString: function () {
-        if (!this.forwardedPetscanParams.length) {
+      serviceParamPath: function () {
+        var psid = String(this.psid || "").trim();
+        var entries = [];
+
+        if (psid) {
+          entries.push(["psid", psid]);
+        }
+        this.forwardedPetscanParams.forEach(function (entry) {
+          entries.push([entry[0], entry[1]]);
+        });
+
+        if (!entries.length) {
           return "";
         }
-        var params = new URLSearchParams();
-        this.forwardedPetscanParams.forEach(function (entry) {
-          params.append(entry[0], entry[1]);
-        });
-        return params.toString();
+
+        return entries
+          .map(function (entry) {
+            return encodeURIComponent(entry[0]) + "=" + encodeURIComponent(entry[1]);
+          })
+          .join("&");
       },
       endpointPreview: function () {
-        var base = window.location.origin + "/sparql";
-        var psid = String(this.psid || "").trim();
-        var extraQuery = this.forwardedPetscanQueryString;
-        if (!psid) {
-          return extraQuery ? base + "?psid=<psid>&" + extraQuery : base + "?psid=<psid>";
+        var base = window.location.origin + "/sparql/";
+        if (!this.serviceParamPath) {
+          return base + "psid=<psid>";
         }
-
-        var params = new URLSearchParams();
-        params.set("psid", psid);
-        this.forwardedPetscanParams.forEach(function (entry) {
-          params.append(entry[0], entry[1]);
-        });
-        return base + "?" + params.toString();
+        return base + this.serviceParamPath;
       },
       petscanQueryUrl: function () {
         var psid = String(this.psid || "").trim();
@@ -282,16 +285,25 @@
         return data;
       },
       sparqlRequest: async function (psid, query, refresh) {
-        var params = new URLSearchParams();
-        params.set("psid", String(psid || "").trim());
+        var pathEntries = [];
+        var normalizedPsid = String(psid || "").trim();
+        if (normalizedPsid) {
+          pathEntries.push(["psid", normalizedPsid]);
+        }
         if (refresh) {
-          params.set("refresh", "1");
+          pathEntries.push(["refresh", "1"]);
         }
         this.forwardedPetscanParams.forEach(function (entry) {
-          params.append(entry[0], entry[1]);
+          pathEntries.push([entry[0], entry[1]]);
         });
 
-        var response = await fetch("/sparql?" + params.toString(), {
+        var servicePath = pathEntries
+          .map(function (entry) {
+            return encodeURIComponent(entry[0]) + "=" + encodeURIComponent(entry[1]);
+          })
+          .join("&");
+
+        var response = await fetch("/sparql/" + servicePath, {
           method: "POST",
           headers: {
             "Content-Type": "application/sparql-query",

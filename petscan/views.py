@@ -1,6 +1,7 @@
 import json
 from dataclasses import dataclass
 from typing import Any, Dict, List
+from urllib.parse import parse_qs
 
 from django.http import HttpRequest, HttpResponse, JsonResponse
 from django.shortcuts import render
@@ -77,6 +78,31 @@ def _parse_request_context(request: HttpRequest) -> RequestContext:
     )
 
 
+def _parse_path_request_context(service_params: str) -> RequestContext:
+    raw = str(service_params or "").strip().lstrip("/")
+    if not raw:
+        raise ValueError("Path parameters are required. Use /sparql/psid=<id>[&key=value...]")
+
+    parsed = parse_qs(raw, keep_blank_values=False)
+    psid_values = [str(value).strip() for value in parsed.get("psid", []) if str(value).strip()]
+    if not psid_values:
+        raise ValueError("A numeric psid is required in path parameters.")
+    psid = _parse_psid(psid_values[-1])
+
+    refresh_values = [str(value).strip() for value in parsed.get("refresh", []) if str(value).strip()]
+    refresh = _parse_bool(refresh_values[-1] if refresh_values else None, default=False)
+
+    forwarded = {}  # type: Dict[str, List[str]]
+    for key, values in parsed.items():
+        if key.lower() in {"psid", "query", "refresh", "format"}:
+            continue
+        normalized_values = [str(value).strip() for value in values if str(value).strip()]
+        if normalized_values:
+            forwarded[key] = normalized_values
+
+    return RequestContext(psid=psid, refresh=refresh, petscan_params=forwarded)
+
+
 def _parse_sparql_query(request: HttpRequest) -> str:
     if request.method == "GET":
         return request.GET.get("query", "").strip()
@@ -88,8 +114,8 @@ def _parse_sparql_query(request: HttpRequest) -> str:
     return request.body.decode("utf-8").strip()
 
 
-def _parse_sparql_request(request: HttpRequest) -> SparqlRequest:
-    context = _parse_request_context(request)
+def _parse_sparql_request(request: HttpRequest, service_params: str) -> SparqlRequest:
+    context = _parse_path_request_context(service_params)
     query = _parse_sparql_query(request)
     if not query:
         raise ValueError("query must not be empty.")
@@ -129,7 +155,7 @@ def _add_cors_headers(response: HttpResponse) -> HttpResponse:
 
 
 @csrf_exempt
-def sparql_endpoint(request: HttpRequest) -> HttpResponse:
+def sparql_endpoint(request: HttpRequest, service_params: str) -> HttpResponse:
     if request.method == "OPTIONS":
         response = HttpResponse(status=204)
         return _add_cors_headers(response)
@@ -139,7 +165,7 @@ def sparql_endpoint(request: HttpRequest) -> HttpResponse:
         return _add_cors_headers(response)
 
     try:
-        parsed_request = _parse_sparql_request(request)
+        parsed_request = _parse_sparql_request(request, service_params)
         execution = petscan_service.execute_query(
             parsed_request.psid,
             parsed_request.query,
