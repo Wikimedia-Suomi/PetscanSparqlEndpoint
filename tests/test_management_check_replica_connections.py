@@ -9,7 +9,7 @@ from django.test import SimpleTestCase, override_settings
 
 def _build_connection_mock() -> MagicMock:
     cursor = MagicMock()
-    cursor.fetchone.return_value = (1,)
+    cursor.fetchone.side_effect = [(1,), ("Main_Page",)]
 
     connection = MagicMock()
     cursor_cm = MagicMock()
@@ -24,10 +24,13 @@ class CheckReplicaConnectionsCommandTests(SimpleTestCase):
     @patch.dict(os.environ, {"HOME": "/home/toolforge"}, clear=False)
     @patch("petscan.management.commands.check_replica_connections.enrichment_sql.pymysql")
     def test_command_checks_all_expected_replica_hosts(self, pymysql_mock):
+        first_connection = _build_connection_mock()
+        second_connection = _build_connection_mock()
+        third_connection = _build_connection_mock()
         pymysql_mock.connect.side_effect = [
-            _build_connection_mock(),
-            _build_connection_mock(),
-            _build_connection_mock(),
+            first_connection,
+            second_connection,
+            third_connection,
         ]
         stdout = io.StringIO()
         stderr = io.StringIO()
@@ -57,6 +60,14 @@ class CheckReplicaConnectionsCommandTests(SimpleTestCase):
             )
         )
 
+        for connection in (first_connection, second_connection, third_connection):
+            cursor = connection.cursor.return_value.__enter__.return_value
+            self.assertEqual(
+                [call.args[0] for call in cursor.execute.call_args_list],
+                ["SELECT 1", "SELECT page_title FROM page LIMIT 1"],
+            )
+
+        self.assertIn("sample_page_title=Main_Page", stdout.getvalue())
         self.assertIn("Replica connectivity check passed for all sites.", stdout.getvalue())
         self.assertEqual(stderr.getvalue(), "")
 

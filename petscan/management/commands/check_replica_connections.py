@@ -7,6 +7,7 @@ from django.core.management.base import BaseCommand, CommandError
 from petscan import enrichment_sql
 
 _REPLICA_SITES = ("fiwiki", "wikidatawiki", "commonswiki")
+_PAGE_SAMPLE_QUERY = "SELECT page_title FROM page LIMIT 1"
 
 
 class Command(BaseCommand):
@@ -64,6 +65,18 @@ class Command(BaseCommand):
                 with connection.cursor() as cursor:
                     cursor.execute("SELECT 1")
                     cursor.fetchone()
+                    cursor.execute(_PAGE_SAMPLE_QUERY)
+                    page_row = cursor.fetchone()
+                    if not page_row:
+                        raise RuntimeError("No rows returned by page sample query.")
+                    if isinstance(page_row, (tuple, list)):
+                        page_title = page_row[0]
+                    else:
+                        page_title = page_row
+                    if isinstance(page_title, bytes):
+                        page_title = page_title.decode("utf-8", errors="replace")
+                    if not str(page_title or "").strip():
+                        raise RuntimeError("Empty page title returned by page sample query.")
             except Exception as exc:
                 elapsed_ms = (perf_counter() - started_at) * 1000.0
                 failed_sites.append(site)
@@ -90,6 +103,7 @@ class Command(BaseCommand):
                         )
                     )
                 )
+                self.stdout.write("     sample_page_title={}".format(page_title))
             finally:
                 if connection is not None:
                     try:
