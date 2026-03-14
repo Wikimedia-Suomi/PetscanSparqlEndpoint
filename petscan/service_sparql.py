@@ -23,8 +23,12 @@ _SERVICE_CLAUSE_RE = re.compile(
 )
 
 
+def _strip_comment_lines(query: str) -> str:
+    return _SPARQL_COMMENT_LINE_RE.sub("", query)
+
+
 def query_type(query: str) -> str:
-    remaining = _SPARQL_COMMENT_LINE_RE.sub("", query)
+    remaining = _strip_comment_lines(query)
 
     # Strip SPARQL prologue declarations to avoid matching query-form keywords
     # inside prefixed names (for example `PREFIX select: <...>`).
@@ -51,7 +55,7 @@ def query_type(query: str) -> str:
 
 
 def contains_service_clause(query: str) -> bool:
-    clean_query = re.sub(r"(?m)^\s*#.*$", "", query)
+    clean_query = _strip_comment_lines(query)
     return bool(_SERVICE_CLAUSE_RE.search(clean_query))
 
 

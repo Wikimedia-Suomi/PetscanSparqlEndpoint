@@ -99,6 +99,31 @@ class ServiceRdfTests(ServiceTestCase):
 
         self.assertEqual(subject.value, "http://www.wikidata.org/entity/Q378619")
 
+    def test_item_subject_does_not_use_commons_entity_for_non_file_commons_page(self):
+        record = {
+            "id": 321,
+            "wiki": "commonswiki",
+            "namespace": 0,
+            "nstext": "",
+            "title": "Commons_main_page",
+        }
+        subject = rdf.item_subject(PRIMARY_EXAMPLE_PSID, record, 0)
+
+        self.assertEqual(subject.value, "https://petscan.wmcloud.org/psid/43641756/item/321")
+
+    def test_item_subject_does_not_use_commons_entity_for_non_commons_file_page(self):
+        record = {
+            "id": 777,
+            "wiki": "enwiki",
+            "namespace": 6,
+            "nstext": "File",
+            "img_media_type": "BITMAP",
+            "wikidata_id": "Q42",
+        }
+        subject = rdf.item_subject(PRIMARY_EXAMPLE_PSID, record, 0)
+
+        self.assertEqual(subject.value, "http://www.wikidata.org/entity/Q42")
+
     def test_second_example_parses_qid_thumbnail_and_coordinates(self):
         payload = self._load_payload(SECONDARY_EXAMPLE_FILE)
         records = source.extract_records(payload)

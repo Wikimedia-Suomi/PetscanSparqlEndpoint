@@ -1,5 +1,6 @@
 """Service-layer workflow for PetScan ingestion and SPARQL execution."""
 
+from datetime import datetime, timedelta, timezone
 from typing import Any, Mapping, Optional, cast
 
 from . import service_source as source
@@ -20,6 +21,8 @@ try:
     from pyoxigraph import Store
 except ImportError:  # pragma: no cover - dependency check at runtime
     Store = None  # type: ignore[misc,assignment]
+
+_MAX_STORE_META_AGE = timedelta(minutes=30)
 
 
 def _ensure_oxigraph() -> None:
@@ -62,6 +65,30 @@ def _meta_is_usable(meta: Mapping[str, Any], psid: int) -> bool:
     return True
 
 
+def _parse_loaded_at(value: Any) -> Optional[datetime]:
+    if not isinstance(value, str):
+        return None
+    text = value.strip()
+    if not text:
+        return None
+    if text.endswith("Z"):
+        text = "{}+00:00".format(text[:-1])
+    try:
+        parsed = datetime.fromisoformat(text)
+    except ValueError:
+        return None
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=timezone.utc)
+    return parsed.astimezone(timezone.utc)
+
+
+def _meta_is_fresh(meta: Mapping[str, Any]) -> bool:
+    loaded_at = _parse_loaded_at(meta.get("loaded_at"))
+    if loaded_at is None:
+        return False
+    return (datetime.now(timezone.utc) - loaded_at) <= _MAX_STORE_META_AGE
+
+
 def ensure_loaded(
     psid: int,
     refresh: bool = False,
@@ -74,7 +101,11 @@ def ensure_loaded(
     with lock:
         if not refresh and store.has_existing_store(psid):
             meta = store.read_meta(psid)
-            if _meta_is_usable(meta, psid) and meta_has_matching_source_params(meta, normalized_params):
+            if (
+                _meta_is_usable(meta, psid)
+                and _meta_is_fresh(meta)
+                and meta_has_matching_source_params(meta, normalized_params)
+            ):
                 return cast(StoreMeta, meta)
 
         payload, source_url = source.fetch_petscan_json(psid, petscan_params=normalized_params)

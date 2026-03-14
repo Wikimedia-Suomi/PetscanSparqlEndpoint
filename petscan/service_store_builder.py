@@ -5,13 +5,14 @@ import shutil
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Mapping, Optional, Sequence
+from typing import Any, Dict, List, Mapping, Optional, Sequence
 
 from . import service_links as links
 from . import service_rdf as rdf
 from . import service_source as source
 from . import service_store as store
-from .service_types import StoreMeta, StoreMetaModel
+from .service_errors import PetscanServiceError
+from .service_types import StoreMeta, StoreMetaModel, StructureSummary
 
 __all__ = ["build_store"]
 
@@ -53,6 +54,14 @@ def _reset_store_directory(psid: int) -> Path:
     return store_path
 
 
+def _require_store_class() -> Any:
+    if Store is None:
+        raise PetscanServiceError(
+            "pyoxigraph is not installed. Install dependencies from requirements.txt first."
+        )
+    return Store
+
+
 def _build_store_predicates() -> _StorePredicates:
     return _StorePredicates(
         page_class=NamedNode(rdf.PREDICATE_BASE + "Page"),
@@ -71,9 +80,15 @@ def _write_record_quads(
     index: int,
     row: Mapping[str, Any],
     context: _RecordWriteContext,
-) -> None:
+) -> Dict[str, List[Any]]:
+    row_fields: Dict[str, List[Any]] = {}
     predicates = context.predicates
     subject = rdf.item_subject(context.psid, row, index)
+    resolved_gil_links = links.resolve_gil_links(
+        row,
+        gil_link_wikidata_map=context.gil_link_wikidata_map,
+    )
+    gil_link_uris = [link_uri for link_uri, _qid in resolved_gil_links]
     store_instance.add(Quad(subject, predicates.rdf_type, predicates.page_class, DefaultGraph()))
     store_instance.add(
         Quad(
@@ -99,21 +114,21 @@ def _write_record_quads(
             DefaultGraph(),
         )
     )
-    for key, value in rdf.iter_scalar_fields(
-        row,
-        gil_link_wikidata_map=context.gil_link_wikidata_map,
-    ):
+    for key, value in rdf.iter_scalar_fields(row, gil_links=gil_link_uris):
+        row_fields.setdefault(key, []).append(value)
         predicate = rdf.predicate_for(key)
         literal = rdf.literal_for(value)
         store_instance.add(Quad(subject, predicate, literal, DefaultGraph()))
 
-    for link_uri, qid in links.iter_gil_link_enrichment(
-        row,
-        gil_link_wikidata_map=context.gil_link_wikidata_map,
-    ):
+    for link_uri, qid in resolved_gil_links:
+        row_fields.setdefault("gil_link", []).append(link_uri)
         link_node = NamedNode(link_uri)
         store_instance.add(Quad(subject, predicates.gil_link, link_node, DefaultGraph()))
         if qid is not None:
+            row_fields.setdefault("gil_link_wikidata_id", []).append(qid)
+            row_fields.setdefault("gil_link_wikidata_entity", []).append(
+                "http://www.wikidata.org/entity/{}".format(qid)
+            )
             store_instance.add(
                 Quad(
                     link_node,
@@ -130,6 +145,7 @@ def _write_record_quads(
                     DefaultGraph(),
                 )
             )
+    return row_fields
 
 
 def _build_store_meta(
@@ -138,7 +154,7 @@ def _build_store_meta(
     source_url: str,
     source_params: Optional[Mapping[str, Any]],
     loaded_at: str,
-    gil_link_wikidata_map: Mapping[str, str],
+    structure: StructureSummary,
 ) -> StoreMeta:
     meta_model = StoreMetaModel(
         psid=psid,
@@ -146,7 +162,7 @@ def _build_store_meta(
         source_url=source_url,
         source_params=source.normalize_petscan_params(source_params),
         loaded_at=loaded_at,
-        structure=rdf.summarize_structure(records, gil_link_wikidata_map=gil_link_wikidata_map),
+        structure=structure,
     )
     return meta_model.to_dict()
 
@@ -162,10 +178,12 @@ def build_store(
     source_params: Optional[Mapping[str, Any]] = None,
 ) -> StoreMeta:
     store_path = _reset_store_directory(psid)
-    store_instance = Store(str(store_path))
+    store_class = _require_store_class()
+    store_instance = store_class(str(store_path))
     predicates = _build_store_predicates()
     gil_link_wikidata_map = links.build_gil_link_wikidata_map(records)
     loaded_at = datetime.now(timezone.utc).replace(microsecond=0).isoformat()
+    structure_accumulator = rdf.StructureAccumulator()
     write_context = _RecordWriteContext(
         predicates=predicates,
         psid=psid,
@@ -174,12 +192,13 @@ def build_store(
     )
 
     for index, row in enumerate(records):
-        _write_record_quads(
+        row_fields = _write_record_quads(
             store_instance=store_instance,
             index=index,
             row=row,
             context=write_context,
         )
+        structure_accumulator.add_row_fields(row_fields)
 
     meta = _build_store_meta(
         psid=psid,
@@ -187,7 +206,7 @@ def build_store(
         source_url=source_url,
         source_params=source_params,
         loaded_at=loaded_at,
-        gil_link_wikidata_map=gil_link_wikidata_map,
+        structure=structure_accumulator.build_summary(row_count=len(records)),
     )
     _persist_store_meta(psid, meta)
     return meta

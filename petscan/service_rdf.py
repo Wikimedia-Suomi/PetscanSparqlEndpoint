@@ -1,7 +1,7 @@
 """RDF field shaping and summary helpers for PetScan records."""
 
 import re
-from typing import Any, Iterable, List, Mapping, Optional, Sequence, Tuple
+from typing import Any, Dict, Iterable, List, Mapping, Optional, Sequence, Tuple
 from urllib.parse import quote
 
 from . import service_links as links
@@ -32,6 +32,7 @@ __all__ = [
     "iter_scalar_fields",
     "literal_for",
     "predicate_for",
+    "StructureAccumulator",
     "summarize_structure",
 ]
 
@@ -39,6 +40,54 @@ _FIELD_NAME_RE = re.compile(r"[^0-9A-Za-z_]+")
 _FIELD_RENAMES = {
     "id": "page_id",
 }
+
+
+class StructureAccumulator:
+    def __init__(self) -> None:
+        self._field_info: Dict[str, Dict[str, Any]] = {}
+
+    def add_row_fields(self, row_fields: Mapping[str, Sequence[Any]]) -> None:
+        for key, values in row_fields.items():
+            info = self._field_info.setdefault(
+                key,
+                {
+                    "source_key": key,
+                    "predicate": PREDICATE_BASE + _field_name(key),
+                    "present_in_rows": 0,
+                    "type_counts": {},
+                },
+            )
+            info["present_in_rows"] += 1
+
+            type_counts = info["type_counts"]
+            for kind in sorted({_value_kind(v) for v in values}):
+                type_counts[kind] = int(type_counts.get(kind, 0)) + 1
+
+    def build_summary(self, row_count: int) -> StructureSummary:
+        fields: List[StructureField] = []
+        for key in sorted(self._field_info.keys()):
+            info = self._field_info[key]
+            type_counts = info["type_counts"]
+            observed_types = sorted(type_counts.keys())
+            primary_type = max(
+                observed_types,
+                key=lambda kind: (int(type_counts.get(kind, 0)), kind),
+            )
+            fields.append(
+                {
+                    "source_key": info["source_key"],
+                    "predicate": info["predicate"],
+                    "present_in_rows": info["present_in_rows"],
+                    "primary_type": primary_type,
+                    "observed_types": observed_types,
+                }
+            )
+
+        return {
+            "row_count": row_count,
+            "field_count": len(fields),
+            "fields": fields,
+        }
 
 
 def _field_name(key: str) -> str:
@@ -89,8 +138,6 @@ def _record_page_id(record: Mapping[str, Any]) -> Optional[int]:
 
 def _is_commons_file_record(record: Mapping[str, Any]) -> bool:
     wiki_value = str(record.get("wiki", "")).strip().lower()
-    if wiki_value and wiki_value in {"commonswiki", "commons.wikimedia.org"}:
-        return True
 
     namespace_value = record.get("namespace")
     try:
@@ -99,13 +146,17 @@ def _is_commons_file_record(record: Mapping[str, Any]) -> bool:
         namespace = None
 
     nstext = str(record.get("nstext", "")).strip().lower()
+    is_file_page = namespace == 6 or nstext == "file"
+    if not is_file_page:
+        return False
+
+    if wiki_value:
+        return wiki_value in {"commonswiki", "commons.wikimedia.org"}
+
     has_image_metadata = any(str(key).startswith("img_") for key in record.keys())
 
     # PetScan media rows often omit explicit wiki while still representing Commons files.
-    if namespace == 6 and nstext == "file" and has_image_metadata:
-        return True
-
-    return False
+    return has_image_metadata
 
 
 def item_subject(psid: int, record: Mapping[str, Any], index: int):
@@ -153,7 +204,7 @@ def _parse_coordinates(value: Any) -> Optional[Tuple[float, float]]:
 
 def iter_scalar_fields(
     record: Mapping[str, Any],
-    gil_link_wikidata_map: Optional[Mapping[str, str]] = None,
+    gil_links: Optional[Sequence[str]] = None,
 ) -> Iterable[Tuple[str, Any]]:
     qid = links.extract_qid(record)
     if qid is not None:
@@ -184,8 +235,8 @@ def iter_scalar_fields(
         if key == "gil" and isinstance(value, str):
             # Keep raw field at item-level; URI link relationships are emitted as dedicated quads.
             yield key, value
-            gil_links = links.iter_gil_link_uris(record)
-            yield "gil_link_count", len(gil_links)
+            resolved_gil_links = list(gil_links) if gil_links is not None else links.iter_gil_link_uris(record)
+            yield "gil_link_count", len(resolved_gil_links)
             continue
 
         if isinstance(value, (str, int, float, bool)):
@@ -221,16 +272,18 @@ def summarize_structure(
     records: Sequence[Mapping[str, Any]],
     gil_link_wikidata_map: Optional[Mapping[str, str]] = None,
 ) -> StructureSummary:
-    field_info = {}  # type: dict[str, dict[str, Any]]
+    accumulator = StructureAccumulator()
 
     for row in records:
-        row_fields = {}  # type: dict[str, List[Any]]
-        for key, value in iter_scalar_fields(row, gil_link_wikidata_map=gil_link_wikidata_map):
-            row_fields.setdefault(key, []).append(value)
-        for link_uri, qid in links.iter_gil_link_enrichment(
+        resolved_gil_links = links.resolve_gil_links(
             row,
             gil_link_wikidata_map=gil_link_wikidata_map,
-        ):
+        )
+        gil_link_uris = [link_uri for link_uri, _qid in resolved_gil_links]
+        row_fields: Dict[str, List[Any]] = {}
+        for key, value in iter_scalar_fields(row, gil_links=gil_link_uris):
+            row_fields.setdefault(key, []).append(value)
+        for link_uri, qid in resolved_gil_links:
             row_fields.setdefault("gil_link", []).append(link_uri)
             if qid is not None:
                 row_fields.setdefault("gil_link_wikidata_id", []).append(qid)
@@ -238,43 +291,6 @@ def summarize_structure(
                     "http://www.wikidata.org/entity/{}".format(qid)
                 )
 
-        for key, values in row_fields.items():
-            info = field_info.setdefault(
-                key,
-                {
-                    "source_key": key,
-                    "predicate": PREDICATE_BASE + _field_name(key),
-                    "present_in_rows": 0,
-                    "type_counts": {},
-                },
-            )
-            info["present_in_rows"] += 1
+        accumulator.add_row_fields(row_fields)
 
-            type_counts = info["type_counts"]
-            for kind in sorted({_value_kind(v) for v in values}):
-                type_counts[kind] = int(type_counts.get(kind, 0)) + 1
-
-    fields: List[StructureField] = []
-    for key in sorted(field_info.keys()):
-        info = field_info[key]
-        type_counts = info["type_counts"]
-        observed_types = sorted(type_counts.keys())
-        primary_type = max(
-            observed_types,
-            key=lambda kind: (int(type_counts.get(kind, 0)), kind),
-        )
-        fields.append(
-            {
-                "source_key": info["source_key"],
-                "predicate": info["predicate"],
-                "present_in_rows": info["present_in_rows"],
-                "primary_type": primary_type,
-                "observed_types": observed_types,
-            }
-        )
-
-    return {
-        "row_count": len(records),
-        "field_count": len(fields),
-        "fields": fields,
-    }
+    return accumulator.build_summary(row_count=len(records))

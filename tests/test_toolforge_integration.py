@@ -4,7 +4,7 @@ from typing import List
 from django.conf import settings
 from django.test import SimpleTestCase
 
-from petscan import enrichment_sql
+from petscan import enrichment_sql, normalization
 from petscan import service_links as links
 
 ENWIKI = "enwiki"
@@ -27,8 +27,8 @@ class ToolforgeWikidataLookupParityTests(SimpleTestCase):
         return [
             links.SiteLookupTarget(
                 namespace=0,
-                api_title=links.normalize_page_title(title),
-                db_title=links.normalize_page_title(title),
+                api_title=normalization.normalize_page_title(title),
+                db_title=normalization.normalize_page_title(title),
             )
             for title in titles
         ]
@@ -51,7 +51,7 @@ class ToolforgeWikidataLookupParityTests(SimpleTestCase):
 
         self.assertEqual(
             set(api_result.keys()),
-            {links.normalize_page_title(title) for title in SAMPLE_TITLES},
+            {normalization.normalize_page_title(title) for title in SAMPLE_TITLES},
             "API lookup did not return all expected sample titles.",
         )
         self.assertEqual(sql_result, api_result)

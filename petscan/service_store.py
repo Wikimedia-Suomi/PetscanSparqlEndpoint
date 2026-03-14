@@ -7,8 +7,8 @@ from typing import Any, Dict
 
 from django.conf import settings
 
-_lock_guard = threading.Lock()
-_psid_locks = {}  # type: Dict[int, threading.Lock]
+_LOCK_STRIPE_COUNT = 256
+_LOCK_STRIPES = tuple(threading.Lock() for _ in range(_LOCK_STRIPE_COUNT))
 __all__ = [
     "get_psid_lock",
     "has_existing_store",
@@ -19,10 +19,7 @@ __all__ = [
 
 
 def get_psid_lock(psid: int) -> threading.Lock:
-    with _lock_guard:
-        if psid not in _psid_locks:
-            _psid_locks[psid] = threading.Lock()
-        return _psid_locks[psid]
+    return _LOCK_STRIPES[psid % _LOCK_STRIPE_COUNT]
 
 
 def _store_root() -> Path:

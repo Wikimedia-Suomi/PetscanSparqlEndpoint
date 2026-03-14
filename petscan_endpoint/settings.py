@@ -80,21 +80,14 @@ STATICFILES_DIRS = [BASE_DIR / "static"]
 
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 
-DATA_DIR = BASE_DIR / "data"
 PETSCAN_ENDPOINT = "https://petscan.wmcloud.org/"
 PETSCAN_TIMEOUT_SECONDS = 30
 OXIGRAPH_BASE_DIR = _required_env("OXIGRAPH_BASE_DIR")
 
 WIKIDATA_LOOKUP_BACKEND = os.getenv("WIKIDATA_LOOKUP_BACKEND", "api")
-TOOLFORGE_USE_REPLICA = os.getenv("TOOLFORGE_USE_REPLICA", "0") in {"1", "true", "TRUE", "yes", "on"}
+TOOLFORGE_USE_REPLICA = _env_bool("TOOLFORGE_USE_REPLICA", default=False)
 TOOLFORGE_REPLICA_HOST = os.getenv("TOOLFORGE_REPLICA_HOST", "tools.db.svc.wikimedia.cloud")
 TOOLFORGE_REPLICA_CNF = os.getenv("TOOLFORGE_REPLICA_CNF", "")
 TOOLFORGE_REPLICA_USER = os.getenv("TOOLFORGE_REPLICA_USER", "")
 TOOLFORGE_REPLICA_PASSWORD = os.getenv("TOOLFORGE_REPLICA_PASSWORD", "")
-TOOLFORGE_INTEGRATION_TESTS = os.getenv("TOOLFORGE_INTEGRATION_TESTS", "0") in {
-    "1",
-    "true",
-    "TRUE",
-    "yes",
-    "on",
-}
+TOOLFORGE_INTEGRATION_TESTS = _env_bool("TOOLFORGE_INTEGRATION_TESTS", default=False)

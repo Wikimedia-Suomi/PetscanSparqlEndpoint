@@ -9,7 +9,8 @@ from django.conf import settings
 
 from . import enrichment_sql
 from .enrichment_api import fetch_wikibase_items_for_site_api
-from .normalization import normalize_page_title, normalize_qid
+from .normalization import normalize_page_title as _normalize_page_title
+from .normalization import normalize_qid as _normalize_qid
 from .service_source import HTTP_USER_AGENT
 
 _SITE_TOKEN_RE = re.compile(r"^[a-z0-9_-]+$")
@@ -25,7 +26,7 @@ __all__ = [
     "fetch_wikibase_items_for_site",
     "iter_gil_link_enrichment",
     "iter_gil_link_uris",
-    "normalize_page_title",
+    "resolve_gil_links",
     "site_to_mediawiki_api_url",
     "wikidata_lookup_backend",
 ]
@@ -68,7 +69,7 @@ def extract_qid(record: Mapping[str, Any]) -> Optional[str]:
         candidates.append(metadata.get("wikidata"))
 
     for candidate in candidates:
-        qid = normalize_qid(candidate)
+        qid = _normalize_qid(candidate)
         if qid is not None:
             return qid
     return None
@@ -84,7 +85,7 @@ def _parse_gil_link_target(link: str) -> Optional[Tuple[str, int, str]]:
         namespace = int(str(parts[1]).strip())
     except Exception:
         return None
-    title = normalize_page_title(parts[2])
+    title = _normalize_page_title(parts[2])
     if not site or not title:
         return None
     return site, namespace, title
@@ -177,7 +178,7 @@ def site_to_mediawiki_api_url(site: str) -> Optional[str]:
 
 def _gil_link_uri(site: str, title: str) -> Optional[str]:
     domain = _site_to_mediawiki_domain(site)
-    normalized_title = normalize_page_title(title)
+    normalized_title = _normalize_page_title(title)
     if domain is None or not normalized_title:
         return None
     encoded_title = quote(normalized_title, safe=":_/()-.,")
@@ -185,7 +186,7 @@ def _gil_link_uri(site: str, title: str) -> Optional[str]:
 
 
 def _namespace_db_title(namespace: int, title: str) -> str:
-    normalized_title = normalize_page_title(title)
+    normalized_title = _normalize_page_title(title)
     if namespace != 0 and ":" in normalized_title:
         return normalized_title.split(":", 1)[1]
     return normalized_title
@@ -220,18 +221,26 @@ def _iter_gil_link_targets(record: Mapping[str, Any]) -> List[GilLinkTarget]:
 
 
 def iter_gil_link_uris(record: Mapping[str, Any]) -> List[str]:
-    return [target.link_uri for target in _iter_gil_link_targets(record)]
+    return [link_uri for link_uri, _qid in resolve_gil_links(record)]
 
 
 def iter_gil_link_enrichment(
     record: Mapping[str, Any],
     gil_link_wikidata_map: Optional[Mapping[str, str]] = None,
 ) -> List[Tuple[str, Optional[str]]]:
+    return resolve_gil_links(record, gil_link_wikidata_map=gil_link_wikidata_map)
+
+
+def resolve_gil_links(
+    record: Mapping[str, Any],
+    gil_link_wikidata_map: Optional[Mapping[str, str]] = None,
+) -> List[Tuple[str, Optional[str]]]:
     enriched = []  # type: List[Tuple[str, Optional[str]]]
-    for link_uri in iter_gil_link_uris(record):
+    for target in _iter_gil_link_targets(record):
+        link_uri = target.link_uri
         qid = None
         if gil_link_wikidata_map is not None:
-            qid = normalize_qid(gil_link_wikidata_map.get(link_uri))
+            qid = _normalize_qid(gil_link_wikidata_map.get(link_uri))
         enriched.append((link_uri, qid))
     return enriched
 
@@ -293,7 +302,7 @@ def fetch_wikibase_items_for_site(
     api_url = site_to_mediawiki_api_url(site)
     if api_url is None:
         return {}
-    titles = sorted({normalize_page_title(target.api_title) for target in targets if target.api_title})
+    titles = sorted({_normalize_page_title(target.api_title) for target in targets if target.api_title})
     resolved = {}  # type: Dict[str, str]
     for batch in _chunked(titles, _MAX_TITLES_PER_MEDIAWIKI_BATCH):
         batch_result = _fetch_wikibase_items_for_site_api(api_url, batch)
@@ -318,7 +327,7 @@ def _direct_wikidata_qid_for_target(
         return None
 
     for candidate in (api_title, db_title):
-        normalized_title = normalize_page_title(candidate)
+        normalized_title = _normalize_page_title(candidate)
         if re.fullmatch(r"Q[1-9][0-9]*", normalized_title, flags=re.IGNORECASE):
             return "Q{}".format(normalized_title[1:])
     return None
@@ -368,8 +377,8 @@ def _resolve_site_title_qids(
         )
         result = fetch_wikibase_items_for_site(site, ordered_targets, backend=backend)
         for title, qid in result.items():
-            normalized_title = normalize_page_title(title)
-            normalized_qid = normalize_qid(qid)
+            normalized_title = _normalize_page_title(title)
+            normalized_qid = _normalize_qid(qid)
             if normalized_title and normalized_qid:
                 resolved_qids_by_site_title[(site, normalized_title)] = normalized_qid
 
@@ -387,7 +396,7 @@ def _attach_resolved_qids(
         if link_uri in link_to_qid:
             continue
 
-        resolved_qid = resolved_qids_by_site_title.get((target.site, normalize_page_title(target.api_title)))
+        resolved_qid = resolved_qids_by_site_title.get((target.site, _normalize_page_title(target.api_title)))
         if resolved_qid is not None:
             link_to_qid[link_uri] = resolved_qid
 

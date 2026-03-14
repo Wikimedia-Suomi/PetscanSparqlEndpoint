@@ -11,6 +11,17 @@ from .service_errors import PetscanServiceError
 
 HTTP_USER_AGENT = "PetscanSparqlEndpoint (https://meta.wikimedia.org/wiki/user:Zache)"
 _PETSCAN_RESERVED_QUERY_PARAMS = {"psid", "format", "query", "refresh"}
+_ROW_HINT_KEYS = {
+    "id",
+    "pageid",
+    "title",
+    "len",
+    "namespace",
+    "nstext",
+    "qid",
+    "wikidata",
+    "wiki",
+}
 __all__ = [
     "HTTP_USER_AGENT",
     "build_petscan_url",
@@ -107,24 +118,57 @@ def _collect_record_lists(node: Any, collector: List[List[Dict[str, Any]]], dept
 
 
 def _score_records(records: Sequence[Mapping[str, Any]]) -> int:
-    keys_of_interest = {
-        "id",
-        "pageid",
-        "title",
-        "len",
-        "namespace",
-        "nstext",
-        "qid",
-        "wikidata",
-        "wiki",
-    }
     found_keys = set()
     for row in records[:20]:
-        found_keys.update(set(row.keys()) & keys_of_interest)
+        found_keys.update(set(row.keys()) & _ROW_HINT_KEYS)
     return len(records) * 10 + len(found_keys)
 
 
-def extract_records(payload: Dict[str, Any]) -> List[Dict[str, Any]]:
+def _as_dict_rows(node: Any) -> Optional[List[Dict[str, Any]]]:
+    if not isinstance(node, list):
+        return None
+    rows = [row for row in node if isinstance(row, dict)]
+    if not rows:
+        return None
+    return rows
+
+
+def _looks_like_record_rows(rows: Sequence[Mapping[str, Any]]) -> bool:
+    sample_size = min(len(rows), 5)
+    for row in rows[:sample_size]:
+        if set(row.keys()) & _ROW_HINT_KEYS:
+            return True
+    return False
+
+
+def _collect_direct_record_candidates(payload: Mapping[str, Any]) -> List[List[Dict[str, Any]]]:
+    candidates = []  # type: List[List[Dict[str, Any]]]
+
+    def _add_candidate(node: Any) -> None:
+        rows = _as_dict_rows(node)
+        if rows and _looks_like_record_rows(rows):
+            candidates.append(rows)
+
+    _add_candidate(payload.get("pages"))
+    _add_candidate(payload.get("*"))
+
+    top_level_a = payload.get("a")
+    if isinstance(top_level_a, Mapping):
+        _add_candidate(top_level_a.get("*"))
+
+    root_star = payload.get("*")
+    if isinstance(root_star, list):
+        for entry in root_star:
+            if not isinstance(entry, Mapping):
+                continue
+            nested_a = entry.get("a")
+            if isinstance(nested_a, Mapping):
+                _add_candidate(nested_a.get("*"))
+
+    return candidates
+
+
+def _extract_records_exhaustive(payload: Mapping[str, Any]) -> List[Dict[str, Any]]:
     candidates = []  # type: List[List[Dict[str, Any]]]
 
     if isinstance(payload.get("*"), list):
@@ -143,3 +187,10 @@ def extract_records(payload: Dict[str, Any]) -> List[Dict[str, Any]]:
 
     best = max(candidates, key=_score_records)
     return best
+
+
+def extract_records(payload: Dict[str, Any]) -> List[Dict[str, Any]]:
+    direct_candidates = _collect_direct_record_candidates(payload)
+    if direct_candidates:
+        return max(direct_candidates, key=_score_records)
+    return _extract_records_exhaustive(payload)

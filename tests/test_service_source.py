@@ -22,6 +22,13 @@ class ServiceSourceTests(ServiceTestCase):
         records = source.extract_records(payload)
         self.assertEqual(len(records), SECONDARY_RECORD_COUNT)
 
+    def test_extract_records_matches_exhaustive_logic_for_example_payloads(self):
+        for file_name in (PRIMARY_EXAMPLE_FILE, SECONDARY_EXAMPLE_FILE):
+            payload = self._load_payload(file_name)
+            optimized = source.extract_records(payload)
+            exhaustive = source._extract_records_exhaustive(payload)
+            self.assertEqual(optimized, exhaustive)
+
     def test_build_petscan_url_forwards_extra_query_params(self):
         url = source.build_petscan_url(
             PRIMARY_EXAMPLE_PSID,

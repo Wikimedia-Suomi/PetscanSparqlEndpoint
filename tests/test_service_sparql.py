@@ -13,6 +13,13 @@ class ServiceSparqlTests(ServiceTestCase):
         """
         self.assertTrue(sparql.contains_service_clause(query))
 
+    def test_ignores_service_clause_pattern_inside_comment_line(self):
+        query = """
+        # SERVICE <https://query.wikidata.org/sparql> { ?item ?p ?o . }
+        SELECT * WHERE { ?item ?p ?o . }
+        """
+        self.assertFalse(sparql.contains_service_clause(query))
+
     def test_does_not_flag_plain_iri_containing_service_word(self):
         query = """
         SELECT * WHERE {
