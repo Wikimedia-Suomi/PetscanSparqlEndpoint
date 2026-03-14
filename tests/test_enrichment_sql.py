@@ -50,3 +50,38 @@ class EnrichmentSqlTests(SimpleTestCase):
 
         self.assertEqual(resolved, {})
         pymysql_mock.connect.assert_not_called()
+
+    @patch("petscan.enrichment_sql.pymysql")
+    def test_fetch_wikibase_items_decodes_binary_page_titles_from_sql(self, pymysql_mock):
+        cursor = MagicMock()
+        cursor.fetchall.return_value = [
+            (0, b"S\xc3\xa3o_Paulo", "Q174"),
+            (0, b"\xc5\x81\xc3\xb3d\xc5\xba", "Q580"),
+            (0, b"Beyonc\xc3\xa9", "Q36153"),
+        ]
+
+        connection = MagicMock()
+        cursor_cm = MagicMock()
+        cursor_cm.__enter__.return_value = cursor
+        cursor_cm.__exit__.return_value = None
+        connection.cursor.return_value = cursor_cm
+        pymysql_mock.connect.return_value = connection
+
+        resolved = enrichment_sql.fetch_wikibase_items_for_site_sql(
+            "enwiki",
+            [
+                (0, "São_Paulo", "São_Paulo"),
+                (0, "Łódź", "Łódź"),
+                (0, "Beyoncé", "Beyoncé"),
+            ],
+            timeout_seconds=5,
+        )
+
+        self.assertEqual(
+            resolved,
+            {
+                "São_Paulo": "Q174",
+                "Łódź": "Q580",
+                "Beyoncé": "Q36153",
+            },
+        )

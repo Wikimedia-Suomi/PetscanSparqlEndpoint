@@ -17,6 +17,13 @@ _SITE_TOKEN_RE = re.compile(r"^[a-z0-9_-]+$")
 _REPLICA_DOMAIN_SUFFIX = "web.db.svc.wikimedia.cloud"
 
 
+def _normalize_db_title(value: object) -> str:
+    """Normalize replica page_title values that may arrive as bytes (VARBINARY)."""
+    if isinstance(value, (bytes, bytearray)):
+        value = value.decode("utf-8", errors="replace")
+    return normalize_page_title(value)
+
+
 def _replica_host_for_site(site: str) -> Optional[str]:
     normalized_site = str(site or "").strip().lower()
     if not normalized_site or not _SITE_TOKEN_RE.fullmatch(normalized_site):
@@ -52,7 +59,7 @@ def fetch_wikibase_items_for_site_sql(
     unique_pairs = []
     seen_pairs = set()
     for namespace, _api_title, db_title in targets:
-        normalized_db_title = normalize_page_title(db_title)
+        normalized_db_title = _normalize_db_title(db_title)
         key = (int(namespace), normalized_db_title)
         if not normalized_db_title or key in seen_pairs:
             continue
@@ -116,14 +123,14 @@ def fetch_wikibase_items_for_site_sql(
         if not isinstance(row, (tuple, list)) or len(row) < 3:
             continue
         namespace = int(row[0])
-        db_title = normalize_page_title(row[1])
+        db_title = _normalize_db_title(row[1])
         qid = normalize_qid(row[2])
         if db_title and qid is not None:
             qid_by_pair[(namespace, db_title)] = qid
 
     resolved = {}  # type: Dict[str, str]
     for namespace, api_title, db_title in targets:
-        key = (int(namespace), normalize_page_title(db_title))
+        key = (int(namespace), _normalize_db_title(db_title))
         qid = qid_by_pair.get(key)
         normalized_api_title = normalize_page_title(api_title)
         if normalized_api_title and qid is not None:
