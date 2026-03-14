@@ -1,4 +1,5 @@
 import os
+import re
 from time import perf_counter
 from types import ModuleType
 from typing import Any, Dict, List, Optional, Sequence, Tuple, cast
@@ -12,21 +13,30 @@ except ImportError:  # pragma: no cover - optional dependency
     _pymysql_module = None
 
 pymysql = cast(Any, _pymysql_module)
+_SITE_TOKEN_RE = re.compile(r"^[a-z0-9_-]+$")
+_REPLICA_DOMAIN_SUFFIX = "web.db.svc.wikimedia.cloud"
+
+
+def _replica_host_for_site(site: str) -> Optional[str]:
+    normalized_site = str(site or "").strip().lower()
+    if not normalized_site or not _SITE_TOKEN_RE.fullmatch(normalized_site):
+        return None
+    return "{}.{}".format(normalized_site, _REPLICA_DOMAIN_SUFFIX)
 
 
 def fetch_wikibase_items_for_site_sql(
     site: str,
     targets: Sequence[Tuple[int, str, str]],
     timeout_seconds: int,
-    replica_host: str,
     replica_cnf: Optional[str] = None,
-    replica_user: Optional[str] = None,
-    replica_password: Optional[str] = None,
 ) -> Dict[str, str]:
     if not targets or pymysql is None:
         return {}
 
-    replica_db = "{}_p".format(site)
+    replica_host = _replica_host_for_site(site)
+    if replica_host is None:
+        return {}
+    replica_db = "{}_p".format(str(site or "").strip().lower())
     connect_kwargs = {
         "host": replica_host,
         "database": replica_db,
@@ -38,10 +48,6 @@ def fetch_wikibase_items_for_site_sql(
     }
     if replica_cnf:
         connect_kwargs["read_default_file"] = os.path.expanduser(os.path.expandvars(replica_cnf))
-    if replica_user:
-        connect_kwargs["user"] = replica_user
-    if replica_password:
-        connect_kwargs["password"] = replica_password
 
     unique_pairs = []
     seen_pairs = set()

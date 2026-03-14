@@ -82,10 +82,13 @@ def _directory_timestamp(store_dir: Path) -> Optional[datetime]:
         loaded_at = _parse_loaded_at(payload.get("loaded_at") if isinstance(payload, dict) else None)
         if loaded_at is not None:
             return loaded_at
+        meta_mtime = None
         try:
-            return datetime.fromtimestamp(meta_file.stat().st_mtime, tz=timezone.utc)
-        except Exception:
-            pass
+            meta_mtime = datetime.fromtimestamp(meta_file.stat().st_mtime, tz=timezone.utc)
+        except OSError:
+            meta_mtime = None
+        if meta_mtime is not None:
+            return meta_mtime
     try:
         return datetime.fromtimestamp(store_dir.stat().st_mtime, tz=timezone.utc)
     except Exception:

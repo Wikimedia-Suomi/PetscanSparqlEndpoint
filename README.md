@@ -137,14 +137,15 @@ Set environment variables:
 ```bash
 export TOOLFORGE_USE_REPLICA=1
 export WIKIDATA_LOOKUP_BACKEND=toolforge_sql
-export TOOLFORGE_REPLICA_HOST=tools.db.svc.wikimedia.cloud
 export TOOLFORGE_REPLICA_CNF=$HOME/replica.my.cnf
 ```
 
 Behavior:
 
 - Links are grouped by wiki.
-- SQL lookup runs one parameterized query per wiki and closes the DB connection after the query.
+- SQL lookup runs one parameterized query per wiki and uses a wiki-specific replica host like `fiwiki.web.db.svc.wikimedia.cloud`.
+- DB credentials are read from `TOOLFORGE_REPLICA_CNF`.
+- SQL connection is closed after each query.
 - API mode is still available with `WIKIDATA_LOOKUP_BACKEND=api`.
 - Set `OXIGRAPH_BASE_DIR` to the tool tmp path in Toolforge.
 

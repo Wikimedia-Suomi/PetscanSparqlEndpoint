@@ -281,10 +281,7 @@ def _fetch_wikibase_items_for_site_sql(
         site,
         sql_targets,
         timeout_seconds=timeout,
-        replica_host=str(getattr(settings, "TOOLFORGE_REPLICA_HOST", "tools.db.svc.wikimedia.cloud")),
         replica_cnf=str(getattr(settings, "TOOLFORGE_REPLICA_CNF", "") or "").strip(),
-        replica_user=str(getattr(settings, "TOOLFORGE_REPLICA_USER", "") or "").strip(),
-        replica_password=str(getattr(settings, "TOOLFORGE_REPLICA_PASSWORD", "") or "").strip(),
     )
 
 
