@@ -111,9 +111,10 @@
       <section class="card" v-if="resultVisible" aria-labelledby="result-heading">
         <h2 id="result-heading">Result ([[ queryType ]])</h2>
 
-        <div class="meta" v-if="meta.loaded_at">
+        <div class="meta" v-if="meta.loaded_at || queryExecutionLabel">
           <span><strong>Loaded at:</strong> [[ meta.loaded_at ]]</span>
           <span><strong>Records:</strong> [[ meta.records ]]</span>
+          <span v-if="queryExecutionLabel"><strong>Query time:</strong> [[ queryExecutionLabel ]]</span>
         </div>
 
         <div v-if="queryType === 'SELECT'" class="result-block">
@@ -222,6 +223,6 @@
     {% endverbatim %}
 
     <script src="https://tools-static.wmflabs.org/cdnjs/ajax/libs/vue/3.5.22/vue.global.prod.min.js"></script>
-    <script src="{% static 'js/app.js' %}?v=20260312" defer></script>
+    <script src="{% static 'js/app.js' %}?v=20260314" defer></script>
   </body>
 </html>

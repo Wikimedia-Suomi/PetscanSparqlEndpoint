@@ -31,12 +31,35 @@ def _replica_host_for_site(site: str) -> Optional[str]:
     return "{}.{}".format(normalized_site, _REPLICA_DOMAIN_SUFFIX)
 
 
+def _normalize_revision_timestamp(value: object) -> Optional[str]:
+    if value is None:
+        return None
+    if isinstance(value, (bytes, bytearray)):
+        value = value.decode("utf-8", errors="replace")
+    text = str(value).strip()
+    if not text:
+        return None
+    return text
+
+
+def _normalize_page_len(value: object) -> Optional[int]:
+    if value is None:
+        return None
+    try:
+        page_len = int(value)
+    except Exception:
+        return None
+    if page_len < 0:
+        return None
+    return page_len
+
+
 def fetch_wikibase_items_for_site_sql(
     site: str,
     targets: Sequence[Tuple[int, str, str]],
     timeout_seconds: int,
     replica_cnf: Optional[str] = None,
-) -> Dict[str, str]:
+) -> Dict[str, Dict[str, Any]]:
     if not targets or pymysql is None:
         return {}
 
@@ -71,10 +94,12 @@ def fetch_wikibase_items_for_site_sql(
 
     placeholders = ", ".join(["(%s, %s)"] * len(unique_pairs))
     sql = (  # nosec B608
-        "SELECT p.page_namespace, p.page_title, pp.pp_value "
+        "SELECT p.page_namespace, p.page_title, pp.pp_value, p.page_len, r.rev_timestamp "
         "FROM page AS p "
         "LEFT JOIN page_props AS pp "
         "ON pp.pp_page = p.page_id AND pp.pp_propname = %s "
+        "LEFT JOIN revision AS r "
+        "ON r.rev_id = p.page_latest "
         "WHERE (p.page_namespace, p.page_title) IN ({})"
     ).format(placeholders)
     params: List[Any] = ["wikibase_item"]
@@ -118,21 +143,27 @@ def fetch_wikibase_items_for_site_sql(
         flush=True,
     )
 
-    qid_by_pair = {}  # type: Dict[Tuple[int, str], str]
+    enrichment_by_pair = {}  # type: Dict[Tuple[int, str], Dict[str, Any]]
     for row in rows:
-        if not isinstance(row, (tuple, list)) or len(row) < 3:
+        if not isinstance(row, (tuple, list)) or len(row) < 5:
             continue
         namespace = int(row[0])
         db_title = _normalize_db_title(row[1])
         qid = normalize_qid(row[2])
-        if db_title and qid is not None:
-            qid_by_pair[(namespace, db_title)] = qid
+        page_len = _normalize_page_len(row[3])
+        rev_timestamp = _normalize_revision_timestamp(row[4])
+        if db_title:
+            enrichment_by_pair[(namespace, db_title)] = {
+                "wikidata_id": qid,
+                "page_len": page_len,
+                "rev_timestamp": rev_timestamp,
+            }
 
-    resolved = {}  # type: Dict[str, str]
+    resolved = {}  # type: Dict[str, Dict[str, Any]]
     for namespace, api_title, db_title in targets:
         key = (int(namespace), _normalize_db_title(db_title))
-        qid = qid_by_pair.get(key)
+        enrichment = enrichment_by_pair.get(key)
         normalized_api_title = normalize_page_title(api_title)
-        if normalized_api_title and qid is not None:
-            resolved[normalized_api_title] = qid
+        if normalized_api_title and enrichment is not None:
+            resolved[normalized_api_title] = enrichment
     return resolved

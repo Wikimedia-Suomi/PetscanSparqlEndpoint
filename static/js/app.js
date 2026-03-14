@@ -29,6 +29,7 @@
         queryType: "",
         resultFormat: "",
         result: null,
+        queryExecutionMs: null,
         meta: {},
         loadedPsid: "",
       };
@@ -63,6 +64,16 @@
           return "";
         }
         return JSON.stringify(this.result, null, 2);
+      },
+      queryExecutionLabel: function () {
+        var value = this.queryExecutionMs;
+        if (typeof value !== "number" || !Number.isFinite(value) || value < 0) {
+          return "";
+        }
+        if (value >= 1000) {
+          return (value / 1000).toFixed(2) + " s";
+        }
+        return value.toFixed(1) + " ms";
       },
       forwardedPetscanParams: function () {
         var raw = String(this.petscanGetParams || "").trim();
@@ -231,6 +242,12 @@
       },
     },
     methods: {
+      nowMs: function () {
+        if (window.performance && typeof window.performance.now === "function") {
+          return window.performance.now();
+        }
+        return Date.now();
+      },
       inferQueryType: function (query) {
         var remaining = String(query || "").replace(/^\s*#.*$/gm, "");
 
@@ -311,6 +328,7 @@
           },
           body: String(query || ""),
         });
+        var responseReceivedMs = this.nowMs();
 
         var contentType = String(response.headers.get("Content-Type") || "").toLowerCase();
         var bodyText = await response.text();
@@ -324,6 +342,7 @@
             return {
               resultFormat: "sparql-json",
               sparqlJson: JSON.parse(bodyText),
+              responseReceivedMs: responseReceivedMs,
             };
           } catch (_err) {
             throw new Error("SPARQL endpoint returned invalid JSON.");
@@ -333,6 +352,7 @@
         return {
           resultFormat: "n-triples",
           ntriples: bodyText,
+          responseReceivedMs: responseReceivedMs,
         };
       },
       loadStructure: async function () {
@@ -358,11 +378,17 @@
       runQuery: async function () {
         this.isBusy = true;
         this.statusMessage = "Running query...";
+        this.queryExecutionMs = null;
+        var queryStartedMs = this.nowMs();
 
         try {
           this.queryType = this.inferQueryType(this.query);
           var execution = await this.sparqlRequest(this.psid, this.query, this.refreshBeforeQuery);
           this.resultFormat = execution.resultFormat;
+          var responseReceivedMs =
+            typeof execution.responseReceivedMs === "number" ? execution.responseReceivedMs : this.nowMs();
+          this.queryExecutionMs = Math.max(responseReceivedMs - queryStartedMs, 0);
+          var timingSuffix = this.queryExecutionLabel ? " in " + this.queryExecutionLabel : "";
 
           if (execution.resultFormat === "sparql-json") {
             this.result = execution.sparqlJson;
@@ -388,15 +414,16 @@
           }
 
           if (this.queryType === "SELECT") {
-            this.statusMessage = "Query finished (" + this.selectRows.length + " rows).";
+            this.statusMessage = "Query finished (" + this.selectRows.length + " rows" + timingSuffix + ").";
           } else if (this.queryType === "ASK") {
-            this.statusMessage = "ASK query finished.";
+            this.statusMessage = "ASK query finished" + timingSuffix + ".";
           } else {
-            this.statusMessage = "Graph query finished.";
+            this.statusMessage = "Graph query finished" + timingSuffix + ".";
           }
         } catch (err) {
           this.statusMessage = err.message;
           this.result = null;
+          this.queryExecutionMs = null;
         } finally {
           this.isBusy = false;
         }
