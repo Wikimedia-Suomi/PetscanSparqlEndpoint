@@ -1,24 +1,14 @@
 # PetScan SPARQL Endpoint
 
-A Django application with a static HTML + Vue interface that:
-
-- Loads PetScan result data by `psid`
-- Stores that data into Oxigraph
-- Executes SPARQL queries against Oxigraph
-- Exposes a SPARQL protocol endpoint at `/sparql` for federated `SERVICE` queries
-
-## Features
-
-- No authentication/login required
-- Mobile-friendly, accessible query UI
-- SPARQL protocol endpoint for querying
-- Structure metadata endpoint for loaded PetScan data
-- SPARQL endpoint supporting `GET` and `POST`
+This is a django app which works as SPARQL endpoint for PetScan query results.
 
 ## Requirements
 
 - Python 3.9+
 - `pip`
+- Django
+- pyoxigraph
+- PyMySQL
 
 ## Development Setup And Commands
 
