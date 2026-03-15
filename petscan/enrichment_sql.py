@@ -122,10 +122,7 @@ def fetch_wikibase_items_for_site_sql(
         return {}
     finally:
         if connection is not None:
-            try:
-                connection.close()
-            except Exception:
-                pass
+            connection.close()
 
     elapsed_ms = (perf_counter() - started_at) * 1000.0
     if lookup_stats is not None:
