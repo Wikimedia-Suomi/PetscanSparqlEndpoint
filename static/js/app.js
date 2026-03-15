@@ -10,7 +10,6 @@
   var defaultSelectedQueryFields = ["title", "namespace"];
   var openQueryTargets = [
     { value: "wdqs", label: "Wikidata Query Service (via Sophox)" },
-    { value: "yasgui", label: "Yasqui (Yasgui, direct endpoint)" },
     { value: "sophox", label: "Sophox" },
     { value: "qlever", label: "QLever endpoint" },
   ];
@@ -582,27 +581,11 @@
         return lines.join("\n");
       },
       buildOpenQueryUrl: function (target) {
-        var queryText = "";
-        if (target === "wdqs") {
-          queryText = this.buildWdqsFederatedQueryViaSophox();
-        } else if (target === "yasgui") {
-          queryText = String(this.query || "");
-        } else {
-          queryText = this.buildFederatedQueryText();
-        }
+        var queryText = target === "wdqs" ? this.buildWdqsFederatedQueryViaSophox() : this.buildFederatedQueryText();
         var encodedQuery = encodeURIComponent(queryText);
 
         if (target === "wdqs") {
           return "https://query.wikidata.org/#" + encodedQuery;
-        }
-        if (target === "yasgui") {
-          var directEndpointUrl = this.buildPetscanServiceUrl(false);
-          return (
-            "https://yasgui.triply.cc/#query=" +
-            encodedQuery +
-            "&endpoint=" +
-            encodeURIComponent(directEndpointUrl)
-          );
         }
         if (target === "sophox") {
           return "https://sophox.org/#" + encodedQuery;

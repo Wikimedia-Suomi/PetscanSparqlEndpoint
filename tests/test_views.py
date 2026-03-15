@@ -116,7 +116,7 @@ class ApiViewTests(SimpleTestCase):
                 SPARQL_PATH,
                 data=json.dumps({"query": ASK_QUERY}),
                 content_type="application/json",
-                headers={"User-Agent": "yasgui-test-agent/1.0"},
+                headers={"User-Agent": "external-query-ui-test-agent/1.0"},
             )
 
         self.assertEqual(response.status_code, 400)
