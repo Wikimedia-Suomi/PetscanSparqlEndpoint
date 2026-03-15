@@ -46,9 +46,15 @@ class ServiceStoreBuilderTests(ServiceTestCase):
         """
         self.assertTrue(store_instance.query(ask_query))
 
+    @patch("petscan.service_store_builder._optimize_store")
     @patch("petscan.service_store_builder.rdf.summarize_structure")
     @patch("petscan.service_store_builder.links.build_gil_link_enrichment_map", return_value={})
-    def test_build_store_uses_one_pass_structure_accumulator(self, _gil_map_mock, summarize_structure_mock):
+    def test_build_store_uses_one_pass_structure_accumulator(
+        self,
+        _gil_map_mock,
+        summarize_structure_mock,
+        optimize_store_mock,
+    ):
         if store_builder.Store is None:
             self.skipTest("pyoxigraph is not installed")
 
@@ -62,6 +68,7 @@ class ServiceStoreBuilderTests(ServiceTestCase):
         )
 
         summarize_structure_mock.assert_not_called()
+        optimize_store_mock.assert_called_once()
         self.assertEqual(meta["structure"]["row_count"], 1)
         self.assertEqual(meta["records"], 1)
 

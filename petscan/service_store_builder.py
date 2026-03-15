@@ -218,6 +218,12 @@ def _flush_quads(store_instance: Any, quad_buffer: Sequence[Any]) -> None:
         store_instance.add(quad)
 
 
+def _optimize_store(store_instance: Any) -> None:
+    optimize = getattr(store_instance, "optimize", None)
+    if callable(optimize):
+        optimize()
+
+
 def _build_store_meta(
     psid: int,
     records: Sequence[Mapping[str, Any]],
@@ -280,6 +286,7 @@ def build_store(
             quad_buffer = []
 
     _flush_quads(store_instance, quad_buffer)
+    _optimize_store(store_instance)
 
     meta = _build_store_meta(
         psid=psid,
