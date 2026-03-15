@@ -13,6 +13,10 @@ from petscan.normalization import normalize_page_title
 
 DEFAULT_PETSCAN_URL = "https://petscan.wmcloud.org/?psid=43641756"
 _MAX_REASON_SAMPLES = 20
+_ALLOWED_MISSING_GIL_LINK_URIS = {
+    "https://sat.wikipedia.org/wiki/%E1%B1%A2%E1%B1%A9%E1%B1%AC%E1%B1%A9%E1%B1%9B:%E1%B1%9E%E1%B1%9F_%E1%B1%AF%E1%B1%9F%E1%B1%A1%E1%B1%BD",
+    "https://sat.wikipedia.org/wiki/%E1%B1%A2%E1%B1%A9%E1%B1%AC%E1%B1%A9%E1%B1%9B:%E1%B1%AE%E1%B1%9E%E1%B1%9F%E1%B1%9D_%E1%B1%AE%E1%B1%B8%E1%B1%9C%E1%B1%AE%E1%B1%9E",
+}
 
 
 def _normalize_wiki_host(value: str):
@@ -235,6 +239,7 @@ class Command(BaseCommand):
         with_page_len = 0
         with_rev_timestamp = 0
         with_both = 0
+        allowed_missing_exceptions = 0
         missing_reasons = []
         missing_by_site = {}
 
@@ -269,6 +274,11 @@ class Command(BaseCommand):
             if not has_rev_timestamp:
                 reason_parts.append("missing_rev_timestamp")
             reason = ",".join(reason_parts)
+
+            if link_uri in _ALLOWED_MISSING_GIL_LINK_URIS:
+                allowed_missing_exceptions += 1
+                continue
+
             missing_reasons.append((link_uri, reason))
 
             site = (urlsplit(link_uri).hostname or "unknown").lower()
@@ -350,6 +360,7 @@ class Command(BaseCommand):
         self.stdout.write("links_with_page_len={}".format(with_page_len))
         self.stdout.write("links_with_rev_timestamp={}".format(with_rev_timestamp))
         self.stdout.write("links_with_both={}".format(with_both))
+        self.stdout.write("allowed_missing_exceptions={}".format(allowed_missing_exceptions))
 
         if missing_reasons:
             self.stderr.write(

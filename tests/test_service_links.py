@@ -27,6 +27,14 @@ class ServiceLinksTests(ServiceTestCase):
         self.assertEqual(parsed.netloc, "en.wikipedia.org")
         self.assertEqual(parsed.path, "/w/api.php")
 
+    def test_site_to_mediawiki_api_url_maps_outreachwiki_to_wikimedia_domain(self):
+        url = links.site_to_mediawiki_api_url("outreachwiki")
+        parsed = urlparse(url)
+
+        self.assertEqual(parsed.scheme, "https")
+        self.assertEqual(parsed.netloc, "outreach.wikimedia.org")
+        self.assertEqual(parsed.path, "/w/api.php")
+
     def test_site_to_mediawiki_api_url_rejects_malformed_site_tokens(self):
         malformed_sites = [
             "localhost/wiki",

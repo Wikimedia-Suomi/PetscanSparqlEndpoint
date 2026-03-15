@@ -104,3 +104,59 @@ class CheckApiEnrichmentCommandTests(SimpleTestCase):
             )
 
         self.assertIn("first missing link detected", str(ctx.exception))
+
+    @patch("petscan.management.commands.check_api_enrichment._build_filtered_enrichment_map")
+    @patch("petscan.management.commands.check_api_enrichment.source.extract_records")
+    @patch("petscan.management.commands.check_api_enrichment.source.fetch_petscan_json")
+    def test_command_ignores_missing_fields_for_allowed_missing_exception_link(
+        self,
+        fetch_petscan_json_mock,
+        extract_records_mock,
+        build_filtered_enrichment_map_mock,
+    ):
+        allowed_link_1 = (
+            "https://sat.wikipedia.org/wiki/"
+            "%E1%B1%A2%E1%B1%A9%E1%B1%AC%E1%B1%A9%E1%B1%9B:%E1%B1%9E%E1%B1%9F_"
+            "%E1%B1%AF%E1%B1%9F%E1%B1%A1%E1%B1%BD"
+        )
+        allowed_link_2 = (
+            "https://sat.wikipedia.org/wiki/"
+            "%E1%B1%A2%E1%B1%A9%E1%B1%AC%E1%B1%A9%E1%B1%9B:%E1%B1%AE%E1%B1%9E%E1%B1%9F%E1%B1%9D_"
+            "%E1%B1%AE%E1%B1%B8%E1%B1%9C%E1%B1%AE%E1%B1%9E"
+        )
+        records = [{"gil": "satwiki:0:dummy"}]
+        fetch_petscan_json_mock.return_value = ({}, "https://petscan.wmcloud.org/?psid=43641756")
+        extract_records_mock.return_value = records
+        build_filtered_enrichment_map_mock.return_value = (
+            {
+                allowed_link_1: object(),
+                allowed_link_2: object(),
+            },
+            {
+                allowed_link_1: {
+                    "wikidata_id": "Q123",
+                    "page_len": None,
+                    "rev_timestamp": None,
+                },
+                allowed_link_2: {
+                    "wikidata_id": "Q123",
+                    "page_len": None,
+                    "rev_timestamp": None,
+                },
+            },
+        )
+        stdout = io.StringIO()
+        stderr = io.StringIO()
+
+        call_command(
+            "check_api_enrichment",
+            "--psid",
+            "43641756",
+            stdout=stdout,
+            stderr=stderr,
+        )
+
+        self.assertIn("gil_links_total=2", stdout.getvalue())
+        self.assertIn("allowed_missing_exceptions=2", stdout.getvalue())
+        self.assertIn("All gil links have page_len and rev_timestamp.", stdout.getvalue())
+        self.assertEqual(stderr.getvalue(), "")

@@ -125,6 +125,7 @@ def _site_to_mediawiki_domain(site: str) -> Optional[str]:
         "commonswiki": "commons.wikimedia.org",
         "wikidatawiki": "www.wikidata.org",
         "metawiki": "meta.wikimedia.org",
+        "outreachwiki": "outreach.wikimedia.org",
         "specieswiki": "species.wikimedia.org",
         "incubatorwiki": "incubator.wikimedia.org",
         "mediawikiwiki": "www.mediawiki.org",
