@@ -156,6 +156,60 @@ class ServiceLinksTests(ServiceTestCase):
         )
         self.assertTrue(any("www.wikidata.org" in call.args[0] for call in fetch_mock.call_args_list))
 
+    @patch("petscan.service_links.wikidata_lookup_backend", return_value=links.LOOKUP_BACKEND_API)
+    @patch("petscan.service_links.fetch_wikibase_items_for_site_api")
+    def test_build_gil_link_enrichment_map_populates_resolved_links_by_row_out(self, fetch_mock, _backend_mock):
+        def fake_fetch(api_url, _titles, **_kwargs):
+            if "www.wikidata.org" in api_url:
+                return {
+                    "Q42": {
+                        "wikidata_id": "Q42",
+                        "page_len": 12345,
+                        "rev_timestamp": "2026-03-15T10:00:00Z",
+                    }
+                }
+            if "en.wikipedia.org" in api_url:
+                return {
+                    "Albert_Einstein": {
+                        "wikidata_id": "Q937",
+                        "page_len": 886543,
+                        "rev_timestamp": "2026-03-14T23:59:59Z",
+                    }
+                }
+            if "de.wikipedia.org" in api_url:
+                return {
+                    "Berlin": {
+                        "wikidata_id": "Q64",
+                        "page_len": 710123,
+                        "rev_timestamp": "2026-03-10T08:00:00Z",
+                    }
+                }
+            return {}
+
+        fetch_mock.side_effect = fake_fetch
+        records = [
+            {"gil": "wikidatawiki:0:Q42|enwiki:0:Albert_Einstein"},
+            {"gil": "dewiki:0:Berlin"},
+        ]
+        resolved_links_by_row = []
+
+        enrichment = links.build_gil_link_enrichment_map(
+            records,
+            resolved_links_by_row_out=resolved_links_by_row,
+        )
+
+        self.assertEqual(
+            resolved_links_by_row,
+            [
+                [
+                    ("https://www.wikidata.org/wiki/Q42", "Q42"),
+                    ("https://en.wikipedia.org/wiki/Albert_Einstein", "Q937"),
+                ],
+                [("https://de.wikipedia.org/wiki/Berlin", "Q64")],
+            ],
+        )
+        self.assertIn("https://de.wikipedia.org/wiki/Berlin", enrichment)
+
     @patch("petscan.service_links.fetch_wikibase_items_for_site_api")
     def test_api_lookup_accepts_enriched_payload_shape(self, api_fetch_mock):
         api_fetch_mock.return_value = {

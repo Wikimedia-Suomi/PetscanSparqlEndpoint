@@ -72,7 +72,7 @@ class ServiceStoreBuilderTests(ServiceTestCase):
         self.assertEqual(meta["structure"]["row_count"], 1)
         self.assertEqual(meta["records"], 1)
 
-    def test_build_store_resolves_gil_links_once_per_row(self):
+    def test_build_store_uses_precomputed_gil_links_in_write_loop(self):
         if store_builder.Store is None:
             self.skipTest("pyoxigraph is not installed")
 
@@ -89,7 +89,7 @@ class ServiceStoreBuilderTests(ServiceTestCase):
         ) as resolve_gil_links_mock:
             store_builder.build_store(psid, records, "https://example.invalid")
 
-        self.assertEqual(resolve_gil_links_mock.call_count, len(records))
+        self.assertEqual(resolve_gil_links_mock.call_count, 0)
 
     def test_store_writes_img_timestamp_and_touched_as_xsd_datetime(self):
         if store_builder.Store is None:

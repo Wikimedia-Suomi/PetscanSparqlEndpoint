@@ -1,8 +1,10 @@
 """GIL-link parsing, site normalization, and Wikidata lookup helpers."""
 
 import re
+from collections.abc import Mapping as RuntimeMapping
 from dataclasses import dataclass
 from datetime import datetime, timezone
+from functools import lru_cache
 from typing import (
     Any,
     Dict,
@@ -76,7 +78,7 @@ def extract_qid(record: Mapping[str, Any]) -> Optional[str]:
         record.get("wikidata"),
     ]
     metadata = record.get("metadata")
-    if isinstance(metadata, Mapping):
+    if isinstance(metadata, RuntimeMapping):
         candidates.append(metadata.get("wikidata"))
 
     for candidate in candidates:
@@ -121,8 +123,8 @@ def _is_valid_hostname(hostname: str) -> bool:
     return True
 
 
-def _site_to_mediawiki_domain(site: str) -> Optional[str]:
-    normalized_site = str(site or "").strip().lower()
+@lru_cache(maxsize=512)
+def _site_to_mediawiki_domain_cached(normalized_site: str) -> Optional[str]:
     if not normalized_site:
         return None
     if not _SITE_TOKEN_RE.fullmatch(normalized_site):
@@ -170,6 +172,11 @@ def _site_to_mediawiki_domain(site: str) -> Optional[str]:
         return _build_valid_domain(language_code, "wikipedia.org")
 
     return None
+
+
+def _site_to_mediawiki_domain(site: str) -> Optional[str]:
+    normalized_site = str(site or "").strip().lower()
+    return _site_to_mediawiki_domain_cached(normalized_site)
 
 
 def site_to_mediawiki_api_url(site: str) -> Optional[str]:
@@ -253,7 +260,7 @@ def resolve_gil_links(
         qid = None
         if gil_link_enrichment_map is not None:
             payload = gil_link_enrichment_map.get(link_uri)
-            if isinstance(payload, Mapping):
+            if isinstance(payload, RuntimeMapping):
                 qid = _normalize_qid(payload.get("wikidata_id"))
         enriched.append((link_uri, qid))
     return enriched
@@ -347,7 +354,7 @@ def _fetch_wikibase_enrichment_for_site_api(
     )
     resolved = {}  # type: Dict[str, Dict[str, Any]]
     for title, payload in fetched.items():
-        if not isinstance(payload, Mapping):
+        if not isinstance(payload, RuntimeMapping):
             continue
         normalized_title = _normalize_page_title(title)
         normalized_payload = _normalize_link_enrichment_payload(payload)
@@ -372,7 +379,7 @@ def _fetch_wikibase_enrichment_for_site_sql(
     )
     resolved = {}  # type: Dict[str, Dict[str, Any]]
     for title, payload in fetched.items():
-        if not isinstance(payload, Mapping):
+        if not isinstance(payload, RuntimeMapping):
             continue
         normalized_title = _normalize_page_title(title)
         normalized_payload = _normalize_link_enrichment_payload(payload)
@@ -431,14 +438,18 @@ def _collect_lookup_inputs(
     records: Sequence[Mapping[str, Any]],
     *,
     include_direct_lookup_targets: bool = False,
+    row_link_uris_out: Optional[List[List[str]]] = None,
 ) -> Tuple[Dict[str, GilLinkTarget], Dict[str, Set[SiteLookupTarget]], Dict[str, str]]:
     link_targets_by_uri = {}  # type: Dict[str, GilLinkTarget]
     site_lookup_targets = {}  # type: Dict[str, Set[SiteLookupTarget]]
     direct_qids_by_link = {}  # type: Dict[str, str]
 
     for row in records:
+        row_link_uris = [] if row_link_uris_out is not None else None
         for target in _iter_gil_link_targets(row):
             link_targets_by_uri[target.link_uri] = target
+            if row_link_uris is not None:
+                row_link_uris.append(target.link_uri)
             direct_qid = _direct_wikidata_qid_for_target(
                 target.site,
                 target.namespace,
@@ -457,6 +468,8 @@ def _collect_lookup_inputs(
                     db_title=target.db_title,
                 )
             )
+        if row_link_uris_out is not None:
+            row_link_uris_out.append(row_link_uris or [])
 
     return link_targets_by_uri, site_lookup_targets, direct_qids_by_link
 
@@ -510,13 +523,13 @@ def _attach_resolved_enrichment(
             }
             continue
 
-        resolved_qid = _normalize_qid(resolved.get("wikidata_id")) if isinstance(resolved, Mapping) else None
+        resolved_qid = _normalize_qid(resolved.get("wikidata_id")) if isinstance(resolved, RuntimeMapping) else None
         payload = {
             "wikidata_id": resolved_qid or direct_qid,
-            "page_len": _normalize_page_len(resolved.get("page_len")) if isinstance(resolved, Mapping) else None,
+            "page_len": _normalize_page_len(resolved.get("page_len")) if isinstance(resolved, RuntimeMapping) else None,
             "rev_timestamp": (
                 _normalize_revision_timestamp_xsd(resolved.get("rev_timestamp"))
-                if isinstance(resolved, Mapping)
+                if isinstance(resolved, RuntimeMapping)
                 else None
             ),
         }
@@ -527,9 +540,27 @@ def _attach_resolved_enrichment(
     return link_to_enrichment
 
 
+def _build_resolved_links_by_row(
+    row_link_uris: Sequence[Sequence[str]],
+    link_to_enrichment: Mapping[str, Mapping[str, Any]],
+) -> List[List[Tuple[str, Optional[str]]]]:
+    resolved_links_by_row = []  # type: List[List[Tuple[str, Optional[str]]]]
+    for row_links in row_link_uris:
+        resolved_row_links = []  # type: List[Tuple[str, Optional[str]]]
+        for link_uri in row_links:
+            qid = None
+            payload = link_to_enrichment.get(link_uri)
+            if isinstance(payload, RuntimeMapping):
+                qid = _normalize_qid(payload.get("wikidata_id"))
+            resolved_row_links.append((link_uri, qid))
+        resolved_links_by_row.append(resolved_row_links)
+    return resolved_links_by_row
+
+
 def build_gil_link_enrichment_map(
     records: Sequence[Mapping[str, Any]],
     backend: Optional[str] = None,
+    resolved_links_by_row_out: Optional[List[List[Tuple[str, Optional[str]]]]] = None,
 ) -> Dict[str, Dict[str, Any]]:
     lookup_stats: Dict[str, float] = {
         "api_calls": 0.0,
@@ -537,9 +568,11 @@ def build_gil_link_enrichment_map(
         "sql_calls": 0.0,
         "sql_ms_total": 0.0,
     }
+    row_link_uris: Optional[List[List[str]]] = [] if resolved_links_by_row_out is not None else None
     link_targets_by_uri, site_lookup_targets, direct_qids_by_link = _collect_lookup_inputs(
         records,
         include_direct_lookup_targets=True,
+        row_link_uris_out=row_link_uris,
     )
     resolved_by_site_title = _resolve_site_title_enrichment(
         site_lookup_targets,
@@ -551,6 +584,10 @@ def build_gil_link_enrichment_map(
         direct_qids_by_link,
         resolved_by_site_title,
     )
+    if resolved_links_by_row_out is not None:
+        resolved_links_by_row_out.clear()
+        if row_link_uris is not None:
+            resolved_links_by_row_out.extend(_build_resolved_links_by_row(row_link_uris, result))
     total_calls = int(lookup_stats.get("api_calls", 0.0)) + int(lookup_stats.get("sql_calls", 0.0))
     if total_calls > 0:
         print(

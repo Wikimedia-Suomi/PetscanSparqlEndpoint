@@ -1,6 +1,7 @@
 """RDF field shaping and summary helpers for PetScan records."""
 
 import re
+from collections.abc import Mapping as RuntimeMapping
 from datetime import datetime, timezone
 from functools import lru_cache
 from typing import Any, Collection, Dict, Iterable, List, Mapping, Optional, Sequence, Tuple
@@ -239,7 +240,7 @@ def iter_scalar_fields(
 ) -> Iterable[Tuple[str, Any]]:
     record_get = record.get
     metadata = record_get("metadata")
-    metadata_map = metadata if isinstance(metadata, Mapping) else {}
+    metadata_map = metadata if isinstance(metadata, RuntimeMapping) else {}
     if (
         "wikidata_id" in record
         or "qid" in record
@@ -403,7 +404,7 @@ def summarize_structure(
         for link_uri, qid in resolved_gil_links:
             _track_row_field_kind("gil_link", SPARQL_IRI_TYPE)
             payload = gil_link_enrichment_map.get(link_uri) if gil_link_enrichment_map is not None else None
-            if isinstance(payload, Mapping):
+            if isinstance(payload, RuntimeMapping):
                 page_len = _normalize_page_len(payload.get("page_len"))
                 if page_len is not None:
                     _track_row_field_kind("gil_link_page_len", "xsd:integer")

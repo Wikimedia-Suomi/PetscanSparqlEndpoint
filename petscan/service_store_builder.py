@@ -90,6 +90,7 @@ def _write_record_quads(
     index: int,
     row: Mapping[str, Any],
     context: _RecordWriteContext,
+    resolved_gil_links: Optional[Sequence[Tuple[str, Optional[str]]]] = None,
 ) -> Tuple[Dict[str, Set[str]], List[Any]]:
     row_field_kinds: Dict[str, Set[str]] = {}
     row_quads: List[Any] = []
@@ -104,10 +105,11 @@ def _write_record_quads(
 
     predicates = context.predicates
     subject = rdf.item_subject(context.psid, row, index)
-    resolved_gil_links = links.resolve_gil_links(
-        row,
-        gil_link_enrichment_map=context.gil_link_enrichment_map,
-    )
+    if resolved_gil_links is None:
+        resolved_gil_links = links.resolve_gil_links(
+            row,
+            gil_link_enrichment_map=context.gil_link_enrichment_map,
+        )
     gil_link_uris = [link_uri for link_uri, _qid in resolved_gil_links]
     row_quads.append(Quad(subject, predicates.rdf_type, predicates.page_class, context.default_graph))
     row_quads.append(
@@ -148,7 +150,7 @@ def _write_record_quads(
         enrichment = context.gil_link_enrichment_map.get(link_uri)
         page_len = None
         rev_timestamp = None
-        if isinstance(enrichment, Mapping):
+        if isinstance(enrichment, dict):
             raw_page_len = enrichment.get("page_len")
             try:
                 page_len = int(raw_page_len) if raw_page_len is not None else None
@@ -266,7 +268,11 @@ def build_store(
     store_class = _require_store_class()
     store_instance = store_class(str(store_path))
     predicates = _build_store_predicates()
-    gil_link_enrichment_map = links.build_gil_link_enrichment_map(records)
+    resolved_gil_links_by_row: List[List[Tuple[str, Optional[str]]]] = []
+    gil_link_enrichment_map = links.build_gil_link_enrichment_map(
+        records,
+        resolved_links_by_row_out=resolved_gil_links_by_row,
+    )
     loaded_at = datetime.now(timezone.utc).replace(microsecond=0).isoformat()
     structure_accumulator = rdf.StructureAccumulator()
     write_context = _RecordWriteContext(
@@ -283,10 +289,14 @@ def build_store(
     quad_buffer: List[Any] = []
 
     for index, row in enumerate(records):
+        resolved_gil_links = (
+            resolved_gil_links_by_row[index] if index < len(resolved_gil_links_by_row) else None
+        )
         row_field_kinds, row_quads = _write_record_quads(
             index=index,
             row=row,
             context=write_context,
+            resolved_gil_links=resolved_gil_links,
         )
         structure_accumulator.add_row_field_kinds(row_field_kinds)
         quad_buffer.extend(row_quads)
