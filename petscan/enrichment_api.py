@@ -1,6 +1,6 @@
 import json
 from time import perf_counter
-from typing import Any, Dict, Mapping, Optional, Sequence
+from typing import Any, Dict, Mapping, MutableMapping, Optional, Sequence
 from urllib.parse import urlencode
 from urllib.request import Request, urlopen
 
@@ -45,6 +45,7 @@ def fetch_wikibase_items_for_site_api(
     titles: Sequence[str],
     user_agent: str,
     timeout_seconds: int,
+    lookup_stats: Optional[MutableMapping[str, float]] = None,
 ) -> Dict[str, Dict[str, Any]]:
     if not titles:
         return {}
@@ -67,21 +68,23 @@ def fetch_wikibase_items_for_site_api(
             "User-Agent": user_agent,
         },
     )
-    print("[wikimedia-api] GET {}".format(request_url), flush=True)
     started_at = perf_counter()
 
     try:
         with urlopen(request, timeout=timeout_seconds) as response:  # nosec B310
             raw = response.read()
         payload = json.loads(raw.decode("utf-8"))
-    except Exception as exc:
+    except Exception:
         elapsed_ms = (perf_counter() - started_at) * 1000.0
-        print("[wikimedia-api] ERROR {:.1f} ms {}".format(elapsed_ms, request_url), flush=True)
-        print("[wikimedia-api] ERROR_DETAILS {}".format(exc), flush=True)
+        if lookup_stats is not None:
+            lookup_stats["api_calls"] = float(lookup_stats.get("api_calls", 0.0)) + 1.0
+            lookup_stats["api_ms_total"] = float(lookup_stats.get("api_ms_total", 0.0)) + elapsed_ms
         return {}
 
     elapsed_ms = (perf_counter() - started_at) * 1000.0
-    print("[wikimedia-api] DONE {:.1f} ms {}".format(elapsed_ms, request_url), flush=True)
+    if lookup_stats is not None:
+        lookup_stats["api_calls"] = float(lookup_stats.get("api_calls", 0.0)) + 1.0
+        lookup_stats["api_ms_total"] = float(lookup_stats.get("api_ms_total", 0.0)) + elapsed_ms
 
     if not isinstance(payload, dict):
         return {}

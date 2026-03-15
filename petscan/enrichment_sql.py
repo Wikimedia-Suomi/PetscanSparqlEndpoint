@@ -2,7 +2,7 @@ import os
 import re
 from time import perf_counter
 from types import ModuleType
-from typing import Any, Dict, List, Optional, Sequence, Tuple, cast
+from typing import Any, Dict, List, MutableMapping, Optional, Sequence, Tuple, cast
 
 from .normalization import normalize_page_title, normalize_qid
 
@@ -59,6 +59,7 @@ def fetch_wikibase_items_for_site_sql(
     targets: Sequence[Tuple[int, str, str]],
     timeout_seconds: int,
     replica_cnf: Optional[str] = None,
+    lookup_stats: Optional[MutableMapping[str, float]] = None,
 ) -> Dict[str, Dict[str, Any]]:
     if not targets or pymysql is None:
         return {}
@@ -113,35 +114,23 @@ def fetch_wikibase_items_for_site_sql(
         with connection.cursor() as cursor:
             cursor.execute(sql, params)
             rows = cursor.fetchall()
-    except Exception as exc:
+    except Exception:
         elapsed_ms = (perf_counter() - started_at) * 1000.0
-        print(
-            "[wikimedia-sql] ERROR {:.1f} ms site={} db={}".format(
-                elapsed_ms,
-                site,
-                replica_db,
-            ),
-            flush=True,
-        )
-        print("[wikimedia-sql] ERROR_DETAILS {}".format(exc), flush=True)
+        if lookup_stats is not None:
+            lookup_stats["sql_calls"] = float(lookup_stats.get("sql_calls", 0.0)) + 1.0
+            lookup_stats["sql_ms_total"] = float(lookup_stats.get("sql_ms_total", 0.0)) + elapsed_ms
         return {}
     finally:
         if connection is not None:
             try:
                 connection.close()
-            except Exception as exc:
-                print("[wikimedia-sql] CLOSE_ERROR {}".format(exc), flush=True)
+            except Exception:
+                pass
 
     elapsed_ms = (perf_counter() - started_at) * 1000.0
-    print(
-        "[wikimedia-sql] DONE {:.1f} ms site={} db={} rows={}".format(
-            elapsed_ms,
-            site,
-            replica_db,
-            len(rows),
-        ),
-        flush=True,
-    )
+    if lookup_stats is not None:
+        lookup_stats["sql_calls"] = float(lookup_stats.get("sql_calls", 0.0)) + 1.0
+        lookup_stats["sql_ms_total"] = float(lookup_stats.get("sql_ms_total", 0.0)) + elapsed_ms
 
     enrichment_by_pair = {}  # type: Dict[Tuple[int, str], Dict[str, Any]]
     for row in rows:

@@ -3,7 +3,7 @@
 import re
 from dataclasses import dataclass
 from datetime import datetime, timezone
-from typing import Any, Dict, Iterable, List, Mapping, Optional, Sequence, Set, Tuple
+from typing import Any, Dict, Iterable, List, Mapping, MutableMapping, Optional, Sequence, Set, Tuple
 from urllib.parse import quote, urlsplit
 
 from django.conf import settings
@@ -324,6 +324,7 @@ def _normalize_link_enrichment_payload(payload: Mapping[str, Any]) -> Optional[D
 def _fetch_wikibase_enrichment_for_site_api(
     api_url: str,
     titles: Sequence[str],
+    lookup_stats: Optional[MutableMapping[str, float]] = None,
 ) -> Dict[str, Dict[str, Any]]:
     timeout = int(getattr(settings, "PETSCAN_TIMEOUT_SECONDS", 30))
     fetched = fetch_wikibase_items_for_site_api(
@@ -331,6 +332,7 @@ def _fetch_wikibase_enrichment_for_site_api(
         titles,
         user_agent=HTTP_USER_AGENT,
         timeout_seconds=timeout,
+        lookup_stats=lookup_stats,
     )
     resolved = {}  # type: Dict[str, Dict[str, Any]]
     for title, payload in fetched.items():
@@ -346,6 +348,7 @@ def _fetch_wikibase_enrichment_for_site_api(
 def _fetch_wikibase_enrichment_for_site_sql(
     site: str,
     targets: Sequence[SiteLookupTarget],
+    lookup_stats: Optional[MutableMapping[str, float]] = None,
 ) -> Dict[str, Dict[str, Any]]:
     timeout = int(getattr(settings, "PETSCAN_TIMEOUT_SECONDS", 30))
     sql_targets = [(target.namespace, target.api_title, target.db_title) for target in targets]
@@ -354,6 +357,7 @@ def _fetch_wikibase_enrichment_for_site_sql(
         sql_targets,
         timeout_seconds=timeout,
         replica_cnf=str(getattr(settings, "TOOLFORGE_REPLICA_CNF", "") or "").strip(),
+        lookup_stats=lookup_stats,
     )
     resolved = {}  # type: Dict[str, Dict[str, Any]]
     for title, payload in fetched.items():
@@ -370,12 +374,13 @@ def fetch_wikibase_enrichment_for_site(
     site: str,
     targets: Sequence[SiteLookupTarget],
     backend: str,
+    lookup_stats: Optional[MutableMapping[str, float]] = None,
 ) -> Dict[str, Dict[str, Any]]:
     if not targets:
         return {}
 
     if backend == LOOKUP_BACKEND_TOOLFORGE_SQL:
-        return _fetch_wikibase_enrichment_for_site_sql(site, targets)
+        return _fetch_wikibase_enrichment_for_site_sql(site, targets, lookup_stats=lookup_stats)
 
     api_url = site_to_mediawiki_api_url(site)
     if api_url is None:
@@ -383,7 +388,7 @@ def fetch_wikibase_enrichment_for_site(
     titles = sorted({_normalize_page_title(target.api_title) for target in targets if target.api_title})
     resolved = {}  # type: Dict[str, Dict[str, Any]]
     for batch in _chunked(titles, _MAX_TITLES_PER_MEDIAWIKI_BATCH):
-        batch_result = _fetch_wikibase_enrichment_for_site_api(api_url, batch)
+        batch_result = _fetch_wikibase_enrichment_for_site_api(api_url, batch, lookup_stats=lookup_stats)
         resolved.update(batch_result)
     return resolved
 
@@ -448,6 +453,7 @@ def _collect_lookup_inputs(
 def _resolve_site_title_enrichment(
     site_lookup_targets: Mapping[str, Set[SiteLookupTarget]],
     backend: Optional[str] = None,
+    lookup_stats: Optional[MutableMapping[str, float]] = None,
 ) -> Dict[Tuple[str, str], Dict[str, Any]]:
     resolved_by_site_title = {}  # type: Dict[Tuple[str, str], Dict[str, Any]]
     resolved_backend = backend if backend in {LOOKUP_BACKEND_API, LOOKUP_BACKEND_TOOLFORGE_SQL} else None
@@ -459,7 +465,12 @@ def _resolve_site_title_enrichment(
             targets,
             key=lambda item: (item.namespace, item.api_title, item.db_title),
         )
-        result = fetch_wikibase_enrichment_for_site(site, ordered_targets, backend=resolved_backend)
+        result = fetch_wikibase_enrichment_for_site(
+            site,
+            ordered_targets,
+            backend=resolved_backend,
+            lookup_stats=lookup_stats,
+        )
         for title, enrichment in result.items():
             normalized_title = _normalize_page_title(title)
             if normalized_title:
@@ -509,13 +520,35 @@ def build_gil_link_enrichment_map(
     records: Sequence[Mapping[str, Any]],
     backend: Optional[str] = None,
 ) -> Dict[str, Dict[str, Any]]:
+    lookup_stats: Dict[str, float] = {
+        "api_calls": 0.0,
+        "api_ms_total": 0.0,
+        "sql_calls": 0.0,
+        "sql_ms_total": 0.0,
+    }
     link_targets_by_uri, site_lookup_targets, direct_qids_by_link = _collect_lookup_inputs(
         records,
         include_direct_lookup_targets=True,
     )
-    resolved_by_site_title = _resolve_site_title_enrichment(site_lookup_targets, backend=backend)
-    return _attach_resolved_enrichment(
+    resolved_by_site_title = _resolve_site_title_enrichment(
+        site_lookup_targets,
+        backend=backend,
+        lookup_stats=lookup_stats,
+    )
+    result = _attach_resolved_enrichment(
         link_targets_by_uri,
         direct_qids_by_link,
         resolved_by_site_title,
     )
+    total_calls = int(lookup_stats.get("api_calls", 0.0)) + int(lookup_stats.get("sql_calls", 0.0))
+    if total_calls > 0:
+        print(
+            "[wikimedia-lookup] SUMMARY api_calls={} api_total_ms={:.1f} sql_calls={} sql_total_ms={:.1f}".format(
+                int(lookup_stats.get("api_calls", 0.0)),
+                float(lookup_stats.get("api_ms_total", 0.0)),
+                int(lookup_stats.get("sql_calls", 0.0)),
+                float(lookup_stats.get("sql_ms_total", 0.0)),
+            ),
+            flush=True,
+        )
+    return result
