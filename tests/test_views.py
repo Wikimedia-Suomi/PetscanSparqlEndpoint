@@ -1,7 +1,7 @@
 import json
-from urllib.parse import urlencode
 from typing import Any, Dict
 from unittest.mock import patch
+from urllib.parse import urlencode
 
 from django.test import SimpleTestCase
 
