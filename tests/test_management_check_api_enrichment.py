@@ -95,12 +95,16 @@ class CheckApiEnrichmentCommandTests(SimpleTestCase):
                 "rev_timestamp": None,
             },
         )
+        stdout = io.StringIO()
+        stderr = io.StringIO()
 
         with self.assertRaises(CommandError) as ctx:
             call_command(
                 "check_api_enrichment",
                 "--psid",
                 "43641756",
+                stdout=stdout,
+                stderr=stderr,
             )
 
         self.assertIn("first missing link detected", str(ctx.exception))
