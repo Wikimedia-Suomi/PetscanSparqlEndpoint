@@ -112,25 +112,30 @@ def _parse_sparql_query(request: HttpRequest) -> str:
 
     raw_content_type = str(request.headers.get("Content-Type", "") or request.META.get("CONTENT_TYPE", "")).strip()
     content_type = (request.content_type or "").split(";", 1)[0].strip().lower()
-    if content_type != "application/sparql-query":
-        logger.warning(
-            (
-                "[sparql-content-type-debug] Rejected POST /sparql due to unsupported Content-Type. "
-                "parsed_content_type=%r raw_content_type=%r method=%s path=%s query_string=%r "
-                "accept=%r user_agent=%r content_length=%r"
-            ),
-            content_type,
-            raw_content_type,
-            request.method,
-            request.path,
-            request.META.get("QUERY_STRING", ""),
-            request.headers.get("Accept", ""),
-            request.headers.get("User-Agent", ""),
-            request.META.get("CONTENT_LENGTH", ""),
-        )
-        raise ValueError("POST /sparql requires Content-Type: application/sparql-query.")
+    if content_type == "application/sparql-query":
+        return request.body.decode("utf-8").strip()
 
-    return request.body.decode("utf-8").strip()
+    if content_type == "application/x-www-form-urlencoded":
+        return request.POST.get("query", "").strip()
+
+    logger.warning(
+        (
+            "[sparql-content-type-debug] Rejected POST /sparql due to unsupported Content-Type. "
+            "parsed_content_type=%r raw_content_type=%r method=%s path=%s query_string=%r "
+            "accept=%r user_agent=%r content_length=%r"
+        ),
+        content_type,
+        raw_content_type,
+        request.method,
+        request.path,
+        request.META.get("QUERY_STRING", ""),
+        request.headers.get("Accept", ""),
+        request.headers.get("User-Agent", ""),
+        request.META.get("CONTENT_LENGTH", ""),
+    )
+    raise ValueError(
+        "POST /sparql requires Content-Type: application/sparql-query or application/x-www-form-urlencoded."
+    )
 
 
 def _parse_sparql_request(request: HttpRequest, service_params: str) -> SparqlRequest:

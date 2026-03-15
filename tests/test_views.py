@@ -1,4 +1,5 @@
 import json
+from urllib.parse import urlencode
 from typing import Any, Dict
 from unittest.mock import patch
 
@@ -95,6 +96,20 @@ class ApiViewTests(SimpleTestCase):
         self.assertIn("application/sparql-results+json", response["Content-Type"])
         execute_query.assert_called_once_with(123, ASK_QUERY, refresh=True, petscan_params={})
 
+    @patch("petscan.views.petscan_service.execute_query")
+    def test_sparql_endpoint_accepts_form_urlencoded_post(self, execute_query):
+        execute_query.return_value = self._ask_execution_result()
+
+        response = self.client.post(
+            SPARQL_PATH + "&refresh=1",
+            data=urlencode({"query": ASK_QUERY}),
+            content_type="application/x-www-form-urlencoded",
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertIn("application/sparql-results+json", response["Content-Type"])
+        execute_query.assert_called_once_with(123, ASK_QUERY, refresh=True, petscan_params={})
+
     def test_sparql_endpoint_rejects_non_sparql_query_post_content_type(self):
         with self.assertLogs("petscan.views", level="WARNING") as captured_logs:
             response = self.client.post(
@@ -107,7 +122,7 @@ class ApiViewTests(SimpleTestCase):
         self.assertEqual(response.status_code, 400)
         self.assertEqual(
             response.content.decode("utf-8"),
-            "POST /sparql requires Content-Type: application/sparql-query.",
+            "POST /sparql requires Content-Type: application/sparql-query or application/x-www-form-urlencoded.",
         )
         self.assertTrue(any("[sparql-content-type-debug]" in message for message in captured_logs.output))
         self.assertTrue(any("application/json" in message for message in captured_logs.output))

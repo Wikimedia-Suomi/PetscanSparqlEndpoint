@@ -81,7 +81,7 @@ Security-related Django settings are configured via environment variables:
 - `query` (required): SPARQL query (for `GET`) or in the request body (for `POST`)
 - `refresh` (optional): `1/true` to force reloading PetScan data before query
 - any additional URL query parameters are forwarded to PetScan JSON fetch (except reserved keys `psid`, `format`, `query`, `refresh`)
-- `POST /sparql` must use `Content-Type: application/sparql-query`
+- `POST /sparql` supports `Content-Type: application/sparql-query` and `application/x-www-form-urlencoded`
 - In the web UI, use the **PetScan extra GET params** field (example: `category=Turku&language=fi`) to simulate `SERVICE` URI parameters.
 
 ### Example `GET`
