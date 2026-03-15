@@ -3,7 +3,7 @@
 import re
 from datetime import datetime, timezone
 from functools import lru_cache
-from typing import Any, Dict, Iterable, List, Mapping, Optional, Sequence, Tuple
+from typing import Any, Collection, Dict, Iterable, List, Mapping, Optional, Sequence, Tuple
 from urllib.parse import quote
 
 from . import service_links as links
@@ -44,9 +44,9 @@ if NamedNode is not None:
     _XSD_DOUBLE_NODE = NamedNode(XSD_DOUBLE_IRI)
     _XSD_BOOLEAN_NODE = NamedNode(XSD_BOOLEAN_IRI)
 else:  # pragma: no cover - dependency check at runtime
-    _XSD_INTEGER_NODE = None  # type: ignore[assignment]
-    _XSD_DOUBLE_NODE = None  # type: ignore[assignment]
-    _XSD_BOOLEAN_NODE = None  # type: ignore[assignment]
+    _XSD_INTEGER_NODE = None
+    _XSD_DOUBLE_NODE = None
+    _XSD_BOOLEAN_NODE = None
 
 _FIELD_NAME_RE = re.compile(r"[^0-9A-Za-z_]+")
 _FIELD_RENAMES = {
@@ -58,7 +58,7 @@ class StructureAccumulator:
     def __init__(self) -> None:
         self._field_info: Dict[str, Dict[str, Any]] = {}
 
-    def add_row_field_kinds(self, row_field_kinds: Mapping[str, Sequence[str]]) -> None:
+    def add_row_field_kinds(self, row_field_kinds: Mapping[str, Collection[str]]) -> None:
         for key, kinds in row_field_kinds.items():
             if not kinds:
                 continue

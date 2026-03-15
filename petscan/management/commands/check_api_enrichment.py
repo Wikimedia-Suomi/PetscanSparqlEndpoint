@@ -1,5 +1,6 @@
 import json
 from time import perf_counter
+from typing import Any, Dict, List, Mapping, Optional, Sequence, Set, Tuple
 from urllib.parse import parse_qs, urlencode, urlparse, urlsplit
 from urllib.request import Request, urlopen
 
@@ -19,7 +20,7 @@ _ALLOWED_MISSING_GIL_LINK_URIS = {
 }
 
 
-def _normalize_wiki_host(value: str):
+def _normalize_wiki_host(value: Optional[Any]) -> Optional[str]:
     text = str(value or "").strip().lower()
     if not text:
         return None
@@ -30,7 +31,7 @@ def _normalize_wiki_host(value: str):
     return text
 
 
-def _extract_psid_and_params_from_url(petscan_url: str):
+def _extract_psid_and_params_from_url(petscan_url: str) -> Tuple[int, Dict[str, List[str]]]:
     parsed = urlparse(str(petscan_url or "").strip())
     query_pairs = parse_qs(parsed.query, keep_blank_values=False)
 
@@ -45,7 +46,7 @@ def _extract_psid_and_params_from_url(petscan_url: str):
     if psid <= 0:
         raise CommandError("psid must be greater than zero.")
 
-    forwarded = {}
+    forwarded: Dict[str, List[str]] = {}
     for key, values in query_pairs.items():
         if key.lower() in {"psid", "format", "query", "refresh"}:
             continue
@@ -56,7 +57,7 @@ def _extract_psid_and_params_from_url(petscan_url: str):
     return psid, forwarded
 
 
-def _build_api_query_url(api_url: str, titles):
+def _build_api_query_url(api_url: str, titles: Sequence[str]) -> str:
     params = {
         "action": "query",
         "titles": "|".join(titles),
@@ -70,7 +71,7 @@ def _build_api_query_url(api_url: str, titles):
     return "{}?{}".format(api_url, urlencode(params))
 
 
-def _payload_for_title(payload_by_title, title: str):
+def _payload_for_title(payload_by_title: Any, title: str) -> Optional[Dict[str, Any]]:
     if not isinstance(payload_by_title, dict):
         return None
     normalized_title = normalize_page_title(title)
@@ -84,15 +85,18 @@ def _payload_for_title(payload_by_title, title: str):
     return None
 
 
-def _build_filtered_enrichment_map(records, wiki_host):
+def _build_filtered_enrichment_map(
+    records: Sequence[Mapping[str, Any]],
+    wiki_host: Optional[str],
+) -> Tuple[Dict[str, links.GilLinkTarget], Dict[str, Dict[str, Any]]]:
     link_targets_by_uri, _all_site_lookup_targets, direct_qids_by_link = links._collect_lookup_inputs(
         records,
         include_direct_lookup_targets=True,
     )
 
-    selected_targets = {}
-    selected_site_targets = {}
-    selected_direct_qids = {}
+    selected_targets: Dict[str, links.GilLinkTarget] = {}
+    selected_site_targets: Dict[str, Set[links.SiteLookupTarget]] = {}
+    selected_direct_qids: Dict[str, str] = {}
     for link_uri, target in link_targets_by_uri.items():
         host = (urlsplit(link_uri).hostname or "").lower()
         if wiki_host and host != wiki_host:
@@ -121,7 +125,9 @@ def _build_filtered_enrichment_map(records, wiki_host):
     return selected_targets, enrichment_map
 
 
-def _probe_target_api_payload(target):
+def _probe_target_api_payload(
+    target: links.GilLinkTarget,
+) -> Tuple[Optional[str], Optional[Dict[str, Any]]]:
     api_url = links.site_to_mediawiki_api_url(target.site)
     if api_url is None:
         return None, None
@@ -137,7 +143,10 @@ def _probe_target_api_payload(target):
     return api_query_url, _payload_for_title(payload_by_title, target.api_title)
 
 
-def _probe_multi_title_request_error(target, sibling_target):
+def _probe_multi_title_request_error(
+    target: links.GilLinkTarget,
+    sibling_target: links.GilLinkTarget,
+) -> Tuple[Optional[str], Optional[Dict[str, str]]]:
     api_url = links.site_to_mediawiki_api_url(target.site)
     if api_url is None:
         return None, None
@@ -240,8 +249,8 @@ class Command(BaseCommand):
         with_rev_timestamp = 0
         with_both = 0
         allowed_missing_exceptions = 0
-        missing_reasons = []
-        missing_by_site = {}
+        missing_reasons: List[Tuple[str, str]] = []
+        missing_by_site: Dict[str, int] = {}
 
         for link_uri in all_gil_links:
             payload_for_link = enrichment_map.get(link_uri)
@@ -311,14 +320,15 @@ class Command(BaseCommand):
                     )
                 )
                 sibling_target = None
-                for candidate_uri, candidate_target in link_targets_by_uri.items():
-                    if candidate_uri == link_uri:
-                        continue
-                    if candidate_target.site == target.site:
-                        sibling_target = candidate_target
-                        break
+                if target is not None:
+                    for candidate_uri, candidate_target in link_targets_by_uri.items():
+                        if candidate_uri == link_uri:
+                            continue
+                        if candidate_target.site == target.site:
+                            sibling_target = candidate_target
+                            break
 
-                if sibling_target is not None:
+                if target is not None and sibling_target is not None:
                     batch_url, batch_error = _probe_multi_title_request_error(target, sibling_target)
                 else:
                     batch_url, batch_error = (None, None)

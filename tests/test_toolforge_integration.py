@@ -1,5 +1,5 @@
 import unittest
-from typing import Any, List, Mapping
+from typing import Any, Dict, List, Mapping, Tuple
 
 from django.conf import settings
 from django.test import SimpleTestCase
@@ -79,7 +79,7 @@ class ToolforgeWikidataLookupParityTests(SimpleTestCase):
         only_in_api = sorted(api_keys - sql_keys)
         only_in_sql = sorted(sql_keys - api_keys)
 
-        payload_mismatches = []
+        payload_mismatches: List[Tuple[str, Dict[str, Any], Dict[str, Any]]] = []
         payload_mismatch_count = 0
         for link_uri in sorted(api_keys & sql_keys):
             if dict(api_result[link_uri]) != dict(sql_result[link_uri]):

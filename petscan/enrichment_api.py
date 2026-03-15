@@ -28,7 +28,7 @@ def _normalize_revision_timestamp(value: object) -> Optional[str]:
     return text
 
 
-def _normalize_page_len(value: object) -> Optional[int]:
+def _normalize_page_len(value: Any) -> Optional[int]:
     if value is None:
         return None
     try:
