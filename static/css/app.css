@@ -20,6 +20,7 @@ body {
   color: var(--text);
   font-family: "Source Sans 3", "Segoe UI", "Helvetica Neue", sans-serif;
   line-height: 1.5;
+  overflow-x: hidden;
 }
 
 .page {
@@ -29,6 +30,7 @@ body {
   padding: 1rem 1.25rem;
   display: grid;
   gap: 1rem;
+  min-width: 0;
 }
 
 .hero {
@@ -53,6 +55,7 @@ body {
   border: 1px solid var(--border);
   border-radius: 14px;
   padding: 1rem;
+  min-width: 0;
 }
 
 .card h2 {
@@ -256,6 +259,10 @@ button:disabled {
   margin: 0.75rem 0 0;
 }
 
+.footer-source-link {
+  text-align: center;
+}
+
 .structure-tools {
   display: flex;
   flex-wrap: wrap;
@@ -273,14 +280,23 @@ button:disabled {
 
 .table-wrap {
   overflow-x: auto;
+  overflow-y: hidden;
+  max-width: 100%;
+  width: 100%;
   border: 1px solid var(--border);
   border-radius: 10px;
+  min-width: 0;
 }
 
 table {
-  width: 100%;
+  width: max-content;
+  min-width: 100%;
   border-collapse: collapse;
   min-width: 480px;
+}
+
+.structure-collapsible table {
+  width: 100%;
 }
 
 th,
@@ -289,6 +305,7 @@ td {
   border-bottom: 1px solid var(--border);
   text-align: left;
   vertical-align: top;
+  overflow-wrap: anywhere;
 }
 
 th {
@@ -306,6 +323,66 @@ th {
 
 .result-block td a:hover {
   text-decoration: underline;
+}
+
+.result-view-toggle {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin-bottom: 0.65rem;
+}
+
+.result-view-toggle button.is-active {
+  background: var(--accent);
+  color: #fff;
+}
+
+.result-cards {
+  display: grid;
+  gap: 0.75rem;
+}
+
+.result-card {
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: #f7fafc;
+  padding: 0.75rem;
+}
+
+.result-card-title {
+  margin: 0 0 0.5rem;
+  font-size: 1rem;
+}
+
+.result-card-fields {
+  display: grid;
+  gap: 0.2rem;
+}
+
+.result-card-field {
+  display: grid;
+  grid-template-columns: minmax(7rem, 14rem) minmax(0, 1fr);
+  gap: 0.6rem;
+  padding: 0.3rem 0;
+  border-bottom: 1px dashed color-mix(in srgb, var(--border) 75%, white);
+}
+
+.result-card-field:last-child {
+  border-bottom: 0;
+}
+
+.result-card-key {
+  font-weight: 600;
+  color: var(--muted);
+}
+
+.result-card-value {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.result-card-value a {
+  color: var(--accent);
 }
 
 .code-output {
@@ -486,5 +563,10 @@ th {
   .query-target-dialog-header {
     align-items: flex-start;
     flex-direction: column;
+  }
+
+  .result-card-field {
+    grid-template-columns: 1fr;
+    gap: 0.2rem;
   }
 }

@@ -38,6 +38,7 @@
         queryType: "",
         resultFormat: "",
         result: null,
+        resultViewMode: "table",
         queryExecutionMs: null,
         meta: {},
         loadedPsid: "",

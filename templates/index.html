@@ -115,7 +115,7 @@
                 :disabled="!openQueryTargets.length"
                 @click="openQueryTargetDialog"
               >
-                Open query in...
+                Open query as Federated query in...
               </button>
             </div>
 
@@ -195,7 +195,28 @@
         </div>
 
         <div v-if="queryType === 'SELECT'" class="result-block">
-          <div class="table-wrap" v-if="selectRows.length">
+          <div class="result-view-toggle" v-if="selectRows.length">
+            <button
+              type="button"
+              class="secondary"
+              :class="{ 'is-active': resultViewMode === 'table' }"
+              :aria-pressed="resultViewMode === 'table' ? 'true' : 'false'"
+              @click="resultViewMode = 'table'"
+            >
+              Table
+            </button>
+            <button
+              type="button"
+              class="secondary"
+              :class="{ 'is-active': resultViewMode === 'cards' }"
+              :aria-pressed="resultViewMode === 'cards' ? 'true' : 'false'"
+              @click="resultViewMode = 'cards'"
+            >
+              Cards
+            </button>
+          </div>
+
+          <div class="table-wrap" v-if="selectRows.length && resultViewMode === 'table'">
             <table>
               <caption class="sr-only">SPARQL query results</caption>
               <thead>
@@ -219,6 +240,27 @@
                 </tr>
               </tbody>
             </table>
+          </div>
+          <div class="result-cards" v-else-if="selectRows.length && resultViewMode === 'cards'">
+            <article class="result-card" v-for="(row, idx) in selectRows" :key="'card-' + idx">
+              <h3 class="result-card-title">Row [[ idx + 1 ]]</h3>
+              <div class="result-card-fields">
+                <div class="result-card-field" v-for="v in selectVars" :key="v + '-card-' + idx">
+                  <div class="result-card-key">[[ v ]]</div>
+                  <div class="result-card-value">
+                    <a
+                      v-if="formatCellHref(row[v])"
+                      :href="formatCellHref(row[v])"
+                      target="_blank"
+                      rel="noopener noreferrer"
+                    >
+                      [[ formatCell(row[v]) ]]
+                    </a>
+                    <span v-else>[[ formatCell(row[v]) ]]</span>
+                  </div>
+                </div>
+              </div>
+            </article>
           </div>
           <p v-else>No rows returned.</p>
         </div>
@@ -276,10 +318,14 @@
         </div>
       </dialog>
 
+      <p class="help footer-source-link">
+        Source code: <a href="https://github.com/Wikimedia-Suomi/PetscanSparqlEndpoint" target="_blank" rel="noopener noreferrer">github.com/Wikimedia-Suomi/PetscanSparqlEndpoint</a>
+      </p>
+
     </main>
     {% endverbatim %}
 
     <script src="https://tools-static.wmflabs.org/cdnjs/ajax/libs/vue/3.5.22/vue.global.prod.min.js"></script>
-    <script src="{% static 'js/app.js' %}?v=20260315-4" defer></script>
+    <script src="{% static 'js/app.js' %}?v=20260315-5" defer></script>
   </body>
 </html>
