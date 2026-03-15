@@ -182,8 +182,8 @@ class ServiceRdfTests(ServiceTestCase):
         self.assertIn("gil_link_wikidata_entity", field_map)
         self.assertIn("gil_link_page_len", field_map)
         self.assertIn("gil_link_rev_timestamp", field_map)
-        self.assertEqual(field_map["gil_link_page_len"]["primary_type"], "integer")
-        self.assertEqual(field_map["gil_link_rev_timestamp"]["primary_type"], "string")
+        self.assertEqual(field_map["gil_link_page_len"]["primary_type"], "xsd:integer")
+        self.assertEqual(field_map["gil_link_rev_timestamp"]["primary_type"], "xsd:dateTime")
 
     def test_gil_wikidata_fields_are_emitted_when_mapping_exists(self):
         record = {"gil": "enwiki:0:Albert_Einstein|dewiki:0:Berlin"}

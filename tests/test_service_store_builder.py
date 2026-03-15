@@ -34,14 +34,14 @@ class ServiceStoreBuilderTests(ServiceTestCase):
         store_instance = store_builder.Store(str(store.store_path(psid)))
 
         ask_query = """
-        PREFIX ps: <https://petscan.wmcloud.org/ontology/>
+        PREFIX petscan: <https://petscan.wmcloud.org/ontology/>
         PREFIX xsd: <http://www.w3.org/2001/XMLSchema#>
         ASK {
-          ?item ps:gil_link <https://en.wikipedia.org/wiki/Federalist_No._42> .
-          <https://en.wikipedia.org/wiki/Federalist_No._42> ps:gil_link_wikidata_id "Q5440615" .
-          <https://en.wikipedia.org/wiki/Federalist_No._42> ps:gil_link_wikidata_entity <http://www.wikidata.org/entity/Q5440615> .
-          <https://en.wikipedia.org/wiki/Federalist_No._42> ps:gil_link_page_len "12345"^^xsd:integer .
-          <https://en.wikipedia.org/wiki/Federalist_No._42> ps:gil_link_rev_timestamp "2026-03-15T10:00:00Z"^^xsd:dateTime .
+          ?item petscan:gil_link <https://en.wikipedia.org/wiki/Federalist_No._42> .
+          <https://en.wikipedia.org/wiki/Federalist_No._42> petscan:gil_link_wikidata_id "Q5440615" .
+          <https://en.wikipedia.org/wiki/Federalist_No._42> petscan:gil_link_wikidata_entity <http://www.wikidata.org/entity/Q5440615> .
+          <https://en.wikipedia.org/wiki/Federalist_No._42> petscan:gil_link_page_len "12345"^^xsd:integer .
+          <https://en.wikipedia.org/wiki/Federalist_No._42> petscan:gil_link_rev_timestamp "2026-03-15T10:00:00Z"^^xsd:dateTime .
         }
         """
         self.assertTrue(store_instance.query(ask_query))
@@ -90,3 +90,35 @@ class ServiceStoreBuilderTests(ServiceTestCase):
             store_builder.build_store(psid, records, "https://example.invalid")
 
         self.assertEqual(resolve_gil_links_mock.call_count, len(records))
+
+    def test_store_writes_img_timestamp_and_touched_as_xsd_datetime(self):
+        if store_builder.Store is None:
+            self.skipTest("pyoxigraph is not installed")
+
+        psid = STORE_GIL_TEST_PSID + 3
+        self._cleanup_store(psid)
+
+        records = [
+            {
+                "id": 1,
+                "title": "Example",
+                "img_timestamp": "20260315123456",
+                "touched": "2026-03-15T12:35:30Z",
+            }
+        ]
+        meta = store_builder.build_store(psid, records, "https://example.invalid")
+        store_instance = store_builder.Store(str(store.store_path(psid)))
+
+        ask_query = """
+        PREFIX petscan: <https://petscan.wmcloud.org/ontology/>
+        PREFIX xsd: <http://www.w3.org/2001/XMLSchema#>
+        ASK {
+          ?item petscan:img_timestamp "2026-03-15T12:34:56Z"^^xsd:dateTime .
+          ?item petscan:touched "2026-03-15T12:35:30Z"^^xsd:dateTime .
+        }
+        """
+        self.assertTrue(store_instance.query(ask_query))
+
+        field_map = {field["source_key"]: field for field in meta["structure"]["fields"]}
+        self.assertEqual(field_map["img_timestamp"]["primary_type"], "xsd:dateTime")
+        self.assertEqual(field_map["touched"]["primary_type"], "xsd:dateTime")

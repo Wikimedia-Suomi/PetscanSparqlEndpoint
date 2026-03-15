@@ -13,12 +13,12 @@
       return {
         psid: defaultPsid,
         query: [
-          "PREFIX ps: <https://petscan.wmcloud.org/ontology/>",
+          "PREFIX petscan: <https://petscan.wmcloud.org/ontology/>",
           "SELECT ?item ?title ?ns",
           "WHERE {",
-          "  ?item a ps:Page .",
-          "  OPTIONAL { ?item ps:title ?title }",
-          "  OPTIONAL { ?item ps:namespace ?ns }",
+          "  ?item a petscan:Page .",
+          "  OPTIONAL { ?item petscan:title ?title }",
+          "  OPTIONAL { ?item petscan:namespace ?ns }",
           "}",
           "LIMIT 50",
         ].join("\n"),
@@ -226,15 +226,15 @@
 
         var lines = [];
         if (byField.gil_link) {
-          lines.push("?item ps:gil_link ?gil_link .");
-          lines.push("?gil_link ps:gil_link_wikidata_id ?gil_link_wikidata_id .");
-          lines.push("?gil_link ps:gil_link_wikidata_entity ?gil_link_wikidata_entity .");
-          lines.push("?gil_link ps:gil_link_page_len ?gil_link_page_len .");
-          lines.push("?gil_link ps:gil_link_rev_timestamp ?gil_link_rev_timestamp");
+          lines.push("?item petscan:gil_link ?gil_link .");
+          lines.push("?gil_link petscan:gil_link_wikidata_id ?gil_link_wikidata_id .");
+          lines.push("?gil_link petscan:gil_link_wikidata_entity ?gil_link_wikidata_entity .");
+          lines.push("?gil_link petscan:gil_link_page_len ?gil_link_page_len .");
+          lines.push("?gil_link petscan:gil_link_rev_timestamp ?gil_link_rev_timestamp");
           return lines;
         }
         if (byField.id || byField.page_id) {
-          lines.push("?item ps:page_id ?page_id .");
+          lines.push("?item petscan:page_id ?page_id .");
         }
 
         return lines;
@@ -456,8 +456,30 @@
         if (!field) {
           return "";
         }
-        var primary = String(field.primary_type || "");
-        var observed = Array.isArray(field.observed_types) ? field.observed_types : [];
+
+        var normalizeType = function (value) {
+          var normalized = String(value || "");
+          if (!normalized) {
+            return "";
+          }
+          if (normalized === "string") {
+            return "xsd:string";
+          }
+          if (normalized === "integer") {
+            return "xsd:integer";
+          }
+          if (normalized === "double") {
+            return "xsd:double";
+          }
+          if (normalized === "boolean") {
+            return "xsd:boolean";
+          }
+          return normalized;
+        };
+
+        var primary = normalizeType(field.primary_type);
+        var observedRaw = Array.isArray(field.observed_types) ? field.observed_types : [];
+        var observed = observedRaw.map(normalizeType).filter(Boolean);
         if (!observed.length || (observed.length === 1 && observed[0] === primary)) {
           return primary;
         }

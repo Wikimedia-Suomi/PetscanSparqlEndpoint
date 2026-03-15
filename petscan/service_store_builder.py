@@ -16,6 +16,7 @@ from .service_types import StoreMeta, StoreMetaModel, StructureSummary
 
 __all__ = ["build_store"]
 _QUAD_BUFFER_TARGET = 20_000
+_ROW_XSD_DATETIME_FIELDS = frozenset({"img_timestamp", "touched"})
 
 try:
     from pyoxigraph import DefaultGraph, Literal, NamedNode, Quad, Store
@@ -93,8 +94,8 @@ def _write_record_quads(
     row_field_kinds: Dict[str, Set[str]] = {}
     row_quads: List[Any] = []
 
-    def _track_field_kind(key: str, value: Any) -> None:
-        kind = rdf.value_kind(value)
+    def _track_field_kind(key: str, value: Any, kind_override: Optional[str] = None) -> None:
+        kind = kind_override if kind_override is not None else rdf.sparql_type_for_value(value)
         kinds = row_field_kinds.get(key)
         if kinds is None:
             row_field_kinds[key] = {kind}
@@ -134,13 +135,13 @@ def _write_record_quads(
         )
     )
     for key, value in rdf.iter_scalar_fields(row, gil_links=gil_link_uris):
-        _track_field_kind(key, value)
+        _track_field_kind(key, value, kind_override=rdf.sparql_type_for_scalar_field(key, value))
         predicate = rdf.predicate_for(key)
-        literal = rdf.literal_for(value)
+        literal = _literal_for_scalar_field(key=key, value=value, context=context)
         row_quads.append(Quad(subject, predicate, literal, context.default_graph))
 
     for link_uri, qid in resolved_gil_links:
-        _track_field_kind("gil_link", link_uri)
+        _track_field_kind("gil_link", link_uri, kind_override=rdf.SPARQL_IRI_TYPE)
         link_node = NamedNode(link_uri)
         row_quads.append(Quad(subject, predicates.gil_link, link_node, context.default_graph))
 
@@ -163,7 +164,7 @@ def _write_record_quads(
                     rev_timestamp = normalized_timestamp
 
         if page_len is not None:
-            _track_field_kind("gil_link_page_len", page_len)
+            _track_field_kind("gil_link_page_len", page_len, kind_override="xsd:integer")
             row_quads.append(
                 Quad(
                     link_node,
@@ -174,7 +175,7 @@ def _write_record_quads(
             )
 
         if rev_timestamp is not None:
-            _track_field_kind("gil_link_rev_timestamp", rev_timestamp)
+            _track_field_kind("gil_link_rev_timestamp", rev_timestamp, kind_override="xsd:dateTime")
             row_quads.append(
                 Quad(
                     link_node,
@@ -185,9 +186,9 @@ def _write_record_quads(
             )
 
         if qid is not None:
-            _track_field_kind("gil_link_wikidata_id", qid)
+            _track_field_kind("gil_link_wikidata_id", qid, kind_override="xsd:string")
             entity_iri = "http://www.wikidata.org/entity/{}".format(qid)
-            _track_field_kind("gil_link_wikidata_entity", entity_iri)
+            _track_field_kind("gil_link_wikidata_entity", entity_iri, kind_override=rdf.SPARQL_IRI_TYPE)
             row_quads.append(
                 Quad(
                     link_node,
@@ -205,6 +206,14 @@ def _write_record_quads(
                 )
             )
     return row_field_kinds, row_quads
+
+
+def _literal_for_scalar_field(key: str, value: Any, context: _RecordWriteContext) -> Any:
+    if key in _ROW_XSD_DATETIME_FIELDS:
+        normalized_datetime = rdf.normalize_datetime_xsd(value)
+        if normalized_datetime is not None:
+            return Literal(normalized_datetime, datatype=context.xsd_date_time_type)
+    return rdf.literal_for(value)
 
 
 def _flush_quads(store_instance: Any, quad_buffer: Sequence[Any]) -> None:

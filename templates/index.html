@@ -176,7 +176,7 @@
               Overview of fields found in PetScan JSON for psid <strong>[[ loadedPsid ]]</strong>.
             </p>
             <p class="help">
-              URI model: <code>id</code> is exposed as <code>ps:page_id</code>, and
+              URI model: <code>id</code> is exposed as <code>petscan:page_id</code>, and
               <code>gil_link</code> uses link URI nodes with their own Wikidata triples.
             </p>
 
@@ -187,7 +187,7 @@
 
             <div class="pattern-box" v-if="(structurePatterns || []).length">
               <h3>SPARQL Patterns</h3>
-              <pre class="pattern-code">PREFIX ps: &lt;https://petscan.wmcloud.org/ontology/&gt;
+              <pre class="pattern-code">PREFIX petscan: &lt;https://petscan.wmcloud.org/ontology/&gt;
 [[ (structurePatterns || []).join('\n') ]]</pre>
             </div>
 

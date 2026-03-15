@@ -22,6 +22,8 @@ XSD_INTEGER_IRI = "http://www.w3.org/2001/XMLSchema#integer"
 XSD_DOUBLE_IRI = "http://www.w3.org/2001/XMLSchema#double"
 XSD_BOOLEAN_IRI = "http://www.w3.org/2001/XMLSchema#boolean"
 XSD_DATE_TIME_IRI = "http://www.w3.org/2001/XMLSchema#dateTime"
+SPARQL_IRI_TYPE = "iri"
+_XSD_DATETIME_SCALAR_FIELDS = frozenset({"img_timestamp", "touched", "gil_link_rev_timestamp"})
 __all__ = [
     "ITEM_BASE",
     "PREDICATE_BASE",
@@ -33,7 +35,10 @@ __all__ = [
     "item_subject",
     "iter_scalar_fields",
     "literal_for",
+    "normalize_datetime_xsd",
     "predicate_for",
+    "sparql_type_for_scalar_field",
+    "sparql_type_for_value",
     "StructureAccumulator",
     "summarize_structure",
     "value_kind",
@@ -82,7 +87,7 @@ class StructureAccumulator:
         for key, values in row_fields.items():
             seen = set()
             for value in values:
-                seen.add(value_kind(value))
+                seen.add(sparql_type_for_scalar_field(key, value))
             if seen:
                 row_field_kinds[key] = list(seen)
         self.add_row_field_kinds(row_field_kinds)
@@ -308,6 +313,22 @@ def _value_kind(value: Any) -> str:
     return value_kind(value)
 
 
+def sparql_type_for_value(value: Any) -> str:
+    if isinstance(value, bool):
+        return "xsd:boolean"
+    if isinstance(value, int):
+        return "xsd:integer"
+    if isinstance(value, float):
+        return "xsd:double"
+    return "xsd:string"
+
+
+def sparql_type_for_scalar_field(key: str, value: Any) -> str:
+    if key in _XSD_DATETIME_SCALAR_FIELDS and normalize_datetime_xsd(value) is not None:
+        return "xsd:dateTime"
+    return sparql_type_for_value(value)
+
+
 def _normalize_page_len(value: Any) -> Optional[int]:
     if value is None:
         return None
@@ -320,7 +341,7 @@ def _normalize_page_len(value: Any) -> Optional[int]:
     return page_len
 
 
-def _normalize_revision_timestamp_xsd(value: Any) -> Optional[str]:
+def normalize_datetime_xsd(value: Any) -> Optional[str]:
     if value is None:
         return None
     text = str(value).strip()
@@ -350,6 +371,11 @@ def _normalize_revision_timestamp_xsd(value: Any) -> Optional[str]:
     return normalized.replace("+00:00", "Z")
 
 
+def _normalize_revision_timestamp_xsd(value: Any) -> Optional[str]:
+    # Backward-compatible alias for internal callers.
+    return normalize_datetime_xsd(value)
+
+
 def summarize_structure(
     records: Sequence[Mapping[str, Any]],
     gil_link_enrichment_map: Optional[Mapping[str, Mapping[str, Any]]] = None,
@@ -357,32 +383,39 @@ def summarize_structure(
     accumulator = StructureAccumulator()
 
     for row in records:
+        row_field_kinds: Dict[str, set[str]] = {}
+
+        def _track_row_field_kind(key: str, kind: str) -> None:
+            kinds = row_field_kinds.get(key)
+            if kinds is None:
+                row_field_kinds[key] = {kind}
+            else:
+                kinds.add(kind)
+
         resolved_gil_links = links.resolve_gil_links(
             row,
             gil_link_enrichment_map=gil_link_enrichment_map,
         )
         gil_link_uris = [link_uri for link_uri, _qid in resolved_gil_links]
-        row_fields: Dict[str, List[Any]] = {}
         for key, value in iter_scalar_fields(row, gil_links=gil_link_uris):
-            row_fields.setdefault(key, []).append(value)
+            _track_row_field_kind(key, sparql_type_for_scalar_field(key, value))
+
         for link_uri, qid in resolved_gil_links:
-            row_fields.setdefault("gil_link", []).append(link_uri)
+            _track_row_field_kind("gil_link", SPARQL_IRI_TYPE)
             payload = gil_link_enrichment_map.get(link_uri) if gil_link_enrichment_map is not None else None
             if isinstance(payload, Mapping):
                 page_len = _normalize_page_len(payload.get("page_len"))
                 if page_len is not None:
-                    row_fields.setdefault("gil_link_page_len", []).append(page_len)
+                    _track_row_field_kind("gil_link_page_len", "xsd:integer")
 
-                rev_timestamp = _normalize_revision_timestamp_xsd(payload.get("rev_timestamp"))
+                rev_timestamp = normalize_datetime_xsd(payload.get("rev_timestamp"))
                 if rev_timestamp is not None:
-                    row_fields.setdefault("gil_link_rev_timestamp", []).append(rev_timestamp)
+                    _track_row_field_kind("gil_link_rev_timestamp", "xsd:dateTime")
 
             if qid is not None:
-                row_fields.setdefault("gil_link_wikidata_id", []).append(qid)
-                row_fields.setdefault("gil_link_wikidata_entity", []).append(
-                    "http://www.wikidata.org/entity/{}".format(qid)
-                )
+                _track_row_field_kind("gil_link_wikidata_id", "xsd:string")
+                _track_row_field_kind("gil_link_wikidata_entity", SPARQL_IRI_TYPE)
 
-        accumulator.add_row_fields(row_fields)
+        accumulator.add_row_field_kinds(row_field_kinds)
 
     return accumulator.build_summary(row_count=len(records))
