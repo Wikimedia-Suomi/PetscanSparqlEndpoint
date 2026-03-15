@@ -9,8 +9,8 @@
   var defaultPsid = isLocalDevHost ? "43641756" : "";
   var defaultSelectedQueryFields = ["title", "namespace"];
   var openQueryTargets = [
-    { value: "wdqs", label: "Wikidata Query Service" },
-    { value: "yasgui", label: "Yasquin (Yasgui)" },
+    { value: "wdqs", label: "Wikidata Query Service (via Sophox)" },
+    { value: "yasgui", label: "Yasqui (Yasgui, direct endpoint)" },
     { value: "sophox", label: "Sophox" },
     { value: "qlever", label: "QLever endpoint" },
   ];
@@ -492,12 +492,18 @@
           })
           .join("&");
       },
-      buildFederatedQueryText: function () {
-        var servicePath = this.buildSparqlServicePath(this.refreshBeforeQuery);
+      buildPetscanServiceUrl: function (refresh) {
+        var servicePath = this.buildSparqlServicePath(refresh);
         if (!servicePath) {
+          return window.location.origin + "/sparql/";
+        }
+        return window.location.origin + "/sparql/" + servicePath;
+      },
+      buildFederatedQueryText: function () {
+        var serviceUrl = this.buildPetscanServiceUrl(this.refreshBeforeQuery);
+        if (!serviceUrl || /\/sparql\/$/.test(serviceUrl)) {
           return String(this.query || "");
         }
-        var serviceUrl = window.location.origin + "/sparql/" + servicePath;
 
         var split = this.splitSparqlPrologue(this.query);
         var prologueLines = split.prologueLines;
@@ -533,26 +539,67 @@
 
         return lines.join("\n");
       },
-      buildOpenQueryUrl: function (target, federatedQueryText) {
-        var encodedQuery = encodeURIComponent(federatedQueryText);
+      buildWdqsFederatedQueryViaSophox: function () {
+        var serviceUrl = this.buildPetscanServiceUrl(this.refreshBeforeQuery);
+        if (!serviceUrl || /\/sparql\/$/.test(serviceUrl)) {
+          return String(this.query || "");
+        }
+
+        var split = this.splitSparqlPrologue(this.query);
+        var prologueLines = split.prologueLines;
+        var queryBody = split.body;
+        if (!queryBody) {
+          queryBody = "SELECT * WHERE { ?item ?p ?o . } LIMIT 50";
+        }
+
+        var queryType = this.inferQueryType(queryBody);
+        var lines = [];
+        prologueLines.forEach(function (line) {
+          lines.push(line);
+        });
+
+        lines.push("SELECT * WHERE {");
+        lines.push("  SERVICE <https://sophox.org/sparql> {");
+        lines.push("    SERVICE <" + serviceUrl + "> {");
+        if (queryType === "SELECT") {
+          queryBody.split(/\r?\n/).forEach(function (line) {
+            lines.push("      " + line);
+          });
+        } else {
+          lines.push("      # Original query was not SELECT. Adapt this federated template as needed.");
+          lines.push("      ?item ?p ?o .");
+          queryBody.split(/\r?\n/).forEach(function (line) {
+            if (line.trim()) {
+              lines.push("      # " + line);
+            }
+          });
+        }
+        lines.push("    }");
+        lines.push("  }");
+        lines.push("}");
+        lines.push("LIMIT 100");
+
+        return lines.join("\n");
+      },
+      buildOpenQueryUrl: function (target) {
+        var queryText = "";
+        if (target === "wdqs") {
+          queryText = this.buildWdqsFederatedQueryViaSophox();
+        } else if (target === "yasgui") {
+          queryText = String(this.query || "");
+        } else {
+          queryText = this.buildFederatedQueryText();
+        }
+        var encodedQuery = encodeURIComponent(queryText);
+
         if (target === "wdqs") {
           return "https://query.wikidata.org/#" + encodedQuery;
         }
         if (target === "yasgui") {
-          return (
-            "https://yasgui.triply.cc/#query=" +
-            encodedQuery +
-            "&endpoint=" +
-            encodeURIComponent("https://query.wikidata.org/sparql")
-          );
+          return "https://yasgui.triply.cc/#query=" + encodedQuery;
         }
         if (target === "sophox") {
-          return (
-            "https://sophox.org/#query=" +
-            encodedQuery +
-            "&endpoint=" +
-            encodeURIComponent("https://sophox.org/sparql")
-          );
+          return "https://sophox.org/#" + encodedQuery;
         }
         if (target === "qlever") {
           return "https://qlever.wikidata.dbis.rwth-aachen.de/wikidata/?query=" + encodedQuery;
@@ -595,8 +642,7 @@
           this.statusMessage = "Choose a target from Open query in.";
           return;
         }
-        var federatedQueryText = this.buildFederatedQueryText();
-        var targetUrl = this.buildOpenQueryUrl(target, federatedQueryText);
+        var targetUrl = this.buildOpenQueryUrl(target);
         if (!targetUrl) {
           this.statusMessage = "Unsupported Open query in target.";
           return;
