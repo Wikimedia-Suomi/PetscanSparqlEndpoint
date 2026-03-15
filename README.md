@@ -143,6 +143,72 @@ Example field predicate:
 - The app infers row location in PetScan JSON heuristically to support common PetScan JSON structures.
 - Large `psid` result sets may take time to load and index.
 
+## Deploying To Toolforge (Kubernetes)
+
+This is an example deployment flow based on Toolforge shell + webservice.
+
+### 1. Connect and switch to your tool account
+
+```bash
+ssh <username>@login.toolforge.org
+become <toolname>
+```
+
+### 2. Create app directories and clone source
+
+```bash
+mkdir -p ~/www/python/src
+cd ~/www/python/src
+git clone https://github.com/Wikimedia-Suomi/PetscanSparqlEndpoint.git .
+```
+
+### 3. Create `uwsgi.ini`
+
+Create `~/www/python/uwsgi.ini`:
+
+```ini
+[uwsgi]
+module = app:app
+static-map = /static=/data/project/<toolname>/www/python/src/static
+buffer-size = 62768
+```
+
+### 4. WSGI entrypoint is included in repository
+
+`app.py` is part of this repository, so no manual creation is needed after clone.
+
+### 5. Set Toolforge environment variables
+
+```bash
+toolforge envvars create DJANGO_SECRET_KEY "<your-secret-unique-key>"
+toolforge envvars create OXIGRAPH_BASE_DIR /tmp/data
+toolforge envvars create DJANGO_ALLOWED_HOSTS <toolname>.toolforge.org
+toolforge envvars create TOOLFORGE_USE_REPLICA 1
+toolforge envvars create TOOLFORGE_REPLICA_CNF "$HOME/replica.my.cnf"
+toolforge envvars create WIKIDATA_LOOKUP_BACKEND toolforge_sql
+```
+
+### 6. Build virtualenv and run checks in Toolforge shell
+
+```bash
+webservice --backend=kubernetes python3.13 shell
+cd ~/www/python
+python3 -m venv venv
+source venv/bin/activate
+cd src
+pip install -r requirements.txt
+python manage.py check_replica_connections
+python manage.py check_api_enrichment
+TOOLFORGE_INTEGRATION_TESTS=1 python manage.py test
+exit
+```
+
+### 7. Start the service
+
+```bash
+webservice --backend=kubernetes python3.13 start --cpu 1 --mem 6Gi
+```
+
 ## Toolforge Replica Backend (Optional)
 
 For Toolforge, `gil_link` Wikidata ID lookups can use wiki replicas instead of MediaWiki API.
