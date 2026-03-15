@@ -96,17 +96,21 @@ class ApiViewTests(SimpleTestCase):
         execute_query.assert_called_once_with(123, ASK_QUERY, refresh=True, petscan_params={})
 
     def test_sparql_endpoint_rejects_non_sparql_query_post_content_type(self):
-        response = self.client.post(
-            SPARQL_PATH,
-            data=json.dumps({"query": ASK_QUERY}),
-            content_type="application/json",
-        )
+        with self.assertLogs("petscan.views", level="WARNING") as captured_logs:
+            response = self.client.post(
+                SPARQL_PATH,
+                data=json.dumps({"query": ASK_QUERY}),
+                content_type="application/json",
+                headers={"User-Agent": "yasgui-test-agent/1.0"},
+            )
 
         self.assertEqual(response.status_code, 400)
         self.assertEqual(
             response.content.decode("utf-8"),
             "POST /sparql requires Content-Type: application/sparql-query.",
         )
+        self.assertTrue(any("[sparql-content-type-debug]" in message for message in captured_logs.output))
+        self.assertTrue(any("application/json" in message for message in captured_logs.output))
 
     @patch("petscan.views.petscan_service.execute_query")
     def test_sparql_endpoint_forwards_extra_query_params_to_petscan(self, execute_query):

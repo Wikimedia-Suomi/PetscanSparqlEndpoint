@@ -1,4 +1,5 @@
 import json
+import logging
 from dataclasses import dataclass
 from typing import Any, Dict, List
 from urllib.parse import parse_qs
@@ -8,6 +9,8 @@ from django.shortcuts import render
 from django.views.decorators.csrf import csrf_exempt
 
 from . import service as petscan_service
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True)
@@ -107,8 +110,24 @@ def _parse_sparql_query(request: HttpRequest) -> str:
     if request.method == "GET":
         return request.GET.get("query", "").strip()
 
+    raw_content_type = str(request.headers.get("Content-Type", "") or request.META.get("CONTENT_TYPE", "")).strip()
     content_type = (request.content_type or "").split(";", 1)[0].strip().lower()
     if content_type != "application/sparql-query":
+        logger.warning(
+            (
+                "[sparql-content-type-debug] Rejected POST /sparql due to unsupported Content-Type. "
+                "parsed_content_type=%r raw_content_type=%r method=%s path=%s query_string=%r "
+                "accept=%r user_agent=%r content_length=%r"
+            ),
+            content_type,
+            raw_content_type,
+            request.method,
+            request.path,
+            request.META.get("QUERY_STRING", ""),
+            request.headers.get("Accept", ""),
+            request.headers.get("User-Agent", ""),
+            request.META.get("CONTENT_LENGTH", ""),
+        )
         raise ValueError("POST /sparql requires Content-Type: application/sparql-query.")
 
     return request.body.decode("utf-8").strip()
