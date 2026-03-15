@@ -70,6 +70,8 @@ label {
 }
 
 input[type="number"],
+input[type="text"],
+select,
 textarea {
   width: 100%;
   border: 1px solid var(--border);
@@ -81,6 +83,8 @@ textarea {
 }
 
 input[type="number"]:focus,
+input[type="text"]:focus,
+select:focus,
 textarea:focus,
 button:focus-visible {
   outline: 3px solid color-mix(in srgb, var(--accent-2) 55%, white);
@@ -118,11 +122,108 @@ textarea {
   margin-top: 0.25rem;
 }
 
+.query-run-row {
+  display: flex;
+  align-items: center;
+  gap: 0.9rem;
+  flex-wrap: wrap;
+}
+
+.query-refresh-toggle {
+  margin: 0;
+}
+
+.open-query-trigger {
+  margin-left: auto;
+}
+
 .actions {
   display: flex;
   flex-wrap: wrap;
   gap: 0.6rem;
   margin-top: 0.5rem;
+}
+
+.wizard-section {
+  margin-top: 0.75rem;
+  display: grid;
+  gap: 0.5rem;
+}
+
+.wizard-section h3 {
+  margin: 0;
+  font-size: 1rem;
+}
+
+.structure-collapsible {
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: #f7fafc;
+  overflow: hidden;
+}
+
+.structure-collapsible > summary {
+  cursor: pointer;
+  padding: 0.7rem 0.8rem;
+  font-weight: 600;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  align-items: center;
+}
+
+.structure-collapsible > summary::marker {
+  content: "";
+}
+
+.structure-collapsible > summary::-webkit-details-marker {
+  display: none;
+}
+
+.structure-collapsible[open] > summary {
+  border-bottom: 1px solid var(--border);
+}
+
+.summary-title {
+  min-width: 18rem;
+}
+
+.summary-controls {
+  margin-left: auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.collapsible-hint {
+  font-size: 0.85rem;
+  color: var(--muted);
+  font-weight: 500;
+}
+
+.collapsible-indicator {
+  display: inline-block;
+  transition: transform 0.2s ease;
+}
+
+.structure-collapsible:not([open]) .collapsible-indicator {
+  transform: rotate(-90deg);
+}
+
+.structure-inline-body {
+  display: grid;
+  gap: 0.7rem;
+  padding: 0.8rem;
+}
+
+.wizard-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.checkbox-cell {
+  width: 5rem;
 }
 
 button {
@@ -198,6 +299,15 @@ th {
   word-break: break-all;
 }
 
+.result-block td a {
+  color: var(--accent);
+  text-decoration: none;
+}
+
+.result-block td a:hover {
+  text-decoration: underline;
+}
+
 .code-output {
   margin: 0;
   background: #0f1720;
@@ -271,26 +381,59 @@ th {
   padding: 0 1rem 1rem;
 }
 
-.pattern-box {
+.query-target-dialog {
+  width: min(560px, 94vw);
   border: 1px solid var(--border);
-  border-radius: 10px;
-  background: #f4f8fa;
-  margin-bottom: 0.9rem;
+  border-radius: 14px;
+  padding: 0;
+  background: var(--surface);
+  color: var(--text);
 }
 
-.pattern-box h3 {
-  margin: 0;
-  padding: 0.65rem 0.8rem;
-  font-size: 1rem;
+.query-target-dialog::backdrop {
+  background: rgba(10, 16, 26, 0.55);
+}
+
+.query-target-dialog-inner {
+  display: grid;
+  gap: 0.75rem;
+}
+
+.query-target-dialog-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 1rem;
+  padding: 1rem;
   border-bottom: 1px solid var(--border);
 }
 
-.pattern-code {
+.query-target-dialog-header h2 {
   margin: 0;
-  padding: 0.8rem;
-  overflow: auto;
-  color: #0f1720;
-  background: transparent;
+  font-size: 1.15rem;
+}
+
+.query-target-dialog-body {
+  padding: 0 1rem 1rem;
+  display: grid;
+  gap: 0.75rem;
+}
+
+.query-target-list {
+  margin: 0;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 0.75rem;
+  display: grid;
+  gap: 0.45rem;
+  background: #f7fafc;
+}
+
+.query-target-option {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-weight: 500;
 }
 
 @media (max-width: 640px) {
@@ -311,11 +454,36 @@ th {
     flex-direction: column;
   }
 
+  .wizard-actions {
+    flex-direction: column;
+  }
+
+  .query-run-row button {
+    width: auto;
+  }
+
+  .open-query-trigger {
+    margin-left: 0;
+  }
+
+  .summary-controls {
+    margin-left: 0;
+  }
+
   .structure-dialog {
     width: 96vw;
   }
 
   .structure-dialog-header {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .query-target-dialog {
+    width: 96vw;
+  }
+
+  .query-target-dialog-header {
     align-items: flex-start;
     flex-direction: column;
   }

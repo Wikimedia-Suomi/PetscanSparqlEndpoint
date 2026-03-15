@@ -7,6 +7,13 @@
   var hostname = window.location && window.location.hostname ? window.location.hostname.toLowerCase() : "";
   var isLocalDevHost = hostname === "localhost" || hostname === "127.0.0.1";
   var defaultPsid = isLocalDevHost ? "43641756" : "";
+  var defaultSelectedQueryFields = ["title", "namespace"];
+  var openQueryTargets = [
+    { value: "wdqs", label: "Wikidata Query Service" },
+    { value: "yasgui", label: "Yasquin (Yasgui)" },
+    { value: "sophox", label: "Sophox" },
+    { value: "qlever", label: "QLever endpoint" },
+  ];
 
   var app = createApp({
     data: function () {
@@ -24,14 +31,20 @@
         ].join("\n"),
         refreshBeforeQuery: false,
         petscanGetParams: "",
+        petscanLimit: "10",
         isBusy: false,
         statusMessage: "Ready.",
+        loadStatusMessage: "Ready.",
         queryType: "",
         resultFormat: "",
         result: null,
         queryExecutionMs: null,
         meta: {},
         loadedPsid: "",
+        selectedQueryFieldKeys: defaultSelectedQueryFields.slice(),
+        hasLoadedData: false,
+        openQueryTarget: "wdqs",
+        openQueryTargets: openQueryTargets,
       };
     },
     computed: {
@@ -93,6 +106,8 @@
           format: true,
           query: true,
           refresh: true,
+          output_limit: true,
+          limit: true,
         };
         var entries = [];
 
@@ -110,6 +125,17 @@
 
         return entries;
       },
+      petscanLimitValue: function () {
+        return String(this.petscanLimit || "").trim();
+      },
+      effectivePetscanParams: function () {
+        var entries = this.forwardedPetscanParams.slice();
+        var limitValue = this.petscanLimitValue;
+        if (limitValue) {
+          entries.push(["output_limit", limitValue]);
+        }
+        return entries;
+      },
       serviceParamPath: function () {
         var psid = String(this.psid || "").trim();
         var entries = [];
@@ -117,7 +143,7 @@
         if (psid) {
           entries.push(["psid", psid]);
         }
-        this.forwardedPetscanParams.forEach(function (entry) {
+        this.effectivePetscanParams.forEach(function (entry) {
           entries.push([entry[0], entry[1]]);
         });
 
@@ -146,7 +172,7 @@
 
         var params = new URLSearchParams();
         params.set("psid", psid);
-        this.forwardedPetscanParams.forEach(function (entry) {
+        this.effectivePetscanParams.forEach(function (entry) {
           params.append(entry[0], entry[1]);
         });
         return "https://petscan.wmcloud.org/?" + params.toString();
@@ -160,7 +186,7 @@
         var params = new URLSearchParams();
         params.set("psid", psid);
         params.set("format", "json");
-        this.forwardedPetscanParams.forEach(function (entry) {
+        this.effectivePetscanParams.forEach(function (entry) {
           params.append(entry[0], entry[1]);
         });
         return "https://petscan.wmcloud.org/?" + params.toString();
@@ -214,30 +240,20 @@
         }
         return Number(this.activeStructure.field_count || this.structureFields.length);
       },
-      structurePatterns: function () {
-        if (!this.canShowStructure) {
-          return [];
-        }
-
-        var byField = {};
-        this.structureFields.forEach(function (field) {
-          byField[field.source_key] = field;
-        });
-
-        var lines = [];
-        if (byField.gil_link) {
-          lines.push("?item petscan:gil_link ?gil_link .");
-          lines.push("?gil_link petscan:gil_link_wikidata_id ?gil_link_wikidata_id .");
-          lines.push("?gil_link petscan:gil_link_wikidata_entity ?gil_link_wikidata_entity .");
-          lines.push("?gil_link petscan:gil_link_page_len ?gil_link_page_len .");
-          lines.push("?gil_link petscan:gil_link_rev_timestamp ?gil_link_rev_timestamp");
-          return lines;
-        }
-        if (byField.id || byField.page_id) {
-          lines.push("?item petscan:page_id ?page_id .");
-        }
-
-        return lines;
+      querySectionReady: function () {
+        var currentPsid = String(this.psid || "").trim();
+        return Boolean(this.hasLoadedData && currentPsid && this.loadedPsid === currentPsid);
+      },
+    },
+    watch: {
+      psid: function () {
+        this.hasLoadedData = false;
+      },
+      petscanGetParams: function () {
+        this.hasLoadedData = false;
+      },
+      petscanLimit: function () {
+        this.hasLoadedData = false;
       },
     },
     methods: {
@@ -276,7 +292,7 @@
         if (refresh) {
           params.set("refresh", "1");
         }
-        this.forwardedPetscanParams.forEach(function (entry) {
+        this.effectivePetscanParams.forEach(function (entry) {
           params.append(entry[0], entry[1]);
         });
 
@@ -309,7 +325,7 @@
         if (refresh) {
           pathEntries.push(["refresh", "1"]);
         }
-        this.forwardedPetscanParams.forEach(function (entry) {
+        this.effectivePetscanParams.forEach(function (entry) {
           pathEntries.push([entry[0], entry[1]]);
         });
 
@@ -355,28 +371,38 @@
         };
       },
       loadStructure: async function () {
+        this.hasLoadedData = false;
         this.isBusy = true;
-        this.statusMessage = "Loading data structure...";
+        this.loadStatusMessage = "Loading data structure...";
 
         try {
           var data = await this.structureRequest(this.psid, this.refreshBeforeQuery);
           this.meta = data.meta || {};
           this.loadedPsid = String(data.psid || this.psid || "").trim();
-          this.statusMessage =
+          this.hasLoadedData = true;
+          if (this.normalizeWizardSelections()) {
+            this.updateQueryFromWizardSelections();
+          }
+          this.loadStatusMessage =
             "Data structure loaded (" +
             this.structureRowCount +
             " rows, " +
             this.structureFieldCount +
             " fields).";
         } catch (err) {
-          this.statusMessage = err.message;
+          this.loadStatusMessage = err.message;
         } finally {
           this.isBusy = false;
         }
       },
       runQuery: async function () {
+        var detailsRef = this.$refs.structureWizardDetails;
+        var details = Array.isArray(detailsRef) ? detailsRef[0] : detailsRef;
+        if (details && typeof details.open === "boolean") {
+          details.open = false;
+        }
+
         this.isBusy = true;
-        this.statusMessage = "Running query...";
         this.queryExecutionMs = null;
         var queryStartedMs = this.nowMs();
 
@@ -387,7 +413,6 @@
           var responseReceivedMs =
             typeof execution.responseReceivedMs === "number" ? execution.responseReceivedMs : this.nowMs();
           this.queryExecutionMs = Math.max(responseReceivedMs - queryStartedMs, 0);
-          var timingSuffix = this.queryExecutionLabel ? " in " + this.queryExecutionLabel : "";
 
           if (execution.resultFormat === "sparql-json") {
             this.result = execution.sparqlJson;
@@ -408,24 +433,179 @@
             var metaData = await this.structureRequest(this.psid, false);
             this.meta = metaData.meta || {};
             this.loadedPsid = String(metaData.psid || this.psid || "").trim();
+            if (this.normalizeWizardSelections()) {
+              this.updateQueryFromWizardSelections();
+            }
           } catch (_metaErr) {
             // Keep query results even if metadata refresh fails.
           }
 
-          if (this.queryType === "SELECT") {
-            this.statusMessage = "Query finished (" + this.selectRows.length + " rows" + timingSuffix + ").";
-          } else if (this.queryType === "ASK") {
-            this.statusMessage = "ASK query finished" + timingSuffix + ".";
-          } else {
-            this.statusMessage = "Graph query finished" + timingSuffix + ".";
-          }
         } catch (err) {
-          this.statusMessage = err.message;
           this.result = null;
           this.queryExecutionMs = null;
         } finally {
           this.isBusy = false;
         }
+      },
+      splitSparqlPrologue: function (queryText) {
+        var remaining = String(queryText || "");
+        var prologueLines = [];
+
+        while (true) {
+          var prefixMatch = remaining.match(/^\s*PREFIX\s+[A-Za-z][A-Za-z0-9._-]*:\s*<[^>]*>\s*/i);
+          if (prefixMatch) {
+            prologueLines.push(prefixMatch[0].trim());
+            remaining = remaining.slice(prefixMatch[0].length);
+            continue;
+          }
+
+          var baseMatch = remaining.match(/^\s*BASE\s*<[^>]*>\s*/i);
+          if (baseMatch) {
+            prologueLines.push(baseMatch[0].trim());
+            remaining = remaining.slice(baseMatch[0].length);
+            continue;
+          }
+          break;
+        }
+
+        return {
+          prologueLines: prologueLines,
+          body: remaining.trim(),
+        };
+      },
+      buildSparqlServicePath: function (refresh) {
+        var pathEntries = [];
+        var normalizedPsid = String(this.psid || "").trim();
+        if (normalizedPsid) {
+          pathEntries.push(["psid", normalizedPsid]);
+        }
+        if (refresh) {
+          pathEntries.push(["refresh", "1"]);
+        }
+        this.effectivePetscanParams.forEach(function (entry) {
+          pathEntries.push([entry[0], entry[1]]);
+        });
+        return pathEntries
+          .map(function (entry) {
+            return encodeURIComponent(entry[0]) + "=" + encodeURIComponent(entry[1]);
+          })
+          .join("&");
+      },
+      buildFederatedQueryText: function () {
+        var servicePath = this.buildSparqlServicePath(this.refreshBeforeQuery);
+        if (!servicePath) {
+          return String(this.query || "");
+        }
+        var serviceUrl = window.location.origin + "/sparql/" + servicePath;
+
+        var split = this.splitSparqlPrologue(this.query);
+        var prologueLines = split.prologueLines;
+        var queryBody = split.body;
+        if (!queryBody) {
+          queryBody = "SELECT * WHERE { ?item ?p ?o . } LIMIT 50";
+        }
+
+        var queryType = this.inferQueryType(queryBody);
+        var lines = [];
+        prologueLines.forEach(function (line) {
+          lines.push(line);
+        });
+
+        lines.push("SELECT * WHERE {");
+        lines.push("  SERVICE <" + serviceUrl + "> {");
+        if (queryType === "SELECT") {
+          queryBody.split(/\r?\n/).forEach(function (line) {
+            lines.push("    " + line);
+          });
+        } else {
+          lines.push("    # Original query was not SELECT. Adapt this federated template as needed.");
+          lines.push("    ?item ?p ?o .");
+          queryBody.split(/\r?\n/).forEach(function (line) {
+            if (line.trim()) {
+              lines.push("    # " + line);
+            }
+          });
+        }
+        lines.push("  }");
+        lines.push("}");
+        lines.push("LIMIT 100");
+
+        return lines.join("\n");
+      },
+      buildOpenQueryUrl: function (target, federatedQueryText) {
+        var encodedQuery = encodeURIComponent(federatedQueryText);
+        if (target === "wdqs") {
+          return "https://query.wikidata.org/#" + encodedQuery;
+        }
+        if (target === "yasgui") {
+          return (
+            "https://yasgui.triply.cc/#query=" +
+            encodedQuery +
+            "&endpoint=" +
+            encodeURIComponent("https://query.wikidata.org/sparql")
+          );
+        }
+        if (target === "sophox") {
+          return (
+            "https://sophox.org/#query=" +
+            encodedQuery +
+            "&endpoint=" +
+            encodeURIComponent("https://sophox.org/sparql")
+          );
+        }
+        if (target === "qlever") {
+          return "https://qlever.wikidata.dbis.rwth-aachen.de/wikidata/?query=" + encodedQuery;
+        }
+        return "";
+      },
+      openQueryTargetDialog: function () {
+        var dialogRef = this.$refs.openQueryDialog;
+        var dialog = Array.isArray(dialogRef) ? dialogRef[0] : dialogRef;
+        if (!dialog) {
+          return;
+        }
+        if (dialog.open) {
+          return;
+        }
+        if (typeof dialog.showModal === "function") {
+          dialog.showModal();
+          return;
+        }
+        dialog.setAttribute("open", "open");
+      },
+      closeQueryTargetDialog: function () {
+        var dialogRef = this.$refs.openQueryDialog;
+        var dialog = Array.isArray(dialogRef) ? dialogRef[0] : dialogRef;
+        if (!dialog) {
+          return;
+        }
+        if (typeof dialog.close === "function" && dialog.open) {
+          dialog.close();
+          return;
+        }
+        dialog.removeAttribute("open");
+      },
+      onOpenQueryDialogClose: function () {
+        // No-op hook for future dialog state sync.
+      },
+      openFederatedQueryInTarget: function () {
+        var target = String(this.openQueryTarget || "").trim();
+        if (!target) {
+          this.statusMessage = "Choose a target from Open query in.";
+          return;
+        }
+        var federatedQueryText = this.buildFederatedQueryText();
+        var targetUrl = this.buildOpenQueryUrl(target, federatedQueryText);
+        if (!targetUrl) {
+          this.statusMessage = "Unsupported Open query in target.";
+          return;
+        }
+        var opened = window.open(targetUrl, "_blank", "noopener,noreferrer");
+        if (!opened) {
+          this.statusMessage = "Unable to open new tab. Check browser popup settings.";
+          return;
+        }
+        this.closeQueryTargetDialog();
       },
       formatCell: function (binding) {
         if (!binding) {
@@ -433,7 +613,7 @@
         }
 
         if (binding.type === "uri") {
-          return binding.value;
+          return this.formatUriText(binding.value);
         }
 
         if (binding.type === "bnode") {
@@ -444,13 +624,58 @@
           if (binding["xml:lang"]) {
             return binding.value + "@" + binding["xml:lang"];
           }
-          if (binding.datatype) {
-            return binding.value + "^^" + binding.datatype;
-          }
           return binding.value;
         }
 
         return String(binding.value || "");
+      },
+      formatCellHref: function (binding) {
+        if (!binding || binding.type !== "uri") {
+          return "";
+        }
+        return String(binding.value || "").trim();
+      },
+      decodeUriComponentSafe: function (value) {
+        try {
+          return decodeURIComponent(String(value || ""));
+        } catch (_err) {
+          return String(value || "");
+        }
+      },
+      formatUriText: function (uriValue) {
+        var value = String(uriValue || "").trim();
+        if (!value) {
+          return "";
+        }
+
+        var commonsEntityMatch = value.match(/^https?:\/\/commons\.wikimedia\.org\/entity\/(M\d+)$/i);
+        if (commonsEntityMatch) {
+          return "sdc:" + commonsEntityMatch[1];
+        }
+
+        var wikidataEntityMatch = value.match(/^https?:\/\/www\.wikidata\.org\/entity\/(Q\d+)$/i);
+        if (wikidataEntityMatch) {
+          return "wd:" + wikidataEntityMatch[1];
+        }
+
+        var wikidataWikiMatch = value.match(/^https?:\/\/www\.wikidata\.org\/wiki\/([^?#]+)$/i);
+        if (wikidataWikiMatch) {
+          return "d:" + this.decodeUriComponentSafe(wikidataWikiMatch[1]);
+        }
+
+        var wikipediaMatch = value.match(/^https?:\/\/([a-z0-9-]+)\.wikipedia\.org\/wiki\/([^?#]+)$/i);
+        if (wikipediaMatch) {
+          var languageCode = wikipediaMatch[1].toLowerCase();
+          var wikiTitle = this.decodeUriComponentSafe(wikipediaMatch[2]);
+          return "w:" + languageCode + ":" + wikiTitle;
+        }
+
+        var incubatorMatch = value.match(/^https?:\/\/incubator\.wikimedia\.org\/wiki\/([^?#]+)$/i);
+        if (incubatorMatch) {
+          return "incubator:" + this.decodeUriComponentSafe(incubatorMatch[1]);
+        }
+
+        return value;
       },
       formatFieldType: function (field) {
         if (!field) {
@@ -485,36 +710,170 @@
         }
         return primary + " (" + observed.join(", ") + ")";
       },
-      openStructureDialog: function () {
+      normalizeFieldVariableName: function (fieldKey) {
+        var normalized = String(fieldKey || "")
+          .trim()
+          .replace(/[^A-Za-z0-9_]+/g, "_");
+        if (!normalized) {
+          return "value";
+        }
+        if (/^[0-9]/.test(normalized)) {
+          return "field_" + normalized;
+        }
+        return normalized;
+      },
+      isWizardFieldSelected: function (fieldKey) {
+        var key = String(fieldKey || "").trim();
+        return this.selectedQueryFieldKeys.indexOf(key) !== -1;
+      },
+      toggleWizardField: function (fieldKey, isSelected) {
+        var key = String(fieldKey || "").trim();
+        if (!key) {
+          return;
+        }
+        var next = this.selectedQueryFieldKeys.slice();
+        var index = next.indexOf(key);
+        if (isSelected && index === -1) {
+          next.push(key);
+        }
+        if (!isSelected && index !== -1) {
+          next.splice(index, 1);
+        }
+        this.selectedQueryFieldKeys = next;
+        this.updateQueryFromWizardSelections();
+      },
+      selectAllWizardFields: function () {
         if (!this.canShowStructure) {
           return;
         }
-        var dialog = this.$refs.structureDialog;
-        if (!dialog) {
-          return;
-        }
-        if (dialog.open) {
-          return;
-        }
-        if (typeof dialog.showModal === "function") {
-          dialog.showModal();
-          return;
-        }
-        dialog.setAttribute("open", "open");
+        this.selectedQueryFieldKeys = this.structureFields.map(function (field) {
+          return field.source_key;
+        });
+        this.updateQueryFromWizardSelections();
       },
-      closeStructureDialog: function () {
-        var dialog = this.$refs.structureDialog;
-        if (!dialog) {
-          return;
-        }
-        if (typeof dialog.close === "function" && dialog.open) {
-          dialog.close();
-          return;
-        }
-        dialog.removeAttribute("open");
+      clearWizardSelections: function () {
+        this.selectedQueryFieldKeys = [];
+        this.updateQueryFromWizardSelections();
       },
-      onStructureDialogClose: function () {
-        // No-op hook for future state sync. Kept for accessibility event handling.
+      normalizeWizardSelections: function () {
+        if (!this.selectedQueryFieldKeys.length) {
+          return false;
+        }
+        var allowed = {};
+        this.structureFields.forEach(function (field) {
+          var key = String(field.source_key || "").trim();
+          if (key) {
+            allowed[key] = true;
+          }
+        });
+        var next = [];
+        this.selectedQueryFieldKeys.forEach(function (key) {
+          var normalized = String(key || "").trim();
+          if (!normalized || !allowed[normalized] || next.indexOf(normalized) !== -1) {
+            return;
+          }
+          next.push(normalized);
+        });
+        var changed = next.length !== this.selectedQueryFieldKeys.length;
+        this.selectedQueryFieldKeys = next;
+        return changed;
+      },
+      buildWizardQuery: function () {
+        var self = this;
+        var selected = {};
+        this.selectedQueryFieldKeys.forEach(function (key) {
+          selected[key] = true;
+        });
+
+        var orderedKeys = this.structureFields
+          .map(function (field) {
+            return String(field.source_key || "").trim();
+          })
+          .filter(function (key) {
+            return key && selected[key];
+          });
+
+        this.selectedQueryFieldKeys.forEach(function (key) {
+          if (orderedKeys.indexOf(key) === -1) {
+            orderedKeys.push(key);
+          }
+        });
+
+        var selectVars = [];
+        var selectSeen = {};
+        var pushSelectVar = function (varName) {
+          if (!selectSeen[varName]) {
+            selectSeen[varName] = true;
+            selectVars.push(varName);
+          }
+        };
+        pushSelectVar("?item");
+
+        var whereLines = ["  ?item a petscan:Page ."];
+        orderedKeys.forEach(function (key) {
+          if (key === "gil_link" || key.indexOf("gil_link_") === 0) {
+            return;
+          }
+          var variableName = "?" + self.normalizeFieldVariableName(key);
+          pushSelectVar(variableName);
+          whereLines.push("  OPTIONAL { ?item petscan:" + key + " " + variableName + " . }");
+        });
+
+        var selectedGilLinkFields = [
+          "gil_link",
+          "gil_link_wikidata_id",
+          "gil_link_wikidata_entity",
+          "gil_link_page_len",
+          "gil_link_rev_timestamp",
+        ];
+        var includeGilLinkBlock = selectedGilLinkFields.some(function (key) {
+          return Boolean(selected[key]);
+        });
+        if (includeGilLinkBlock) {
+          whereLines.push("  OPTIONAL {");
+          whereLines.push("    ?item petscan:gil_link ?gil_link .");
+          if (selected.gil_link) {
+            pushSelectVar("?gil_link");
+          }
+          if (selected.gil_link_wikidata_id) {
+            pushSelectVar("?gil_link_wikidata_id");
+            whereLines.push(
+              "    OPTIONAL { ?gil_link petscan:gil_link_wikidata_id ?gil_link_wikidata_id . }"
+            );
+          }
+          if (selected.gil_link_wikidata_entity) {
+            pushSelectVar("?gil_link_wikidata_entity");
+            whereLines.push(
+              "    OPTIONAL { ?gil_link petscan:gil_link_wikidata_entity ?gil_link_wikidata_entity . }"
+            );
+          }
+          if (selected.gil_link_page_len) {
+            pushSelectVar("?gil_link_page_len");
+            whereLines.push("    OPTIONAL { ?gil_link petscan:gil_link_page_len ?gil_link_page_len . }");
+          }
+          if (selected.gil_link_rev_timestamp) {
+            pushSelectVar("?gil_link_rev_timestamp");
+            whereLines.push(
+              "    OPTIONAL { ?gil_link petscan:gil_link_rev_timestamp ?gil_link_rev_timestamp . }"
+            );
+          }
+          whereLines.push("  }");
+        }
+
+        var lines = [
+          "PREFIX petscan: <https://petscan.wmcloud.org/ontology/>",
+          "SELECT " + selectVars.join(" "),
+          "WHERE {",
+        ];
+        whereLines.forEach(function (line) {
+          lines.push(line);
+        });
+        lines.push("}");
+        lines.push("LIMIT 50");
+        return lines.join("\n");
+      },
+      updateQueryFromWizardSelections: function () {
+        this.query = this.buildWizardQuery();
       },
     },
   });

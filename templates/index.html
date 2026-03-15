@@ -19,9 +19,9 @@
       </header>
 
       <section class="card" aria-labelledby="query-heading">
-        <h2 id="query-heading">Query Console</h2>
+        <h2 id="query-heading">Data Loading</h2>
 
-        <form class="query-form" @submit.prevent="runQuery">
+        <form class="query-form">
           <label for="psid">PetScan ID (psid)</label>
           <input
             id="psid"
@@ -35,6 +35,40 @@
           <p id="psid-help" class="help">
             Example: 43641756
           </p>
+
+          <label for="petscan-extra-params">PetScan extra GET params</label>
+          <input
+            id="petscan-extra-params"
+            type="text"
+            inputmode="url"
+            spellcheck="false"
+            placeholder="categories=Turku&language=fi"
+            v-model.trim="petscanGetParams"
+            aria-describedby="petscan-extra-help"
+          />
+          <p id="petscan-extra-help" class="help">
+            Optional query-string pairs forwarded to PetScan (except reserved keys:
+            <code>psid</code>, <code>format</code>, <code>query</code>, <code>refresh</code>, <code>output_limit</code>).
+          </p>
+          <label for="petscan-limit">Load data limit</label>
+          <input
+            id="petscan-limit"
+            type="text"
+            inputmode="numeric"
+            spellcheck="false"
+            placeholder="10"
+            v-model.trim="petscanLimit"
+            aria-describedby="petscan-limit-help"
+          />
+          <p id="petscan-limit-help" class="help">
+            Default is <code>10</code>. Clear this field to omit <code>output_limit</code> from PetScan requests.
+          </p>
+          <div class="actions">
+            <button type="button" class="primary" :disabled="isBusy" @click="loadStructure">
+              Load data
+            </button>
+          </div>
+
           <p class="help help-links">
             Source data:
             <a :href="petscanQueryUrl" target="_blank" rel="noopener noreferrer">Open PetScan query</a>
@@ -48,68 +82,111 @@
             PetScan JSON results: not loaded for this psid yet.
           </p>
 
-          <label for="petscan-extra-params">PetScan extra GET params</label>
-          <input
-            id="petscan-extra-params"
-            type="text"
-            inputmode="url"
-            spellcheck="false"
-            placeholder="category=Turku&language=fi"
-            v-model.trim="petscanGetParams"
-            aria-describedby="petscan-extra-help"
-          />
-          <p id="petscan-extra-help" class="help">
-            Optional query-string pairs forwarded to PetScan (except reserved keys:
-            <code>psid</code>, <code>format</code>, <code>query</code>, <code>refresh</code>).
-          </p>
-
-          <label for="query">SPARQL query</label>
-          <textarea
-            id="query"
-            rows="12"
-            required
-            spellcheck="false"
-            v-model="query"
-            aria-describedby="query-help"
-          ></textarea>
-          <p id="query-help" class="help">
-            Available predicates are generated from PetScan field names under
-            <code>https://petscan.wmcloud.org/ontology/</code>.
-          </p>
-
-          <label class="checkbox-row" for="refresh">
-            <input id="refresh" type="checkbox" v-model="refreshBeforeQuery" />
-            Refresh data from PetScan before running query
-          </label>
-
-          <div class="actions">
-            <button type="button" class="secondary" :disabled="isBusy" @click="loadStructure">
-              Load data structure
-            </button>
-            <button type="submit" class="primary" :disabled="isBusy">
-              Run query
-            </button>
-          </div>
         </form>
 
-        <p class="status" role="status" aria-live="polite">[[ statusMessage ]]</p>
-        <div class="structure-tools">
-          <button
-            type="button"
-            class="secondary"
-            :disabled="!canShowStructure"
-            @click="openStructureDialog"
-          >
-            Open loaded data overview
-          </button>
-          <p class="help" v-if="!canShowStructure">
-            Load data structure for this psid to see queryable fields and predicates.
-          </p>
-        </div>
+        <p class="status" role="status" aria-live="polite">[[ loadStatusMessage ]]</p>
+      </section>
+
+      <section class="card" aria-labelledby="sparql-heading" v-if="querySectionReady">
+        <h2 id="sparql-heading">SPARQL Query</h2>
+
+        <form class="query-form" @submit.prevent="runQuery">
+          <section class="wizard-section">
+            <textarea
+              id="query"
+              rows="12"
+              required
+              spellcheck="false"
+              v-model="query"
+              aria-label="SPARQL query"
+            ></textarea>
+
+            <div class="query-run-row">
+              <button type="submit" class="primary" :disabled="isBusy">
+                Run query
+              </button>
+              <label class="checkbox-row query-refresh-toggle" for="refresh">
+                <input id="refresh" type="checkbox" v-model="refreshBeforeQuery" />
+                Refresh data from PetScan before running query
+              </label>
+              <button
+                type="button"
+                class="secondary open-query-trigger"
+                :disabled="!openQueryTargets.length"
+                @click="openQueryTargetDialog"
+              >
+                Open query in...
+              </button>
+            </div>
+
+            <details ref="structureWizardDetails" class="structure-collapsible" open>
+              <summary>
+                <span class="summary-title">Select fields to include in the SPARQL query from loaded PetScan data (psid [[ loadedPsid || psid ]]).</span>
+                <span class="summary-controls">
+                  <span class="help" v-if="canShowStructure">([[ selectedQueryFieldKeys.length ]] selected)</span>
+                  <span class="collapsible-hint">Collapse/expand</span>
+                  <span class="collapsible-indicator" aria-hidden="true">▾</span>
+                </span>
+              </summary>
+
+              <div class="structure-inline-body" v-if="canShowStructure">
+                <div class="wizard-actions">
+                  <button type="button" class="secondary" :disabled="!canShowStructure" @click="selectAllWizardFields">
+                    Select all
+                  </button>
+                  <button
+                    type="button"
+                    class="secondary"
+                    :disabled="!selectedQueryFieldKeys.length"
+                    @click="clearWizardSelections"
+                  >
+                    Clear selection
+                  </button>
+                </div>
+
+                <div class="table-wrap">
+                  <table>
+                    <caption class="sr-only">Loaded data structure</caption>
+                    <thead>
+                      <tr>
+                        <th scope="col">Include</th>
+                        <th scope="col">Field / relation</th>
+                        <th scope="col">Predicate</th>
+                        <th scope="col">Type</th>
+                        <th scope="col">Present in rows</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      <tr v-for="field in structureFields" :key="field.source_key">
+                        <td class="checkbox-cell">
+                          <input
+                            type="checkbox"
+                            :id="'wizard-field-' + field.source_key"
+                            :checked="isWizardFieldSelected(field.source_key)"
+                            @change="toggleWizardField(field.source_key, $event.target.checked)"
+                          />
+                        </td>
+                        <td><label :for="'wizard-field-' + field.source_key"><code>[[ field.source_key ]]</code></label></td>
+                        <td class="predicate-cell"><code>[[ field.predicate ]]</code></td>
+                        <td>[[ formatFieldType(field) ]]</td>
+                        <td>[[ field.present_in_rows ]] / [[ structureRowCount ]]</td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+
+              <div class="structure-inline-body" v-else>
+                <p class="help">No loaded data structure available for the current psid.</p>
+              </div>
+            </details>
+          </section>
+
+        </form>
       </section>
 
       <section class="card" v-if="resultVisible" aria-labelledby="result-heading">
-        <h2 id="result-heading">Result ([[ queryType ]])</h2>
+        <h2 id="result-heading">SPARQL Query Result</h2>
 
         <div class="meta" v-if="meta.loaded_at || queryExecutionLabel">
           <span><strong>Loaded at:</strong> [[ meta.loaded_at ]]</span>
@@ -128,7 +205,17 @@
               </thead>
               <tbody>
                 <tr v-for="(row, idx) in selectRows" :key="idx">
-                  <td v-for="v in selectVars" :key="v + '-' + idx">[[ formatCell(row[v]) ]]</td>
+                  <td v-for="v in selectVars" :key="v + '-' + idx">
+                    <a
+                      v-if="formatCellHref(row[v])"
+                      :href="formatCellHref(row[v])"
+                      target="_blank"
+                      rel="noopener noreferrer"
+                    >
+                      [[ formatCell(row[v]) ]]
+                    </a>
+                    <span v-else>[[ formatCell(row[v]) ]]</span>
+                  </td>
                 </tr>
               </tbody>
             </table>
@@ -160,69 +247,39 @@
       </section>
 
       <dialog
-        ref="structureDialog"
-        class="structure-dialog"
-        aria-labelledby="structure-title"
-        @close="onStructureDialogClose"
+        ref="openQueryDialog"
+        class="query-target-dialog"
+        aria-labelledby="open-query-dialog-title"
+        @close="onOpenQueryDialogClose"
       >
-        <div class="structure-dialog-inner">
-          <header class="structure-dialog-header">
-            <h2 id="structure-title">Loaded Data Structure</h2>
-            <button type="button" class="secondary" @click="closeStructureDialog">Close</button>
+        <div class="query-target-dialog-inner">
+          <header class="query-target-dialog-header">
+            <h2 id="open-query-dialog-title">Open Federated Query In</h2>
+            <button type="button" class="secondary" @click="closeQueryTargetDialog">Close</button>
           </header>
-
-          <div class="structure-dialog-body" v-if="canShowStructure">
-            <p class="help">
-              Overview of fields found in PetScan JSON for psid <strong>[[ loadedPsid ]]</strong>.
-            </p>
-            <p class="help">
-              URI model: <code>id</code> is exposed as <code>petscan:page_id</code>, and
-              <code>gil_link</code> uses link URI nodes with their own Wikidata triples.
-            </p>
-
-            <div class="meta">
-              <span><strong>Rows:</strong> [[ structureRowCount ]]</span>
-              <span><strong>Fields:</strong> [[ structureFieldCount ]]</span>
+          <div class="query-target-dialog-body">
+            <p class="help">Choose the service where the federated query should open.</p>
+            <fieldset class="query-target-list">
+              <legend class="sr-only">Query target service</legend>
+              <label class="query-target-option" v-for="target in openQueryTargets" :key="target.value">
+                <input type="radio" name="open-query-target" :value="target.value" v-model="openQueryTarget" />
+                [[ target.label ]]
+              </label>
+            </fieldset>
+            <div class="actions">
+              <button type="button" class="secondary" @click="closeQueryTargetDialog">Cancel</button>
+              <button type="button" class="primary" :disabled="!openQueryTarget" @click="openFederatedQueryInTarget">
+                Open
+              </button>
             </div>
-
-            <div class="pattern-box" v-if="(structurePatterns || []).length">
-              <h3>SPARQL Patterns</h3>
-              <pre class="pattern-code">PREFIX petscan: &lt;https://petscan.wmcloud.org/ontology/&gt;
-[[ (structurePatterns || []).join('\n') ]]</pre>
-            </div>
-
-            <div class="table-wrap">
-              <table>
-                <caption class="sr-only">Loaded data structure</caption>
-                <thead>
-                  <tr>
-                    <th scope="col">Field / relation</th>
-                    <th scope="col">Predicate</th>
-                    <th scope="col">Type</th>
-                    <th scope="col">Present in rows</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  <tr v-for="field in structureFields" :key="field.source_key">
-                    <td><code>[[ field.source_key ]]</code></td>
-                    <td class="predicate-cell"><code>[[ field.predicate ]]</code></td>
-                    <td>[[ formatFieldType(field) ]]</td>
-                    <td>[[ field.present_in_rows ]] / [[ structureRowCount ]]</td>
-                  </tr>
-                </tbody>
-              </table>
-            </div>
-          </div>
-
-          <div class="structure-dialog-body" v-else>
-            <p class="help">No loaded data structure available for the current psid.</p>
           </div>
         </div>
       </dialog>
+
     </main>
     {% endverbatim %}
 
     <script src="https://tools-static.wmflabs.org/cdnjs/ajax/libs/vue/3.5.22/vue.global.prod.min.js"></script>
-    <script src="{% static 'js/app.js' %}?v=20260314" defer></script>
+    <script src="{% static 'js/app.js' %}?v=20260315-4" defer></script>
   </body>
 </html>
