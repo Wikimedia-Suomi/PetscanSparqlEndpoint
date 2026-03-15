@@ -5,9 +5,9 @@ from urllib.parse import urlencode
 
 from django.test import SimpleTestCase
 
-API_STRUCTURE_PATH = "/api/structure"
-SPARQL_PATH = "/sparql/psid=123"
-SPARQL_FEDERATED_PATH = "/sparql/psid=43641756&categories=Turku"
+API_STRUCTURE_PATH = "/petscan/api/structure"
+SPARQL_PATH = "/petscan/sparql/psid=123"
+SPARQL_FEDERATED_PATH = "/petscan/sparql/psid=43641756&categories=Turku"
 
 ASK_QUERY = "ASK { ?s ?p ?o }"
 FEDERATED_SUBQUERY = """
@@ -35,6 +35,11 @@ class ApiViewTests(SimpleTestCase):
             "sparql_json": {"head": {}, "boolean": True},
             "meta": {},
         }
+
+    def test_root_redirects_to_petscan_ui(self):
+        response = self.client.get("/")
+        self.assertEqual(response.status_code, 302)
+        self.assertEqual(response["Location"], "/petscan/")
 
     @patch("petscan.views.petscan_service.ensure_loaded")
     def test_structure_endpoint_returns_meta(self, ensure_loaded):
@@ -122,7 +127,7 @@ class ApiViewTests(SimpleTestCase):
         self.assertEqual(response.status_code, 400)
         self.assertEqual(
             response.content.decode("utf-8"),
-            "POST /sparql requires Content-Type: application/sparql-query or application/x-www-form-urlencoded.",
+            "POST /petscan/sparql requires Content-Type: application/sparql-query or application/x-www-form-urlencoded.",
         )
         self.assertTrue(any("[sparql-content-type-debug]" in message for message in captured_logs.output))
         self.assertTrue(any("application/json" in message for message in captured_logs.output))
@@ -132,7 +137,7 @@ class ApiViewTests(SimpleTestCase):
         execute_query.return_value = self._ask_execution_result()
 
         response = self.client.get(
-            "/sparql/psid=123&category=Turku&language=fi",
+            "/petscan/sparql/psid=123&category=Turku&language=fi",
             data={
                 "query": ASK_QUERY,
             },

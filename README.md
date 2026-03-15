@@ -38,7 +38,7 @@ export OXIGRAPH_BASE_DIR="$PWD/data/oxigraph"
 python manage.py runserver
 ```
 
-Open [http://127.0.0.1:8000/](http://127.0.0.1:8000/).
+Open [http://127.0.0.1:8000/petscan/](http://127.0.0.1:8000/petscan/).
 
 ### Check API enrichment coverage for `gil_link`
 
@@ -73,7 +73,7 @@ Security-related Django settings are configured via environment variables:
 
 ### URL
 
-`/sparql`
+`/petscan/sparql/<path:service_params>`
 
 ### Parameters
 
@@ -81,14 +81,13 @@ Security-related Django settings are configured via environment variables:
 - `query` (required): SPARQL query (for `GET`) or in the request body (for `POST`)
 - `refresh` (optional): `1/true` to force reloading PetScan data before query
 - any additional URL query parameters are forwarded to PetScan JSON fetch (except reserved keys `psid`, `format`, `query`, `refresh`)
-- `POST /sparql` supports `Content-Type: application/sparql-query` and `application/x-www-form-urlencoded`
+- `POST /petscan/sparql` supports `Content-Type: application/sparql-query` and `application/x-www-form-urlencoded`
 - In the web UI, use the **PetScan extra GET params** field (example: `category=Turku&language=fi`) to simulate `SERVICE` URI parameters.
 
 ### Example `GET`
 
 ```bash
-curl --get 'http://127.0.0.1:8000/sparql' \
-  --data-urlencode 'psid=43641756' \
+curl --get 'http://127.0.0.1:8000/petscan/sparql/psid=43641756' \
   --data-urlencode 'query=SELECT ?item ?title WHERE { ?item a <https://petscan.wmcloud.org/ontology/Page> . OPTIONAL { ?item <https://petscan.wmcloud.org/ontology/title> ?title } } LIMIT 5'
 ```
 
@@ -98,7 +97,7 @@ You can include this endpoint in a federated query by encoding `psid` in the end
 
 ```sparql
 SELECT ?item ?title WHERE {
-  SERVICE <http://127.0.0.1:8000/sparql?psid=43641756> {
+  SERVICE <http://127.0.0.1:8000/petscan/sparql/psid=43641756> {
     ?item a <https://petscan.wmcloud.org/ontology/Page> .
     OPTIONAL { ?item <https://petscan.wmcloud.org/ontology/title> ?title }
   }
@@ -110,7 +109,7 @@ LIMIT 20
 
 ### URL
 
-`/api/structure`
+`/petscan/api/structure`
 
 ### Parameters
 
@@ -121,7 +120,7 @@ LIMIT 20
 ### Example `GET`
 
 ```bash
-curl --get 'http://127.0.0.1:8000/api/structure' \
+curl --get 'http://127.0.0.1:8000/petscan/api/structure' \
   --data-urlencode 'psid=43641756' \
   --data-urlencode 'category=Turku'
 ```

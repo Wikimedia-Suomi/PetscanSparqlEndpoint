@@ -84,7 +84,7 @@ def _parse_request_context(request: HttpRequest) -> RequestContext:
 def _parse_path_request_context(service_params: str) -> RequestContext:
     raw = str(service_params or "").strip().lstrip("/")
     if not raw:
-        raise ValueError("Path parameters are required. Use /sparql/psid=<id>[&key=value...]")
+        raise ValueError("Path parameters are required. Use /petscan/sparql/psid=<id>[&key=value...]")
 
     parsed = parse_qs(raw, keep_blank_values=False)
     psid_values = [str(value).strip() for value in parsed.get("psid", []) if str(value).strip()]
@@ -120,7 +120,7 @@ def _parse_sparql_query(request: HttpRequest) -> str:
 
     logger.warning(
         (
-            "[sparql-content-type-debug] Rejected POST /sparql due to unsupported Content-Type. "
+            "[sparql-content-type-debug] Rejected POST /petscan/sparql due to unsupported Content-Type. "
             "parsed_content_type=%r raw_content_type=%r method=%s path=%s query_string=%r "
             "accept=%r user_agent=%r content_length=%r"
         ),
@@ -134,7 +134,7 @@ def _parse_sparql_query(request: HttpRequest) -> str:
         request.META.get("CONTENT_LENGTH", ""),
     )
     raise ValueError(
-        "POST /sparql requires Content-Type: application/sparql-query or application/x-www-form-urlencoded."
+        "POST /petscan/sparql requires Content-Type: application/sparql-query or application/x-www-form-urlencoded."
     )
 
 

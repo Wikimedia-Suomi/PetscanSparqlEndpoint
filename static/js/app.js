@@ -6,6 +6,9 @@
   var createApp = window.Vue.createApp;
   var hostname = window.location && window.location.hostname ? window.location.hostname.toLowerCase() : "";
   var isLocalDevHost = hostname === "localhost" || hostname === "127.0.0.1";
+  var petscanBasePath = "/petscan";
+  var petscanStructurePath = petscanBasePath + "/api/structure";
+  var petscanSparqlBasePath = petscanBasePath + "/sparql/";
   var defaultPsid = isLocalDevHost ? "43641756" : "";
   var defaultSelectedQueryFields = ["title", "namespace"];
   var openQueryTargets = [
@@ -158,7 +161,7 @@
           .join("&");
       },
       endpointPreview: function () {
-        var base = window.location.origin + "/sparql/";
+        var base = window.location.origin + petscanSparqlBasePath;
         if (!this.serviceParamPath) {
           return base + "psid=<psid>";
         }
@@ -296,7 +299,7 @@
           params.append(entry[0], entry[1]);
         });
 
-        var response = await fetch("/api/structure?" + params.toString(), {
+        var response = await fetch(petscanStructurePath + "?" + params.toString(), {
           method: "GET",
           headers: {
             Accept: "application/json",
@@ -335,7 +338,7 @@
           })
           .join("&");
 
-        var response = await fetch("/sparql/" + servicePath, {
+        var response = await fetch(petscanSparqlBasePath + servicePath, {
           method: "POST",
           headers: {
             "Content-Type": "application/sparql-query",
@@ -494,9 +497,9 @@
       buildPetscanServiceUrl: function (refresh) {
         var servicePath = this.buildSparqlServicePath(refresh);
         if (!servicePath) {
-          return window.location.origin + "/sparql/";
+          return window.location.origin + petscanSparqlBasePath;
         }
-        return window.location.origin + "/sparql/" + servicePath;
+        return window.location.origin + petscanSparqlBasePath + servicePath;
       },
       buildFederatedQueryText: function () {
         var serviceUrl = this.buildPetscanServiceUrl(this.refreshBeforeQuery);
