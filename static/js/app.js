@@ -596,7 +596,13 @@
           return "https://query.wikidata.org/#" + encodedQuery;
         }
         if (target === "yasgui") {
-          return "https://yasgui.triply.cc/#query=" + encodedQuery;
+          var directEndpointUrl = this.buildPetscanServiceUrl(false);
+          return (
+            "https://yasgui.triply.cc/#query=" +
+            encodedQuery +
+            "&endpoint=" +
+            encodeURIComponent(directEndpointUrl)
+          );
         }
         if (target === "sophox") {
           return "https://sophox.org/#" + encodedQuery;
