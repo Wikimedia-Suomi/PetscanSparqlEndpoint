@@ -309,11 +309,6 @@ def value_kind(value: Any) -> str:
     return "other"
 
 
-def _value_kind(value: Any) -> str:
-    # Backward-compatible alias for internal callers.
-    return value_kind(value)
-
-
 def sparql_type_for_value(value: Any) -> str:
     if isinstance(value, bool):
         return "xsd:boolean"
@@ -370,11 +365,6 @@ def normalize_datetime_xsd(value: Any) -> Optional[str]:
         parsed = parsed.replace(tzinfo=timezone.utc)
     normalized = parsed.astimezone(timezone.utc).replace(microsecond=0).isoformat()
     return normalized.replace("+00:00", "Z")
-
-
-def _normalize_revision_timestamp_xsd(value: Any) -> Optional[str]:
-    # Backward-compatible alias for internal callers.
-    return normalize_datetime_xsd(value)
 
 
 def summarize_structure(

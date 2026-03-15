@@ -90,7 +90,7 @@ def _write_record_quads(
     index: int,
     row: Mapping[str, Any],
     context: _RecordWriteContext,
-    resolved_gil_links: Optional[Sequence[Tuple[str, Optional[str]]]] = None,
+    resolved_gil_links: Sequence[Tuple[str, Optional[str]]],
 ) -> Tuple[Dict[str, Set[str]], List[Any]]:
     row_field_kinds: Dict[str, Set[str]] = {}
     row_quads: List[Any] = []
@@ -105,11 +105,6 @@ def _write_record_quads(
 
     predicates = context.predicates
     subject = rdf.item_subject(context.psid, row, index)
-    if resolved_gil_links is None:
-        resolved_gil_links = links.resolve_gil_links(
-            row,
-            gil_link_enrichment_map=context.gil_link_enrichment_map,
-        )
     gil_link_uris = [link_uri for link_uri, _qid in resolved_gil_links]
     row_quads.append(Quad(subject, predicates.rdf_type, predicates.page_class, context.default_graph))
     row_quads.append(
@@ -221,18 +216,11 @@ def _literal_for_scalar_field(key: str, value: Any, context: _RecordWriteContext
 def _flush_quads(store_instance: Any, quad_buffer: Sequence[Any]) -> None:
     if not quad_buffer:
         return
-    bulk_extend = getattr(store_instance, "bulk_extend", None)
-    if callable(bulk_extend):
-        bulk_extend(quad_buffer)
-        return
-    for quad in quad_buffer:
-        store_instance.add(quad)
+    store_instance.bulk_extend(quad_buffer)
 
 
 def _optimize_store(store_instance: Any) -> None:
-    optimize = getattr(store_instance, "optimize", None)
-    if callable(optimize):
-        optimize()
+    store_instance.optimize()
 
 
 def _build_store_meta(
@@ -289,9 +277,7 @@ def build_store(
     quad_buffer: List[Any] = []
 
     for index, row in enumerate(records):
-        resolved_gil_links = (
-            resolved_gil_links_by_row[index] if index < len(resolved_gil_links_by_row) else None
-        )
+        resolved_gil_links = resolved_gil_links_by_row[index]
         row_field_kinds, row_quads = _write_record_quads(
             index=index,
             row=row,

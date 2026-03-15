@@ -19,13 +19,24 @@ class ServiceStoreBuilderTests(ServiceTestCase):
             self.skipTest("pyoxigraph is not installed")
 
         link_uri = "https://en.wikipedia.org/wiki/Federalist_No._42"
-        gil_map_mock.return_value = {
+        enrichment_map = {
             link_uri: {
                 "wikidata_id": "Q5440615",
                 "page_len": 12345,
                 "rev_timestamp": "2026-03-15T10:00:00Z",
             }
         }
+
+        def _mock_build_map(records, backend=None, resolved_links_by_row_out=None):
+            if isinstance(resolved_links_by_row_out, list):
+                resolved_links_by_row_out.clear()
+                for row in records:
+                    resolved_links_by_row_out.append(
+                        store_builder.links.resolve_gil_links(row, gil_link_enrichment_map=enrichment_map)
+                    )
+            return enrichment_map
+
+        gil_map_mock.side_effect = _mock_build_map
         psid = STORE_GIL_TEST_PSID
         self._cleanup_store(psid)
 
@@ -48,15 +59,26 @@ class ServiceStoreBuilderTests(ServiceTestCase):
 
     @patch("petscan.service_store_builder._optimize_store")
     @patch("petscan.service_store_builder.rdf.summarize_structure")
-    @patch("petscan.service_store_builder.links.build_gil_link_enrichment_map", return_value={})
+    @patch("petscan.service_store_builder.links.build_gil_link_enrichment_map")
     def test_build_store_uses_one_pass_structure_accumulator(
         self,
-        _gil_map_mock,
+        gil_map_mock,
         summarize_structure_mock,
         optimize_store_mock,
     ):
         if store_builder.Store is None:
             self.skipTest("pyoxigraph is not installed")
+
+        def _mock_build_map(records, backend=None, resolved_links_by_row_out=None):
+            if isinstance(resolved_links_by_row_out, list):
+                resolved_links_by_row_out.clear()
+                for row in records:
+                    resolved_links_by_row_out.append(
+                        store_builder.links.resolve_gil_links(row, gil_link_enrichment_map={})
+                    )
+            return {}
+
+        gil_map_mock.side_effect = _mock_build_map
 
         psid = STORE_GIL_TEST_PSID + 1
         self._cleanup_store(psid)
