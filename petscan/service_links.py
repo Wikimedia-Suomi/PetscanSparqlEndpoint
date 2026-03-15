@@ -3,7 +3,18 @@
 import re
 from dataclasses import dataclass
 from datetime import datetime, timezone
-from typing import Any, Dict, Iterable, List, Mapping, MutableMapping, Optional, Sequence, Set, Tuple
+from typing import (
+    Any,
+    Dict,
+    Iterable,
+    List,
+    Mapping,
+    MutableMapping,
+    Optional,
+    Sequence,
+    Set,
+    Tuple,
+)
 from urllib.parse import quote, urlsplit
 
 from django.conf import settings
