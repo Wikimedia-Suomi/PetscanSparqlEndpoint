@@ -40,6 +40,21 @@ python manage.py runserver
 
 Open [http://127.0.0.1:8000/](http://127.0.0.1:8000/).
 
+### Check API enrichment coverage for `gil_link`
+
+This command validates that API enrichment returns `page_len` and `rev_timestamp`
+for `gil_link` targets from a PetScan result.
+
+```bash
+source .venv/bin/activate
+export DJANGO_SECRET_KEY='dev-only-change-me'
+export OXIGRAPH_BASE_DIR="$PWD/data/oxigraph"
+python manage.py check_api_enrichment --petscan-url 'https://petscan.wmcloud.org/?psid=43641756'
+```
+
+By default, the command fails if any `gil_link` is missing `page_len` or `rev_timestamp`.
+Use `--allow-missing` to print diagnostics without failing.
+
 ## Environment Configuration
 
 Security-related Django settings are configured via environment variables:
@@ -51,8 +66,8 @@ Security-related Django settings are configured via environment variables:
 
 ## Example PetScan JSON Files
 
-- `data/examples/petscan-43641756.json`
-- `data/examples/petscan-43642782.json`
+- `data/examples/petscan-43641756.json.gz`
+- `data/examples/petscan-43642782.json.gz`
 
 ## SPARQL Endpoint
 

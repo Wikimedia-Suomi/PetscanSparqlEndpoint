@@ -225,17 +225,16 @@
         });
 
         var lines = [];
-        if (byField.id || byField.page_id) {
-          lines.push("?item ps:page_id ?page_id .");
-        }
         if (byField.gil_link) {
           lines.push("?item ps:gil_link ?gil_link .");
-        }
-        if (byField.gil_link_wikidata_id) {
           lines.push("?gil_link ps:gil_link_wikidata_id ?gil_link_wikidata_id .");
-        }
-        if (byField.gil_link_wikidata_entity) {
           lines.push("?gil_link ps:gil_link_wikidata_entity ?gil_link_wikidata_entity .");
+          lines.push("?gil_link ps:gil_link_page_len ?gil_link_page_len .");
+          lines.push("?gil_link ps:gil_link_rev_timestamp ?gil_link_rev_timestamp");
+          return lines;
+        }
+        if (byField.id || byField.page_id) {
+          lines.push("?item ps:page_id ?page_id .");
         }
 
         return lines;

@@ -167,19 +167,35 @@ class ServiceRdfTests(ServiceTestCase):
 
     def test_summary_includes_gil_link_relation_fields(self):
         record = {"gil": "enwiki:0:Federalist_No._42"}
-        gil_map = {"https://en.wikipedia.org/wiki/Federalist_No._42": "Q5440615"}
-        summary = rdf.summarize_structure([record], gil_link_wikidata_map=gil_map)
+        gil_map = {
+            "https://en.wikipedia.org/wiki/Federalist_No._42": {
+                "wikidata_id": "Q5440615",
+                "page_len": "12345",
+                "rev_timestamp": "20260315100000",
+            }
+        }
+        summary = rdf.summarize_structure([record], gil_link_enrichment_map=gil_map)
         field_map = self._field_map(summary)
 
         self.assertIn("gil_link", field_map)
         self.assertIn("gil_link_wikidata_id", field_map)
         self.assertIn("gil_link_wikidata_entity", field_map)
+        self.assertIn("gil_link_page_len", field_map)
+        self.assertIn("gil_link_rev_timestamp", field_map)
+        self.assertEqual(field_map["gil_link_page_len"]["primary_type"], "integer")
+        self.assertEqual(field_map["gil_link_rev_timestamp"]["primary_type"], "string")
 
     def test_gil_wikidata_fields_are_emitted_when_mapping_exists(self):
         record = {"gil": "enwiki:0:Albert_Einstein|dewiki:0:Berlin"}
-        gil_map = {"https://en.wikipedia.org/wiki/Albert_Einstein": "Q937"}
+        gil_map = {
+            "https://en.wikipedia.org/wiki/Albert_Einstein": {
+                "wikidata_id": "Q937",
+                "page_len": None,
+                "rev_timestamp": None,
+            }
+        }
 
-        enriched_links = links.iter_gil_link_enrichment(record, gil_link_wikidata_map=gil_map)
+        enriched_links = links.iter_gil_link_enrichment(record, gil_link_enrichment_map=gil_map)
         self.assertEqual(
             enriched_links,
             [

@@ -1,6 +1,7 @@
 """RDF field shaping and summary helpers for PetScan records."""
 
 import re
+from datetime import datetime, timezone
 from functools import lru_cache
 from typing import Any, Dict, Iterable, List, Mapping, Optional, Sequence, Tuple
 from urllib.parse import quote
@@ -307,16 +308,58 @@ def _value_kind(value: Any) -> str:
     return value_kind(value)
 
 
+def _normalize_page_len(value: Any) -> Optional[int]:
+    if value is None:
+        return None
+    try:
+        page_len = int(value)
+    except Exception:
+        return None
+    if page_len < 0:
+        return None
+    return page_len
+
+
+def _normalize_revision_timestamp_xsd(value: Any) -> Optional[str]:
+    if value is None:
+        return None
+    text = str(value).strip()
+    if not text:
+        return None
+
+    if re.fullmatch(r"\d{14}", text):
+        formatted = "{}-{}-{}T{}:{}:{}+00:00".format(
+            text[0:4],
+            text[4:6],
+            text[6:8],
+            text[8:10],
+            text[10:12],
+            text[12:14],
+        )
+    else:
+        formatted = text[:-1] + "+00:00" if text.endswith("Z") else text
+
+    try:
+        parsed = datetime.fromisoformat(formatted)
+    except ValueError:
+        return None
+
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=timezone.utc)
+    normalized = parsed.astimezone(timezone.utc).replace(microsecond=0).isoformat()
+    return normalized.replace("+00:00", "Z")
+
+
 def summarize_structure(
     records: Sequence[Mapping[str, Any]],
-    gil_link_wikidata_map: Optional[Mapping[str, str]] = None,
+    gil_link_enrichment_map: Optional[Mapping[str, Mapping[str, Any]]] = None,
 ) -> StructureSummary:
     accumulator = StructureAccumulator()
 
     for row in records:
         resolved_gil_links = links.resolve_gil_links(
             row,
-            gil_link_wikidata_map=gil_link_wikidata_map,
+            gil_link_enrichment_map=gil_link_enrichment_map,
         )
         gil_link_uris = [link_uri for link_uri, _qid in resolved_gil_links]
         row_fields: Dict[str, List[Any]] = {}
@@ -324,6 +367,16 @@ def summarize_structure(
             row_fields.setdefault(key, []).append(value)
         for link_uri, qid in resolved_gil_links:
             row_fields.setdefault("gil_link", []).append(link_uri)
+            payload = gil_link_enrichment_map.get(link_uri) if gil_link_enrichment_map is not None else None
+            if isinstance(payload, Mapping):
+                page_len = _normalize_page_len(payload.get("page_len"))
+                if page_len is not None:
+                    row_fields.setdefault("gil_link_page_len", []).append(page_len)
+
+                rev_timestamp = _normalize_revision_timestamp_xsd(payload.get("rev_timestamp"))
+                if rev_timestamp is not None:
+                    row_fields.setdefault("gil_link_rev_timestamp", []).append(rev_timestamp)
+
             if qid is not None:
                 row_fields.setdefault("gil_link_wikidata_id", []).append(qid)
                 row_fields.setdefault("gil_link_wikidata_entity", []).append(

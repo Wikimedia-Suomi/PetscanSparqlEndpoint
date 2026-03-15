@@ -1,6 +1,6 @@
 import json
 from time import perf_counter
-from typing import Dict, Mapping, Sequence
+from typing import Any, Dict, Mapping, Optional, Sequence
 from urllib.parse import urlencode
 from urllib.request import Request, urlopen
 
@@ -19,20 +19,42 @@ def _resolve_title_alias(title: str, alias_map: Mapping[str, str]) -> str:
     return current
 
 
+def _normalize_revision_timestamp(value: object) -> Optional[str]:
+    if value is None:
+        return None
+    text = str(value).strip()
+    if not text:
+        return None
+    return text
+
+
+def _normalize_page_len(value: object) -> Optional[int]:
+    if value is None:
+        return None
+    try:
+        page_len = int(value)
+    except Exception:
+        return None
+    if page_len < 0:
+        return None
+    return page_len
+
+
 def fetch_wikibase_items_for_site_api(
     api_url: str,
     titles: Sequence[str],
     user_agent: str,
     timeout_seconds: int,
-) -> Dict[str, str]:
+) -> Dict[str, Dict[str, Any]]:
     if not titles:
         return {}
 
     params = {
         "action": "query",
         "titles": "|".join(titles),
-        "prop": "pageprops",
+        "prop": "pageprops|info|revisions",
         "ppprop": "wikibase_item",
+        "rvprop": "timestamp",
         "redirects": "1",
         "format": "json",
         "formatversion": "2",
@@ -81,7 +103,7 @@ def fetch_wikibase_items_for_site_api(
             if source_title and target_title:
                 alias_map[source_title] = target_title
 
-    page_qids = {}  # type: Dict[str, str]
+    page_enrichment = {}  # type: Dict[str, Dict[str, Any]]
     pages = query.get("pages")
     if isinstance(pages, list):
         for page in pages:
@@ -90,21 +112,35 @@ def fetch_wikibase_items_for_site_api(
             title = normalize_page_title(page.get("title"))
             if not title:
                 continue
-            pageprops = page.get("pageprops")
-            if not isinstance(pageprops, Mapping):
-                continue
-            qid = normalize_qid(pageprops.get("wikibase_item"))
-            if qid is not None:
-                page_qids[title] = qid
 
-    resolved = {}  # type: Dict[str, str]
+            pageprops = page.get("pageprops")
+            qid = None
+            if isinstance(pageprops, Mapping):
+                qid = normalize_qid(pageprops.get("wikibase_item"))
+
+            page_len = _normalize_page_len(page.get("length"))
+
+            rev_timestamp = None
+            revisions = page.get("revisions")
+            if isinstance(revisions, list) and revisions:
+                first_revision = revisions[0]
+                if isinstance(first_revision, Mapping):
+                    rev_timestamp = _normalize_revision_timestamp(first_revision.get("timestamp"))
+
+            page_enrichment[title] = {
+                "wikidata_id": qid,
+                "page_len": page_len,
+                "rev_timestamp": rev_timestamp,
+            }
+
+    resolved = {}  # type: Dict[str, Dict[str, Any]]
     for input_title in titles:
         normalized_input = normalize_page_title(input_title)
         if not normalized_input:
             continue
         final_title = _resolve_title_alias(normalized_input, alias_map)
-        qid = page_qids.get(final_title) or page_qids.get(normalized_input)
-        if qid is not None:
-            resolved[normalized_input] = qid
+        enrichment = page_enrichment.get(final_title) or page_enrichment.get(normalized_input)
+        if enrichment is not None:
+            resolved[normalized_input] = dict(enrichment)
 
     return resolved

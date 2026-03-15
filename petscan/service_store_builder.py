@@ -37,6 +37,8 @@ class _StorePredicates:
     gil_link: Any
     gil_link_wikidata_id: Any
     gil_link_wikidata_entity: Any
+    gil_link_page_len: Any
+    gil_link_rev_timestamp: Any
 
 
 @dataclass(frozen=True)
@@ -44,7 +46,7 @@ class _RecordWriteContext:
     predicates: _StorePredicates
     psid: int
     loaded_at: str
-    gil_link_wikidata_map: Mapping[str, str]
+    gil_link_enrichment_map: Mapping[str, Mapping[str, Any]]
     default_graph: Any
     xsd_integer_type: Any
     xsd_date_time_type: Any
@@ -78,6 +80,8 @@ def _build_store_predicates() -> _StorePredicates:
         gil_link=NamedNode(rdf.PREDICATE_BASE + "gil_link"),
         gil_link_wikidata_id=NamedNode(rdf.PREDICATE_BASE + "gil_link_wikidata_id"),
         gil_link_wikidata_entity=NamedNode(rdf.PREDICATE_BASE + "gil_link_wikidata_entity"),
+        gil_link_page_len=NamedNode(rdf.PREDICATE_BASE + "gil_link_page_len"),
+        gil_link_rev_timestamp=NamedNode(rdf.PREDICATE_BASE + "gil_link_rev_timestamp"),
     )
 
 
@@ -101,7 +105,7 @@ def _write_record_quads(
     subject = rdf.item_subject(context.psid, row, index)
     resolved_gil_links = links.resolve_gil_links(
         row,
-        gil_link_wikidata_map=context.gil_link_wikidata_map,
+        gil_link_enrichment_map=context.gil_link_enrichment_map,
     )
     gil_link_uris = [link_uri for link_uri, _qid in resolved_gil_links]
     row_quads.append(Quad(subject, predicates.rdf_type, predicates.page_class, context.default_graph))
@@ -139,6 +143,47 @@ def _write_record_quads(
         _track_field_kind("gil_link", link_uri)
         link_node = NamedNode(link_uri)
         row_quads.append(Quad(subject, predicates.gil_link, link_node, context.default_graph))
+
+        enrichment = context.gil_link_enrichment_map.get(link_uri)
+        page_len = None
+        rev_timestamp = None
+        if isinstance(enrichment, Mapping):
+            raw_page_len = enrichment.get("page_len")
+            try:
+                page_len = int(raw_page_len) if raw_page_len is not None else None
+            except Exception:
+                page_len = None
+            if page_len is not None and page_len < 0:
+                page_len = None
+
+            raw_rev_timestamp = enrichment.get("rev_timestamp")
+            if isinstance(raw_rev_timestamp, str):
+                normalized_timestamp = raw_rev_timestamp.strip()
+                if normalized_timestamp:
+                    rev_timestamp = normalized_timestamp
+
+        if page_len is not None:
+            _track_field_kind("gil_link_page_len", page_len)
+            row_quads.append(
+                Quad(
+                    link_node,
+                    predicates.gil_link_page_len,
+                    Literal(str(page_len), datatype=context.xsd_integer_type),
+                    context.default_graph,
+                )
+            )
+
+        if rev_timestamp is not None:
+            _track_field_kind("gil_link_rev_timestamp", rev_timestamp)
+            row_quads.append(
+                Quad(
+                    link_node,
+                    predicates.gil_link_rev_timestamp,
+                    Literal(rev_timestamp, datatype=context.xsd_date_time_type),
+                    context.default_graph,
+                )
+            )
+
         if qid is not None:
             _track_field_kind("gil_link_wikidata_id", qid)
             entity_iri = "http://www.wikidata.org/entity/{}".format(qid)
@@ -206,14 +251,14 @@ def build_store(
     store_class = _require_store_class()
     store_instance = store_class(str(store_path))
     predicates = _build_store_predicates()
-    gil_link_wikidata_map = links.build_gil_link_wikidata_map(records)
+    gil_link_enrichment_map = links.build_gil_link_enrichment_map(records)
     loaded_at = datetime.now(timezone.utc).replace(microsecond=0).isoformat()
     structure_accumulator = rdf.StructureAccumulator()
     write_context = _RecordWriteContext(
         predicates=predicates,
         psid=psid,
         loaded_at=loaded_at,
-        gil_link_wikidata_map=gil_link_wikidata_map,
+        gil_link_enrichment_map=gil_link_enrichment_map,
         default_graph=DefaultGraph(),
         xsd_integer_type=NamedNode(rdf.XSD_INTEGER_IRI),
         xsd_date_time_type=NamedNode(rdf.XSD_DATE_TIME_IRI),

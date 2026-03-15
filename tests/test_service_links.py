@@ -41,10 +41,13 @@ class ServiceLinksTests(ServiceTestCase):
 
     @patch("petscan.service_links.wikidata_lookup_backend", return_value=links.LOOKUP_BACKEND_API)
     @patch("petscan.service_links.fetch_wikibase_items_for_site_api")
-    def test_gil_wikidata_lookup_batches_by_site_and_max_50_titles(self, fetch_mock, _backend_mock):
+    def test_gil_enrichment_lookup_batches_by_site_and_max_50_titles(self, fetch_mock, _backend_mock):
         def fake_fetch(_api_url, titles, **_kwargs):
-            # Return deterministic fake QIDs without network.
-            return {title: "Q{}".format(index) for index, title in enumerate(titles, start=1)}
+            # Return deterministic fake enrichment payloads without network.
+            return {
+                title: {"wikidata_id": "Q{}".format(index), "page_len": None, "rev_timestamp": None}
+                for index, title in enumerate(titles, start=1)
+            }
 
         fetch_mock.side_effect = fake_fetch
 
@@ -52,7 +55,7 @@ class ServiceLinksTests(ServiceTestCase):
         de_links = ["dewiki:0:Artikel_{}".format(i) for i in range(3)]
         records = [{"gil": "|".join(en_links + de_links)}]
 
-        link_map = links.build_gil_link_wikidata_map(records)
+        link_map = links.build_gil_link_enrichment_map(records)
 
         self.assertEqual(len(link_map), 64)
         self.assertIn("https://en.wikipedia.org/wiki/Article_0", link_map)
@@ -70,19 +73,148 @@ class ServiceLinksTests(ServiceTestCase):
 
     @patch("petscan.service_links.wikidata_lookup_backend", return_value=links.LOOKUP_BACKEND_API)
     @patch("petscan.service_links.fetch_wikibase_items_for_site_api")
-    def test_wikidata_item_gil_link_resolves_directly_without_api_lookup(self, fetch_mock, _backend_mock):
-        fetch_mock.return_value = {"Albert_Einstein": "Q937"}
+    def test_wikidata_item_gil_link_resolves_directly_with_enrichment(self, fetch_mock, _backend_mock):
+        fetch_mock.return_value = {
+            "Albert_Einstein": {
+                "wikidata_id": "Q937",
+                "page_len": 886543,
+                "rev_timestamp": "2026-03-14T23:59:59Z",
+            }
+        }
         records = [{"gil": "wikidatawiki:0:Q42|enwiki:0:Albert_Einstein"}]
 
-        link_map = links.build_gil_link_wikidata_map(records)
+        link_map = links.build_gil_link_enrichment_map(records)
 
-        self.assertEqual(link_map.get("https://www.wikidata.org/wiki/Q42"), "Q42")
-        self.assertEqual(link_map.get("https://en.wikipedia.org/wiki/Albert_Einstein"), "Q937")
-        self.assertEqual(len(fetch_mock.call_args_list), 1)
-        self.assertIn("en.wikipedia.org", fetch_mock.call_args_list[0].args[0])
+        self.assertEqual(
+            link_map.get("https://www.wikidata.org/wiki/Q42"),
+            {"wikidata_id": "Q42", "page_len": None, "rev_timestamp": None},
+        )
+        self.assertEqual(
+            link_map.get("https://en.wikipedia.org/wiki/Albert_Einstein"),
+            {
+                "wikidata_id": "Q937",
+                "page_len": 886543,
+                "rev_timestamp": "2026-03-14T23:59:59Z",
+            },
+        )
+        self.assertEqual(len(fetch_mock.call_args_list), 2)
+        self.assertTrue(any("en.wikipedia.org" in call.args[0] for call in fetch_mock.call_args_list))
+        self.assertTrue(any("www.wikidata.org" in call.args[0] for call in fetch_mock.call_args_list))
+
+    @patch("petscan.service_links.wikidata_lookup_backend", return_value=links.LOOKUP_BACKEND_API)
+    @patch("petscan.service_links.fetch_wikibase_items_for_site_api")
+    def test_enrichment_map_fetches_page_len_and_timestamp_for_direct_wikidata_qid_links(
+        self,
+        fetch_mock,
+        _backend_mock,
+    ):
+        def fake_fetch(api_url, titles, **_kwargs):
+            if "www.wikidata.org" in api_url:
+                return {
+                    "Q42": {
+                        "wikidata_id": "Q42",
+                        "page_len": 12345,
+                        "rev_timestamp": "2026-03-15T10:00:00Z",
+                    }
+                }
+            return {
+                "Albert_Einstein": {
+                    "wikidata_id": "Q937",
+                    "page_len": 886543,
+                    "rev_timestamp": "2026-03-14T23:59:59Z",
+                }
+            }
+
+        fetch_mock.side_effect = fake_fetch
+        records = [{"gil": "wikidatawiki:0:Q42|enwiki:0:Albert_Einstein"}]
+
+        enrichment = links.build_gil_link_enrichment_map(records)
+
+        self.assertEqual(
+            enrichment["https://www.wikidata.org/wiki/Q42"],
+            {
+                "wikidata_id": "Q42",
+                "page_len": 12345,
+                "rev_timestamp": "2026-03-15T10:00:00Z",
+            },
+        )
+        self.assertEqual(
+            enrichment["https://en.wikipedia.org/wiki/Albert_Einstein"],
+            {
+                "wikidata_id": "Q937",
+                "page_len": 886543,
+                "rev_timestamp": "2026-03-14T23:59:59Z",
+            },
+        )
+        self.assertTrue(any("www.wikidata.org" in call.args[0] for call in fetch_mock.call_args_list))
+
+    @patch("petscan.service_links.fetch_wikibase_items_for_site_api")
+    def test_api_lookup_accepts_enriched_payload_shape(self, api_fetch_mock):
+        api_fetch_mock.return_value = {
+            "Albert_Einstein": {
+                "wikidata_id": "Q937",
+                "page_len": 886543,
+                "rev_timestamp": "20260314235959",
+            },
+            "Unknown_Page": {
+                "wikidata_id": None,
+                "page_len": 42,
+                "rev_timestamp": "20200101000000",
+            },
+        }
+
+        resolved = links.fetch_wikibase_enrichment_for_site(
+            "enwiki",
+            [
+                links.SiteLookupTarget(namespace=0, api_title="Albert_Einstein", db_title="Albert_Einstein"),
+                links.SiteLookupTarget(namespace=0, api_title="Unknown_Page", db_title="Unknown_Page"),
+            ],
+            backend=links.LOOKUP_BACKEND_API,
+        )
+
+        self.assertEqual(
+            resolved,
+            {
+                "Albert_Einstein": {
+                    "wikidata_id": "Q937",
+                    "page_len": 886543,
+                    "rev_timestamp": "2026-03-14T23:59:59Z",
+                },
+                "Unknown_Page": {
+                    "wikidata_id": None,
+                    "page_len": 42,
+                    "rev_timestamp": "2020-01-01T00:00:00Z",
+                },
+            },
+        )
+
+    @patch("petscan.service_links.wikidata_lookup_backend", return_value=links.LOOKUP_BACKEND_TOOLFORGE_SQL)
+    @patch("petscan.service_links.enrichment_sql.fetch_wikibase_items_for_site_sql")
+    def test_build_gil_link_enrichment_map_normalizes_sql_timestamp_to_xsd(self, sql_fetch_mock, _backend_mock):
+        sql_fetch_mock.return_value = {
+            "Albert_Einstein": {
+                "wikidata_id": "Q937",
+                "page_len": 886543,
+                "rev_timestamp": "20260314235959",
+            }
+        }
+        records = [{"gil": "enwiki:0:Albert_Einstein"}]
+
+        enrichment = links.build_gil_link_enrichment_map(records)
+
+        self.assertEqual(
+            enrichment,
+            {
+                "https://en.wikipedia.org/wiki/Albert_Einstein": {
+                    "wikidata_id": "Q937",
+                    "page_len": 886543,
+                    "rev_timestamp": "2026-03-14T23:59:59Z",
+                }
+            },
+        )
 
     @patch("petscan.service_links.enrichment_sql.fetch_wikibase_items_for_site_sql")
-    def test_toolforge_sql_lookup_uses_wikidata_id_from_enriched_sql_payload(self, sql_fetch_mock):
+    def test_toolforge_sql_lookup_accepts_enriched_payload_shape(self, sql_fetch_mock):
         sql_fetch_mock.return_value = {
             "Albert_Einstein": {
                 "wikidata_id": "Q937",
@@ -96,7 +228,7 @@ class ServiceLinksTests(ServiceTestCase):
             },
         }
 
-        resolved = links.fetch_wikibase_items_for_site(
+        resolved = links.fetch_wikibase_enrichment_for_site(
             "enwiki",
             [
                 links.SiteLookupTarget(namespace=0, api_title="Albert_Einstein", db_title="Albert_Einstein"),
@@ -105,4 +237,18 @@ class ServiceLinksTests(ServiceTestCase):
             backend=links.LOOKUP_BACKEND_TOOLFORGE_SQL,
         )
 
-        self.assertEqual(resolved, {"Albert_Einstein": "Q937"})
+        self.assertEqual(
+            resolved,
+            {
+                "Albert_Einstein": {
+                    "wikidata_id": "Q937",
+                    "page_len": 886543,
+                    "rev_timestamp": "2026-03-14T23:59:59Z",
+                },
+                "Unknown_Page": {
+                    "wikidata_id": None,
+                    "page_len": 42,
+                    "rev_timestamp": "2020-01-01T00:00:00Z",
+                },
+            },
+        )
