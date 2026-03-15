@@ -1,12 +1,11 @@
 import unittest
-from typing import Any, Dict, List, Mapping
+from typing import Any, List, Mapping
 
 from django.conf import settings
 from django.test import SimpleTestCase
 
-from petscan import enrichment_sql, normalization
+from petscan import enrichment_sql, normalization, service_source
 from petscan import service_links as links
-from petscan import service_source
 
 ENWIKI = "enwiki"
 PETSCAN_PARITY_PSID = 43641756
