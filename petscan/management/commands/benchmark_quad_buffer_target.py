@@ -65,7 +65,7 @@ def _parse_candidates(raw_value: str) -> List[int]:
 def _load_records(
     psid: int,
     petscan_params: Mapping[str, Any],
-) -> Tuple[List[Mapping[str, Any]], str, float, float]:
+) -> Tuple[List[Dict[str, Any]], str, float, float]:
     started_at = perf_counter()
     payload, source_url = source.fetch_petscan_json(psid, petscan_params=petscan_params)
     fetch_ms = (perf_counter() - started_at) * 1000.0
@@ -174,7 +174,7 @@ class Command(BaseCommand):
             )
         )
 
-        preloaded_records: Optional[List[Mapping[str, Any]]] = None
+        preloaded_records: Optional[List[Dict[str, Any]]] = None
         preloaded_source_url = ""
         prefetch_fetch_ms = 0.0
         prefetch_extract_ms = 0.0
@@ -201,14 +201,14 @@ class Command(BaseCommand):
             else nullcontext()
         )
 
-        report_candidates = []
+        report_candidates: List[Dict[str, Any]] = []
         original_quad_buffer_target = store_builder._QUAD_BUFFER_TARGET
 
         try:
             with backend_context:
                 for candidate in candidates:
                     store_builder._QUAD_BUFFER_TARGET = candidate
-                    measured_runs = []
+                    measured_runs: List[Dict[str, Any]] = []
                     total_iterations = warmup + runs
 
                     self.stdout.write(

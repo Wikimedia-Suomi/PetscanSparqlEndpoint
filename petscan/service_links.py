@@ -445,7 +445,7 @@ def _collect_lookup_inputs(
     direct_qids_by_link = {}  # type: Dict[str, str]
 
     for row in records:
-        row_link_uris = [] if row_link_uris_out is not None else None
+        row_link_uris: Optional[List[str]] = [] if row_link_uris_out is not None else None
         for target in _iter_gil_link_targets(row):
             link_targets_by_uri[target.link_uri] = target
             if row_link_uris is not None:

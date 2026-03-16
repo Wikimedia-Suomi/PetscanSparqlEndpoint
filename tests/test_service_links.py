@@ -1,3 +1,4 @@
+from typing import List, Optional, Tuple
 from unittest.mock import patch
 from urllib.parse import urlparse
 
@@ -191,7 +192,7 @@ class ServiceLinksTests(ServiceTestCase):
             {"gil": "wikidatawiki:0:Q42|enwiki:0:Albert_Einstein"},
             {"gil": "dewiki:0:Berlin"},
         ]
-        resolved_links_by_row = []
+        resolved_links_by_row: List[List[Tuple[str, Optional[str]]]] = []
 
         enrichment = links.build_gil_link_enrichment_map(
             records,
