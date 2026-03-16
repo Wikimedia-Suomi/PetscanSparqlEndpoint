@@ -2,6 +2,13 @@
 
 This is a django app which works as SPARQL endpoint for PetScan query results.
 
+## TL;DR
+
+- Give the app a PetScan `psid`, and it turns that PetScan JSON result into a local RDF dataset.
+- The dataset is stored in Oxigraph, and exposed via a SPARQL endpoint at `/petscan/sparql/...`.
+- Web UI flow: load PetScan data -> inspect generated fields/structure -> run SPARQL queries.
+- Optional enrichment adds Wikidata-related fields for `gil_link` targets (API or Toolforge SQL backend).
+
 ## Requirements
 
 - Python 3.9+
