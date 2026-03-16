@@ -255,51 +255,55 @@ def build_store(
     store_path = _reset_store_directory(psid)
     store_class = _require_store_class()
     store_instance = store_class(str(store_path))
-    predicates = _build_store_predicates()
-    resolved_gil_links_by_row: List[List[Tuple[str, Optional[str]]]] = []
-    gil_link_enrichment_map = links.build_gil_link_enrichment_map(
-        records,
-        resolved_links_by_row_out=resolved_gil_links_by_row,
-    )
-    loaded_at = datetime.now(timezone.utc).replace(microsecond=0).isoformat()
-    structure_accumulator = rdf.StructureAccumulator()
-    write_context = _RecordWriteContext(
-        predicates=predicates,
-        psid=psid,
-        loaded_at=loaded_at,
-        gil_link_enrichment_map=gil_link_enrichment_map,
-        default_graph=DefaultGraph(),
-        xsd_integer_type=NamedNode(rdf.XSD_INTEGER_IRI),
-        xsd_date_time_type=NamedNode(rdf.XSD_DATE_TIME_IRI),
-        psid_literal=Literal(str(psid), datatype=NamedNode(rdf.XSD_INTEGER_IRI)),
-        loaded_at_literal=Literal(loaded_at, datatype=NamedNode(rdf.XSD_DATE_TIME_IRI)),
-    )
-    quad_buffer: List[Any] = []
-
-    for index, row in enumerate(records):
-        resolved_gil_links = resolved_gil_links_by_row[index]
-        row_field_kinds, row_quads = _write_record_quads(
-            index=index,
-            row=row,
-            context=write_context,
-            resolved_gil_links=resolved_gil_links,
+    try:
+        predicates = _build_store_predicates()
+        resolved_gil_links_by_row: List[List[Tuple[str, Optional[str]]]] = []
+        gil_link_enrichment_map = links.build_gil_link_enrichment_map(
+            records,
+            resolved_links_by_row_out=resolved_gil_links_by_row,
         )
-        structure_accumulator.add_row_field_kinds(row_field_kinds)
-        quad_buffer.extend(row_quads)
-        if len(quad_buffer) >= _QUAD_BUFFER_TARGET:
-            _flush_quads(store_instance, quad_buffer)
-            quad_buffer = []
+        loaded_at = datetime.now(timezone.utc).replace(microsecond=0).isoformat()
+        structure_accumulator = rdf.StructureAccumulator()
+        write_context = _RecordWriteContext(
+            predicates=predicates,
+            psid=psid,
+            loaded_at=loaded_at,
+            gil_link_enrichment_map=gil_link_enrichment_map,
+            default_graph=DefaultGraph(),
+            xsd_integer_type=NamedNode(rdf.XSD_INTEGER_IRI),
+            xsd_date_time_type=NamedNode(rdf.XSD_DATE_TIME_IRI),
+            psid_literal=Literal(str(psid), datatype=NamedNode(rdf.XSD_INTEGER_IRI)),
+            loaded_at_literal=Literal(loaded_at, datatype=NamedNode(rdf.XSD_DATE_TIME_IRI)),
+        )
+        quad_buffer: List[Any] = []
 
-    _flush_quads(store_instance, quad_buffer)
-    _optimize_store(store_instance)
+        for index, row in enumerate(records):
+            resolved_gil_links = resolved_gil_links_by_row[index]
+            row_field_kinds, row_quads = _write_record_quads(
+                index=index,
+                row=row,
+                context=write_context,
+                resolved_gil_links=resolved_gil_links,
+            )
+            structure_accumulator.add_row_field_kinds(row_field_kinds)
+            quad_buffer.extend(row_quads)
+            if len(quad_buffer) >= _QUAD_BUFFER_TARGET:
+                _flush_quads(store_instance, quad_buffer)
+                quad_buffer = []
 
-    meta = _build_store_meta(
-        psid=psid,
-        records=records,
-        source_url=source_url,
-        source_params=source_params,
-        loaded_at=loaded_at,
-        structure=structure_accumulator.build_summary(row_count=len(records)),
-    )
-    _persist_store_meta(psid, meta)
-    return meta
+        _flush_quads(store_instance, quad_buffer)
+        _optimize_store(store_instance)
+        store_instance.flush()
+
+        meta = _build_store_meta(
+            psid=psid,
+            records=records,
+            source_url=source_url,
+            source_params=source_params,
+            loaded_at=loaded_at,
+            structure=structure_accumulator.build_summary(row_count=len(records)),
+        )
+        _persist_store_meta(psid, meta)
+        return meta
+    finally:
+        store_instance = None

@@ -36,7 +36,9 @@
         petscanLimit: "10",
         isBusy: false,
         statusMessage: "Ready.",
+        statusLevel: "neutral",
         loadStatusMessage: "Ready.",
+        loadStatusLevel: "neutral",
         loadExecutionMs: null,
         queryType: "",
         resultFormat: "",
@@ -391,6 +393,7 @@
         this.isBusy = true;
         this.loadExecutionMs = null;
         this.loadStatusMessage = "Loading data structure...";
+        this.loadStatusLevel = "neutral";
         var loadStartedMs = this.nowMs();
 
         try {
@@ -401,6 +404,8 @@
           this.meta = data.meta || {};
           this.loadedPsid = String(data.psid || this.psid || "").trim();
           this.hasLoadedData = true;
+          this.statusMessage = "Ready to run SPARQL query.";
+          this.statusLevel = "neutral";
           if (this.normalizeWizardSelections()) {
             this.updateQueryFromWizardSelections();
           }
@@ -413,9 +418,11 @@
             " fields" +
             (loadTimeLabel ? ", load time " + loadTimeLabel : "") +
             ").";
+          this.loadStatusLevel = "success";
         } catch (err) {
           this.loadExecutionMs = null;
           this.loadStatusMessage = err.message;
+          this.loadStatusLevel = "error";
         } finally {
           this.isBusy = false;
         }
@@ -429,6 +436,8 @@
 
         this.isBusy = true;
         this.queryExecutionMs = null;
+        this.statusMessage = "Running SPARQL query...";
+        this.statusLevel = "neutral";
         var queryStartedMs = this.nowMs();
 
         try {
@@ -454,6 +463,15 @@
             }
           }
 
+          if (this.queryType === "SELECT") {
+            this.statusMessage = "Query completed (" + this.selectRows.length + " rows returned).";
+          } else if (this.queryType === "ASK") {
+            this.statusMessage = "Query completed (ASK result: " + (this.askValue ? "true" : "false") + ").";
+          } else {
+            this.statusMessage = "Query completed.";
+          }
+          this.statusLevel = "success";
+
           try {
             var metaData = await this.structureRequest(this.psid, false);
             this.meta = metaData.meta || {};
@@ -467,7 +485,11 @@
 
         } catch (err) {
           this.result = null;
+          this.resultFormat = "";
+          this.queryType = "";
           this.queryExecutionMs = null;
+          this.statusMessage = err && err.message ? err.message : "SPARQL query failed.";
+          this.statusLevel = "error";
         } finally {
           this.isBusy = false;
         }
@@ -654,16 +676,19 @@
         var target = String(this.openQueryTarget || "").trim();
         if (!target) {
           this.statusMessage = "Choose a target from Open query in.";
+          this.statusLevel = "error";
           return;
         }
         var targetUrl = this.buildOpenQueryUrl(target);
         if (!targetUrl) {
           this.statusMessage = "Unsupported Open query in target.";
+          this.statusLevel = "error";
           return;
         }
         var opened = window.open(targetUrl, "_blank", "noopener,noreferrer");
         if (!opened) {
           this.statusMessage = "Unable to open new tab. Check browser popup settings.";
+          this.statusLevel = "error";
           return;
         }
         this.closeQueryTargetDialog();

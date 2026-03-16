@@ -32,6 +32,17 @@ def _ensure_oxigraph() -> None:
         )
 
 
+def _open_query_store(psid: int) -> Any:
+    _ensure_oxigraph()
+    path = str(store.store_path(psid))
+    try:
+        return Store.read_only(path)
+    except AttributeError:
+        return Store(path)
+    except OSError as exc:
+        raise PetscanServiceError("Failed to open Oxigraph store: {}".format(exc)) from exc
+
+
 def meta_has_matching_source_params(meta: Mapping[str, Any], petscan_params: Mapping[str, Any]) -> bool:
     expected = source.normalize_petscan_params(petscan_params)
     actual = source.normalize_petscan_params(meta.get("source_params") if isinstance(meta, Mapping) else {})
@@ -123,18 +134,18 @@ def execute_query(
     refresh: bool = False,
     petscan_params: Optional[Mapping[str, Any]] = None,
 ) -> QueryExecution:
-    if sparql.contains_service_clause(query):
-        raise ValueError("SERVICE clauses are not allowed in this endpoint.")
+    qtype = sparql.validate_query(query)
 
     meta = ensure_loaded(psid, refresh=refresh, petscan_params=petscan_params)
 
-    store_instance = Store(str(store.store_path(psid)))
-    qtype = sparql.query_type(query)
+    store_instance = _open_query_store(psid)
 
     try:
         raw_result = store_instance.query(query)
     except Exception as exc:
         raise PetscanServiceError("SPARQL query failed: {}".format(exc)) from exc
+    finally:
+        store_instance = None
 
     if qtype == "SELECT":
         result = QueryExecutionModel(

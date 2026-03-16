@@ -164,10 +164,53 @@ class ServiceModuleTests(ServiceTestCase):
             "loaded_at": "2026-01-01T00:00:00+00:00",
             "structure": {"row_count": 1, "field_count": 1, "fields": []},
         }
-        store_class_mock.return_value.query.return_value = True
+        store_class_mock.read_only.return_value.query.return_value = True
 
         execution = service.execute_query(psid, query, refresh=False)
         self.assertEqual(execution["query_type"], "ASK")
         self.assertEqual(execution["result_format"], "sparql-json")
         self.assertEqual(execution["sparql_json"]["boolean"], True)
         ensure_loaded_mock.assert_called_once_with(psid, refresh=False, petscan_params=None)
+        store_class_mock.read_only.assert_called_once_with(str(store.store_path(psid)))
+
+    @patch("petscan.service.ensure_loaded")
+    def test_execute_query_rejects_forbidden_service_clause_before_loading_store(
+        self,
+        ensure_loaded_mock,
+    ):
+        psid = 123
+        query = """
+        PREFIX : <https://example.org/sparql>
+        SELECT * WHERE {
+          SERVICE : {
+            ?s ?p ?o .
+          }
+        }
+        """
+
+        with self.assertRaisesMessage(ValueError, "SERVICE clauses are not allowed in this endpoint."):
+            service.execute_query(psid, query, refresh=False)
+
+        ensure_loaded_mock.assert_not_called()
+
+    @patch("petscan.service.ensure_loaded")
+    @patch("petscan.service.Store")
+    def test_execute_query_wraps_store_open_errors(
+        self,
+        store_class_mock,
+        ensure_loaded_mock,
+    ):
+        psid = 123
+        query = "ASK { ?s ?p ?o }"
+        ensure_loaded_mock.return_value = {
+            "psid": psid,
+            "records": 1,
+            "source_url": "https://example.invalid",
+            "source_params": {},
+            "loaded_at": "2026-01-01T00:00:00+00:00",
+            "structure": {"row_count": 1, "field_count": 1, "fields": []},
+        }
+        store_class_mock.read_only.side_effect = OSError("LOCK: No locks available")
+
+        with self.assertRaisesMessage(service.PetscanServiceError, "Failed to open Oxigraph store:"):
+            service.execute_query(psid, query, refresh=False)

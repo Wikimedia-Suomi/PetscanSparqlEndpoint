@@ -8,6 +8,10 @@
   --accent-2: #0a9396;
   --border: #c8d3da;
   --danger: #b42318;
+  --danger-surface: #fdecea;
+  --success: #146c43;
+  --success-surface: #e8f5ee;
+  --info-surface: #ecf5f8;
 }
 
 * {
@@ -256,7 +260,31 @@ button:disabled {
 .status {
   min-height: 1.5rem;
   color: var(--muted);
+  background: var(--info-surface);
+  border: 1px solid color-mix(in srgb, var(--border) 75%, white);
+  border-left: 4px solid var(--accent-2);
+  border-radius: 10px;
+  padding: 0.75rem 0.9rem;
   margin: 0.75rem 0 0;
+}
+
+.status.is-success {
+  color: var(--success);
+  background: var(--success-surface);
+  border-color: color-mix(in srgb, var(--success) 18%, white);
+  border-left-color: var(--success);
+}
+
+.status.is-error {
+  color: var(--danger);
+  background: var(--danger-surface);
+  border-color: color-mix(in srgb, var(--danger) 18%, white);
+  border-left-color: var(--danger);
+  font-weight: 600;
+}
+
+.status-query {
+  margin-top: 1rem;
 }
 
 .footer-source-link {

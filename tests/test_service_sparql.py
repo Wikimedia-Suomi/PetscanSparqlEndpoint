@@ -13,6 +13,28 @@ class ServiceSparqlTests(ServiceTestCase):
         """
         self.assertTrue(sparql.contains_service_clause(query))
 
+    def test_detects_service_clause_with_empty_prefix(self):
+        query = """
+        PREFIX : <https://example.org/sparql>
+        SELECT * WHERE {
+          SERVICE : {
+            ?item ?p ?o .
+          }
+        }
+        """
+        self.assertTrue(sparql.contains_service_clause(query))
+
+    def test_detects_service_clause_with_dotted_prefix(self):
+        query = """
+        PREFIX a.b: <https://example.org/sparql#>
+        SELECT * WHERE {
+          SERVICE a.b:x {
+            ?item ?p ?o .
+          }
+        }
+        """
+        self.assertTrue(sparql.contains_service_clause(query))
+
     def test_ignores_service_clause_pattern_inside_comment_line(self):
         query = """
         # SERVICE <https://query.wikidata.org/sparql> { ?item ?p ?o . }
@@ -65,3 +87,27 @@ class ServiceSparqlTests(ServiceTestCase):
         CONSTRUCT { ?s ?p ?o } WHERE { ?s ?p ?o }
         """
         self.assertEqual(sparql.query_type(query), "CONSTRUCT")
+
+    def test_validate_query_rejects_dataset_clause(self):
+        query = """
+        SELECT * FROM <https://example.org/data> WHERE {
+          ?s ?p ?o .
+        }
+        """
+        with self.assertRaisesMessage(ValueError, "Dataset clauses are not allowed in this endpoint."):
+            sparql.validate_query(query)
+
+    def test_validate_query_returns_query_form_for_allowed_query(self):
+        query = """
+        PREFIX petscan: <https://petscan.wmcloud.org/ontology/>
+        SELECT ?item WHERE {
+          ?item a petscan:Page .
+        }
+        LIMIT 5
+        """
+        self.assertEqual(sparql.validate_query(query), "SELECT")
+
+    def test_validate_query_rejects_invalid_syntax_as_client_error(self):
+        query = "SELECT WHERE { ?s ?p ?o }"
+        with self.assertRaisesMessage(ValueError, "SPARQL query is invalid:"):
+            sparql.validate_query(query)

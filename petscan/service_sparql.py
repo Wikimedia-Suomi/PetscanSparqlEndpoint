@@ -1,62 +1,147 @@
-"""SPARQL query-form detection, SERVICE blocking, and result serialization."""
+"""SPARQL query validation and result serialization."""
 
-import re
-from typing import Any, Dict
+from typing import Any, Dict, Iterator, Optional, Set
 
 from .service_errors import PetscanServiceError
 
+try:
+    from pyparsing.results import ParseResults
+    from rdflib.plugins.sparql.parser import parseQuery
+    from rdflib.plugins.sparql.parserutils import CompValue
+except ImportError:  # pragma: no cover - dependency check at runtime
+    ParseResults = None  # type: ignore[misc,assignment]
+    parseQuery = None  # type: ignore[assignment]
+    CompValue = None  # type: ignore[misc,assignment]
+
 __all__ = [
     "contains_service_clause",
+    "contains_dataset_clause",
     "query_type",
     "serialize_ask",
     "serialize_graph",
     "serialize_select",
+    "validate_query",
 ]
 
 _QUERY_TYPES = {"SELECT", "ASK", "CONSTRUCT", "DESCRIBE"}
-_SPARQL_COMMENT_LINE_RE = re.compile(r"(?m)^\s*#.*$")
-_SPARQL_PREFIX_PROLOGUE_RE = re.compile(r"(?is)\A\s*PREFIX\s+[A-Za-z][A-Za-z0-9._-]*:\s*<[^>]*>")
-_SPARQL_BASE_PROLOGUE_RE = re.compile(r"(?is)\A\s*BASE\s*<[^>]*>")
-_SPARQL_QUERY_FORM_RE = re.compile(r"(?is)\A\s*(SELECT|ASK|CONSTRUCT|DESCRIBE)\b")
-_SERVICE_CLAUSE_RE = re.compile(
-    r"(?is)\bSERVICE\b(?:\s+SILENT\b)?\s*(?:<[^>]+>|[?$][A-Za-z_][A-Za-z0-9_]*|[A-Za-z][A-Za-z0-9_-]*:[^\s{>]*)\s*\{"
-)
+_QUERY_NAME_TO_TYPE = {
+    "SelectQuery": "SELECT",
+    "AskQuery": "ASK",
+    "ConstructQuery": "CONSTRUCT",
+    "DescribeQuery": "DESCRIBE",
+}
+_FORBIDDEN_PATTERN_NAMES = {
+    "ServiceGraphPattern": "SERVICE clauses are not allowed in this endpoint.",
+    "DatasetClause": "Dataset clauses are not allowed in this endpoint.",
+}
 
 
-def _strip_comment_lines(query: str) -> str:
-    return _SPARQL_COMMENT_LINE_RE.sub("", query)
+def _ensure_parser() -> None:
+    if parseQuery is None or ParseResults is None or CompValue is None:
+        raise PetscanServiceError("rdflib is not installed. Install dependencies from requirements.txt first.")
+
+
+def _parse_query(query: str):
+    _ensure_parser()
+
+    try:
+        parsed = parseQuery(query)
+    except Exception as exc:
+        raise PetscanServiceError("SPARQL query is invalid: {}".format(exc)) from exc
+
+    if not isinstance(parsed, ParseResults) or len(parsed) < 2:
+        raise PetscanServiceError("SPARQL query must contain SELECT, ASK, CONSTRUCT, or DESCRIBE.")
+    return parsed
+
+
+def _query_root(parsed_query) -> Any:
+    query = parsed_query[1]
+    query_name = getattr(query, "name", "")
+    if query_name not in _QUERY_NAME_TO_TYPE:
+        raise PetscanServiceError("SPARQL query must contain SELECT, ASK, CONSTRUCT, or DESCRIBE.")
+    return query
+
+
+def _iter_comp_values(node: Any, seen: Optional[Set[int]] = None) -> Iterator[Any]:
+    visited = seen if seen is not None else set()
+
+    if isinstance(node, CompValue):
+        node_id = id(node)
+        if node_id in visited:
+            return
+        visited.add(node_id)
+        yield node
+        for value in node.values():
+            yield from _iter_comp_values(value, visited)
+        return
+
+    if isinstance(node, ParseResults):
+        node_id = id(node)
+        if node_id in visited:
+            return
+        visited.add(node_id)
+        for value in node:
+            yield from _iter_comp_values(value, visited)
+        for _key, value in node.items():
+            yield from _iter_comp_values(value, visited)
+        return
+
+    if isinstance(node, dict):
+        for value in node.values():
+            yield from _iter_comp_values(value, visited)
+        return
+
+    if isinstance(node, (list, tuple, set)):
+        for value in node:
+            yield from _iter_comp_values(value, visited)
 
 
 def query_type(query: str) -> str:
-    remaining = _strip_comment_lines(query)
-
-    # Strip SPARQL prologue declarations to avoid matching query-form keywords
-    # inside prefixed names (for example `PREFIX select: <...>`).
-    while True:
-        prefix_match = _SPARQL_PREFIX_PROLOGUE_RE.match(remaining)
-        if prefix_match is not None:
-            remaining = remaining[prefix_match.end() :]
-            continue
-
-        base_match = _SPARQL_BASE_PROLOGUE_RE.match(remaining)
-        if base_match is not None:
-            remaining = remaining[base_match.end() :]
-            continue
-
-        break
-
-    form_match = _SPARQL_QUERY_FORM_RE.match(remaining)
-    if form_match is not None:
-        query_type = str(form_match.group(1)).upper()
-        if query_type in _QUERY_TYPES:
-            return query_type
-
+    parsed_query = _parse_query(query)
+    query = _query_root(parsed_query)
+    query_name = getattr(query, "name", "")
+    query_form = _QUERY_NAME_TO_TYPE.get(query_name)
+    if query_form in _QUERY_TYPES:
+        return query_form
     raise PetscanServiceError("SPARQL query must contain SELECT, ASK, CONSTRUCT, or DESCRIBE.")
 
 
 def contains_service_clause(query: str) -> bool:
-    clean_query = _strip_comment_lines(query)
-    return bool(_SERVICE_CLAUSE_RE.search(clean_query))
+    try:
+        parsed_query = _parse_query(query)
+    except PetscanServiceError:
+        return False
+
+    return any(getattr(node, "name", "") == "ServiceGraphPattern" for node in _iter_comp_values(parsed_query))
+
+
+def contains_dataset_clause(query: str) -> bool:
+    try:
+        parsed_query = _parse_query(query)
+    except PetscanServiceError:
+        return False
+
+    return any(getattr(node, "name", "") == "DatasetClause" for node in _iter_comp_values(parsed_query))
+
+
+def validate_query(query: str) -> str:
+    try:
+        parsed_query = _parse_query(query)
+        query = _query_root(parsed_query)
+        query_name = getattr(query, "name", "")
+        query_form = _QUERY_NAME_TO_TYPE.get(query_name)
+    except PetscanServiceError as exc:
+        raise ValueError(str(exc)) from exc
+
+    if query_form not in _QUERY_TYPES:
+        raise ValueError("SPARQL query must contain SELECT, ASK, CONSTRUCT, or DESCRIBE.")
+
+    for node in _iter_comp_values(parsed_query):
+        message = _FORBIDDEN_PATTERN_NAMES.get(getattr(node, "name", ""))
+        if message is not None:
+            raise ValueError(message)
+
+    return query_form
 
 
 def _variable_name(value: Any) -> str:

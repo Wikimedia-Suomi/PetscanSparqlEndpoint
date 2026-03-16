@@ -84,7 +84,7 @@
 
         </form>
 
-        <p class="status" role="status" aria-live="polite">[[ loadStatusMessage ]]</p>
+        <p class="status" :class="'is-' + loadStatusLevel" role="status" aria-live="polite">[[ loadStatusMessage ]]</p>
       </section>
 
       <section class="card" aria-labelledby="sparql-heading" v-if="querySectionReady">
@@ -183,6 +183,15 @@
           </section>
 
         </form>
+
+        <p
+          class="status status-query"
+          :class="'is-' + statusLevel"
+          :role="statusLevel === 'error' ? 'alert' : 'status'"
+          :aria-live="statusLevel === 'error' ? 'assertive' : 'polite'"
+        >
+          [[ statusMessage ]]
+        </p>
       </section>
 
       <section class="card" v-if="resultVisible" aria-labelledby="result-heading">
@@ -326,6 +335,6 @@
     {% endverbatim %}
 
     <script src="https://tools-static.wmflabs.org/cdnjs/ajax/libs/vue/3.5.22/vue.global.prod.min.js"></script>
-    <script src="{% static 'js/app.js' %}?v=20260315-11" defer></script>
+    <script src="{% static 'js/app.js' %}?v=20260316-02" defer></script>
   </body>
 </html>
