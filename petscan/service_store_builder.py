@@ -15,7 +15,7 @@ from .service_errors import PetscanServiceError
 from .service_types import StoreMeta, StoreMetaModel, StructureSummary
 
 __all__ = ["build_store"]
-_QUAD_BUFFER_TARGET = 20_000
+_QUAD_BUFFER_TARGET = 1_000_000
 _ROW_XSD_DATETIME_FIELDS = frozenset({"img_timestamp", "touched"})
 
 try:

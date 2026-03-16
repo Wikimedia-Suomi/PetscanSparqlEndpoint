@@ -37,6 +37,7 @@
         isBusy: false,
         statusMessage: "Ready.",
         loadStatusMessage: "Ready.",
+        loadExecutionMs: null,
         queryType: "",
         resultFormat: "",
         result: null,
@@ -82,14 +83,10 @@
         return JSON.stringify(this.result, null, 2);
       },
       queryExecutionLabel: function () {
-        var value = this.queryExecutionMs;
-        if (typeof value !== "number" || !Number.isFinite(value) || value < 0) {
-          return "";
-        }
-        if (value >= 1000) {
-          return (value / 1000).toFixed(2) + " s";
-        }
-        return value.toFixed(1) + " ms";
+        return this.formatDurationMs(this.queryExecutionMs);
+      },
+      loadExecutionLabel: function () {
+        return this.formatDurationMs(this.loadExecutionMs);
       },
       forwardedPetscanParams: function () {
         var raw = String(this.petscanGetParams || "").trim();
@@ -251,12 +248,15 @@
     watch: {
       psid: function () {
         this.hasLoadedData = false;
+        this.loadExecutionMs = null;
       },
       petscanGetParams: function () {
         this.hasLoadedData = false;
+        this.loadExecutionMs = null;
       },
       petscanLimit: function () {
         this.hasLoadedData = false;
+        this.loadExecutionMs = null;
       },
     },
     methods: {
@@ -265,6 +265,15 @@
           return window.performance.now();
         }
         return Date.now();
+      },
+      formatDurationMs: function (value) {
+        if (typeof value !== "number" || !Number.isFinite(value) || value < 0) {
+          return "";
+        }
+        if (value >= 1000) {
+          return (value / 1000).toFixed(2) + " s";
+        }
+        return value.toFixed(1) + " ms";
       },
       inferQueryType: function (query) {
         var remaining = String(query || "").replace(/^\s*#.*$/gm, "");
@@ -305,6 +314,7 @@
             Accept: "application/json",
           },
         });
+        var responseReceivedMs = this.nowMs();
 
         var data;
         try {
@@ -317,6 +327,9 @@
           throw new Error(data.error || "Request failed with status " + response.status + ".");
         }
 
+        if (data && typeof data === "object") {
+          data._responseReceivedMs = responseReceivedMs;
+        }
         return data;
       },
       sparqlRequest: async function (psid, query, refresh) {
@@ -376,23 +389,32 @@
       loadStructure: async function () {
         this.hasLoadedData = false;
         this.isBusy = true;
+        this.loadExecutionMs = null;
         this.loadStatusMessage = "Loading data structure...";
+        var loadStartedMs = this.nowMs();
 
         try {
           var data = await this.structureRequest(this.psid, this.refreshBeforeQuery);
+          var responseReceivedMs =
+            typeof data._responseReceivedMs === "number" ? data._responseReceivedMs : this.nowMs();
+          this.loadExecutionMs = Math.max(responseReceivedMs - loadStartedMs, 0);
           this.meta = data.meta || {};
           this.loadedPsid = String(data.psid || this.psid || "").trim();
           this.hasLoadedData = true;
           if (this.normalizeWizardSelections()) {
             this.updateQueryFromWizardSelections();
           }
+          var loadTimeLabel = this.formatDurationMs(this.loadExecutionMs);
           this.loadStatusMessage =
             "Data structure loaded (" +
             this.structureRowCount +
             " rows, " +
             this.structureFieldCount +
-            " fields).";
+            " fields" +
+            (loadTimeLabel ? ", load time " + loadTimeLabel : "") +
+            ").";
         } catch (err) {
+          this.loadExecutionMs = null;
           this.loadStatusMessage = err.message;
         } finally {
           this.isBusy = false;
