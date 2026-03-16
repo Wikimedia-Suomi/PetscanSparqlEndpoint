@@ -16,6 +16,7 @@ This is a django app which works as SPARQL endpoint for PetScan query results.
 - Django
 - pyoxigraph
 - PyMySQL
+- rdflib
 
 ## Development Setup And Commands
 
