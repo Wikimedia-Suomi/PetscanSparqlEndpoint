@@ -34,3 +34,6 @@ skips = ["B101"]
 [tool.pytest.ini_options]
 DJANGO_SETTINGS_MODULE = "petscan_endpoint.settings"
 testpaths = ["tests"]
+markers = [
+  "smoke: browser-based Playwright smoke tests",
+]

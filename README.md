@@ -37,6 +37,19 @@ export OXIGRAPH_BASE_DIR="$PWD/data/oxigraph"
 ./scripts/run_tests.sh
 ```
 
+### Run browser smoke tests
+
+```bash
+source .venv/bin/activate
+export DJANGO_SECRET_KEY='dev-only-change-me'
+export OXIGRAPH_BASE_DIR="$PWD/data/oxigraph"
+# If you do not have a local Chrome/Chromium available, install one Playwright browser once:
+# python -m playwright install chromium
+./scripts/run_smoke_tests.sh
+```
+
+On macOS, the smoke tests try to use an installed Google Chrome by default.
+
 ### Run app
 
 ```bash
