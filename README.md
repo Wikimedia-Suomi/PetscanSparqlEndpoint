@@ -50,6 +50,19 @@ export OXIGRAPH_BASE_DIR="$PWD/data/oxigraph"
 
 On macOS, the smoke tests try to use an installed Google Chrome by default.
 
+### Run JavaScript helper tests
+
+```bash
+source .venv/bin/activate
+export DJANGO_SECRET_KEY='dev-only-change-me'
+export OXIGRAPH_BASE_DIR="$PWD/data/oxigraph"
+# If you do not have a local Chrome/Chromium available, install one Playwright browser once:
+# python -m playwright install chromium
+./scripts/run_js_tests.sh
+```
+
+This helper suite executes pure functions from `static/js/app_logic.js` in a real browser via Playwright Python, so no `node` or `npm` installation is required.
+
 ### Run browser E2E tests against live PetScan
 
 ```bash

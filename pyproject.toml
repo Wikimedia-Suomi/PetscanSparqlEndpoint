@@ -37,4 +37,5 @@ testpaths = ["tests"]
 markers = [
   "smoke: browser-based Playwright smoke tests",
   "e2e: browser-based Playwright end-to-end tests against live PetScan",
+  "jshelpers: browser-executed JavaScript helper tests via Playwright",
 ]
