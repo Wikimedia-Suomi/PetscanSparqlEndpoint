@@ -23,6 +23,7 @@ echo "Running security scan (bandit)..."
 
 echo "Running dependency audit (pip-audit)..."
 "${PYTHON}" -m pip_audit -r requirements.txt --cache-dir /tmp/pip-audit-cache
+"${PYTHON}" -m pip_audit -r requirements-dev.txt --cache-dir /tmp/pip-audit-cache
 
 echo "Resetting coverage data..."
 "${PYTHON}" -m coverage erase
