@@ -85,6 +85,7 @@ requests to PetScan and is intentionally kept out of the default `run_tests.sh` 
 ```bash
 source .venv/bin/activate
 export DJANGO_SECRET_KEY='dev-only-change-me'
+export DJANGO_DEBUG=1
 export OXIGRAPH_BASE_DIR="$PWD/data/oxigraph"
 python manage.py runserver
 ```
@@ -114,6 +115,10 @@ Security-related Django settings are configured via environment variables:
 - `DJANGO_DEBUG` (`1/true/yes/on` enables debug; default: disabled)
 - `DJANGO_ALLOWED_HOSTS` (comma-separated list, example: `localhost,127.0.0.1,mydomain.tld`)
 - `OXIGRAPH_BASE_DIR` (required absolute path for Oxigraph store directory)
+
+When using `manage.py runserver`, keep `DJANGO_DEBUG=1`. The app now refuses to start the
+development server if debug is disabled, because Django will not serve `/static/` files for the UI
+in that mode.
 
 ## Example PetScan JSON Files
 

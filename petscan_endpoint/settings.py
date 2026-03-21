@@ -36,7 +36,7 @@ ALLOWED_HOSTS = _env_list("DJANGO_ALLOWED_HOSTS", default=["127.0.0.1", "localho
 INSTALLED_APPS = [
     "django.contrib.contenttypes",
     "django.contrib.staticfiles",
-    "petscan",
+    "petscan.apps.PetscanConfig",
 ]
 
 MIDDLEWARE = [
