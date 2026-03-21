@@ -23,6 +23,13 @@ except ImportError:  # pragma: no cover - dependency check at runtime
     Store = None  # type: ignore[misc,assignment]
 
 _MAX_STORE_META_AGE = timedelta(minutes=30)
+_CLIENT_QUERY_ERROR_HINTS = (
+    "prefix not found",
+    "unbound prefix",
+    "undefined prefix",
+    "parse error",
+    "syntax error",
+)
 
 
 def _ensure_oxigraph() -> None:
@@ -100,6 +107,26 @@ def _meta_is_fresh(meta: Mapping[str, Any]) -> bool:
     return (datetime.now(timezone.utc) - loaded_at) <= _MAX_STORE_META_AGE
 
 
+def _as_client_query_error(exc: Exception) -> Optional[str]:
+    raw_message = str(exc).strip()
+    lower_message = raw_message.lower()
+
+    if (
+        isinstance(exc, SyntaxError)
+        and ("prefix not found" in lower_message or "unbound prefix" in lower_message)
+    ) or ("prefix not found" in lower_message):
+        return (
+            "SPARQL query is invalid: missing PREFIX declaration for a prefixed name "
+            "(for example, add PREFIX petscan: <https://petscan.wmcloud.org/ontology/>)."
+        )
+
+    if isinstance(exc, SyntaxError) or any(hint in lower_message for hint in _CLIENT_QUERY_ERROR_HINTS):
+        detail = raw_message if raw_message else exc.__class__.__name__
+        return "SPARQL query is invalid: {}".format(detail)
+
+    return None
+
+
 def ensure_loaded(
     psid: int,
     refresh: bool = False,
@@ -143,6 +170,9 @@ def execute_query(
     try:
         raw_result = store_instance.query(query)
     except Exception as exc:
+        client_error = _as_client_query_error(exc)
+        if client_error is not None:
+            raise ValueError(client_error) from exc
         raise PetscanServiceError("SPARQL query failed: {}".format(exc)) from exc
     finally:
         store_instance = None

@@ -1,0 +1,87 @@
+# serializer version: 1
+# name: test_sparql_endpoint_form_post_success_snapshot
+  dict({
+    'body': dict({
+      'head': dict({
+        'vars': list([
+          'item',
+          'title',
+        ]),
+      }),
+      'results': dict({
+        'bindings': list([
+        ]),
+      }),
+    }),
+    'content_type': 'application/sparql-results+json; charset=utf-8',
+    'cors': dict({
+      'allow_headers': 'Content-Type, Accept',
+      'allow_methods': 'GET, POST, OPTIONS',
+      'allow_origin': '*',
+    }),
+    'status_code': 200,
+  })
+# ---
+# name: test_sparql_endpoint_get_success_snapshot
+  dict({
+    'body': dict({
+      'boolean': True,
+      'head': dict({
+      }),
+    }),
+    'content_type': 'application/sparql-results+json; charset=utf-8',
+    'cors': dict({
+      'allow_headers': 'Content-Type, Accept',
+      'allow_methods': 'GET, POST, OPTIONS',
+      'allow_origin': '*',
+    }),
+    'status_code': 200,
+  })
+# ---
+# name: test_sparql_endpoint_service_clause_error_snapshot
+  dict({
+    'body': 'SERVICE clauses are not allowed in this endpoint.',
+    'content_type': 'text/plain; charset=utf-8',
+    'cors': dict({
+      'allow_headers': 'Content-Type, Accept',
+      'allow_methods': 'GET, POST, OPTIONS',
+      'allow_origin': '*',
+    }),
+    'status_code': 400,
+  })
+# ---
+# name: test_structure_endpoint_success_snapshot
+  dict({
+    'body': dict({
+      'meta': dict({
+        'loaded_at': '2026-03-13T10:00:00+00:00',
+        'psid': 123,
+        'records': 2,
+        'source_params': dict({
+          'category': list([
+            'Turku',
+          ]),
+        }),
+        'source_url': 'https://petscan.wmcloud.org/?psid=123&format=json',
+        'structure': dict({
+          'field_count': 1,
+          'fields': list([
+          ]),
+          'row_count': 2,
+        }),
+      }),
+      'psid': 123,
+    }),
+    'content_type': 'application/json',
+    'status_code': 200,
+  })
+# ---
+# name: test_structure_endpoint_validation_error_snapshot
+  dict({
+    'body': dict({
+      'error': 'A numeric psid is required.',
+    }),
+    'content_type': 'application/json',
+    'status_code': 400,
+  })
+# ---

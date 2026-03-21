@@ -26,3 +26,6 @@ echo "Running dependency audit (pip-audit)..."
 
 echo "Running Django tests..."
 "${PYTHON}" manage.py test
+
+echo "Running API snapshot tests (pytest + syrupy)..."
+"${PYTHON}" -m pytest tests/test_api_snapshots.py

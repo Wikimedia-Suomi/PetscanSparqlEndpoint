@@ -194,6 +194,55 @@ class ServiceModuleTests(ServiceTestCase):
         ensure_loaded_mock.assert_not_called()
 
     @patch("petscan.service.ensure_loaded")
+    @patch("petscan.service._open_query_store")
+    def test_execute_query_returns_client_error_for_missing_prefix_in_oxigraph(
+        self,
+        open_query_store_mock,
+        ensure_loaded_mock,
+    ):
+        psid = 123
+        query = "SELECT ?s WHERE { ?s a petscan:Page . }"
+        ensure_loaded_mock.return_value = {
+            "psid": psid,
+            "records": 1,
+            "source_url": "https://example.invalid",
+            "source_params": {},
+            "loaded_at": "2026-01-01T00:00:00+00:00",
+            "structure": {"row_count": 1, "field_count": 1, "fields": []},
+        }
+        open_query_store_mock.return_value.query.side_effect = SyntaxError(
+            "error at 1:36: expected one of Prefix not found"
+        )
+
+        with self.assertRaisesMessage(
+            ValueError,
+            "SPARQL query is invalid: missing PREFIX declaration",
+        ):
+            service.execute_query(psid, query, refresh=False)
+
+    @patch("petscan.service.ensure_loaded")
+    @patch("petscan.service._open_query_store")
+    def test_execute_query_keeps_unexpected_store_query_errors_as_server_errors(
+        self,
+        open_query_store_mock,
+        ensure_loaded_mock,
+    ):
+        psid = 123
+        query = "ASK { ?s ?p ?o }"
+        ensure_loaded_mock.return_value = {
+            "psid": psid,
+            "records": 1,
+            "source_url": "https://example.invalid",
+            "source_params": {},
+            "loaded_at": "2026-01-01T00:00:00+00:00",
+            "structure": {"row_count": 1, "field_count": 1, "fields": []},
+        }
+        open_query_store_mock.return_value.query.side_effect = RuntimeError("temporary backend failure")
+
+        with self.assertRaisesMessage(service.PetscanServiceError, "SPARQL query failed:"):
+            service.execute_query(psid, query, refresh=False)
+
+    @patch("petscan.service.ensure_loaded")
     @patch("petscan.service.Store")
     def test_execute_query_wraps_store_open_errors(
         self,

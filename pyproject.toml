@@ -22,3 +22,7 @@ exclude = ["^43641756/"]
 [tool.bandit]
 exclude_dirs = [".venv", "venv", "data", "tests"]
 skips = ["B101"]
+
+[tool.pytest.ini_options]
+DJANGO_SETTINGS_MODULE = "petscan_endpoint.settings"
+testpaths = ["tests"]
