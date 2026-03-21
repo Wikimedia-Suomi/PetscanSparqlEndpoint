@@ -41,7 +41,7 @@ def _ensure_parser() -> None:
         raise PetscanServiceError("rdflib is not installed. Install dependencies from requirements.txt first.")
 
 
-def _parse_query(query: str):
+def _parse_query(query: str) -> Any:
     _ensure_parser()
 
     try:
@@ -54,7 +54,7 @@ def _parse_query(query: str):
     return parsed
 
 
-def _query_root(parsed_query) -> Any:
+def _query_root(parsed_query: Any) -> Any:
     query = parsed_query[1]
     query_name = getattr(query, "name", "")
     if query_name not in _QUERY_NAME_TO_TYPE:
@@ -82,7 +82,7 @@ def _iter_comp_values(node: Any, seen: Optional[Set[int]] = None) -> Iterator[An
         visited.add(node_id)
         for value in node:
             yield from _iter_comp_values(value, visited)
-        for _key, value in node.items():
+        for _key, value in node.items():  # type: ignore[no-untyped-call]
             yield from _iter_comp_values(value, visited)
         return
 

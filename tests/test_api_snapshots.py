@@ -17,7 +17,7 @@ LIMIT 20
 """.strip()
 
 
-def _response_contract(response) -> Dict[str, Any]:
+def _response_contract(response: Any) -> Dict[str, Any]:
     contract: Dict[str, Any] = {
         "status_code": response.status_code,
         "content_type": response["Content-Type"],

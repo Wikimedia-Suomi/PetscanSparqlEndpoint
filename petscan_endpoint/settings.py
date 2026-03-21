@@ -1,5 +1,6 @@
 import os
 from pathlib import Path
+from typing import Sequence
 
 from django.core.exceptions import ImproperlyConfigured
 
@@ -13,7 +14,7 @@ def _env_bool(name: str, default: bool = False) -> bool:
     return value.strip().lower() in {"1", "true", "yes", "on"}
 
 
-def _env_list(name: str, default):
+def _env_list(name: str, default: Sequence[str]) -> list[str]:
     value = os.getenv(name)
     if value is None:
         return list(default)

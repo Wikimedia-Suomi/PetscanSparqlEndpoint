@@ -1,5 +1,7 @@
 import os
+from argparse import ArgumentParser
 from time import perf_counter
+from typing import Any
 
 from django.conf import settings
 from django.core.management.base import BaseCommand, CommandError
@@ -10,13 +12,13 @@ _REPLICA_SITES = ("fiwiki", "wikidatawiki", "commonswiki")
 _PAGE_SAMPLE_QUERY = "SELECT page_title FROM page LIMIT 1"
 
 
-class Command(BaseCommand):
+class Command(BaseCommand):  # type: ignore[misc]
     help = (
         "Check Toolforge replica connectivity for fiwiki_p, "
         "wikidatawiki_p and commonswiki_p."
     )
 
-    def add_arguments(self, parser):
+    def add_arguments(self, parser: ArgumentParser) -> None:
         parser.add_argument(
             "--timeout",
             type=int,
@@ -24,7 +26,7 @@ class Command(BaseCommand):
             help="Connection timeout in seconds (default: PETSCAN_TIMEOUT_SECONDS or 30).",
         )
 
-    def handle(self, *args, **options):
+    def handle(self, *args: Any, **options: Any) -> None:
         if enrichment_sql.pymysql is None:
             raise CommandError("PyMySQL is required for replica connectivity checks.")
 

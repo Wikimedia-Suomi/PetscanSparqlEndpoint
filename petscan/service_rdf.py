@@ -132,11 +132,11 @@ def _field_name(key: str) -> str:
 
 
 @lru_cache(maxsize=512)
-def predicate_for(key: str):
+def predicate_for(key: str) -> Any:
     return NamedNode(PREDICATE_BASE + _field_name(key))
 
 
-def literal_for(value: Any):
+def literal_for(value: Any) -> Any:
     if isinstance(value, bool):
         return Literal("true" if value else "false", datatype=_XSD_BOOLEAN_NODE)
     if isinstance(value, int):
@@ -191,7 +191,7 @@ def _is_commons_file_record(record: Mapping[str, Any]) -> bool:
     return has_image_metadata
 
 
-def item_subject(psid: int, record: Mapping[str, Any], index: int):
+def item_subject(psid: int, record: Mapping[str, Any], index: int) -> Any:
     page_id = _record_page_id(record)
     if page_id is not None and _is_commons_file_record(record):
         return NamedNode("https://commons.wikimedia.org/entity/M{}".format(page_id))

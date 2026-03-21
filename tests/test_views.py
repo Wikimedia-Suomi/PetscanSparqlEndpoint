@@ -3,6 +3,7 @@ from typing import Any, Dict
 from unittest.mock import patch
 from urllib.parse import urlencode
 
+from django.http import HttpResponse
 from django.test import SimpleTestCase
 
 API_STRUCTURE_PATH = "/petscan/api/structure"
@@ -20,7 +21,7 @@ LIMIT 20
 
 
 class ApiViewTests(SimpleTestCase):
-    def _post_json(self, path: str, payload: Dict[str, Any]):
+    def _post_json(self, path: str, payload: Dict[str, Any]) -> HttpResponse:
         return self.client.post(
             path,
             data=json.dumps(payload),

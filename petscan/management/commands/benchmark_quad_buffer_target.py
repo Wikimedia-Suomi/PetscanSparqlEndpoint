@@ -1,4 +1,5 @@
 import json
+from argparse import ArgumentParser
 from contextlib import nullcontext
 from time import perf_counter
 from typing import Any, Dict, List, Mapping, Optional, Tuple
@@ -80,13 +81,13 @@ def _load_records(
     return records, source_url, fetch_ms, extract_ms
 
 
-class Command(BaseCommand):
+class Command(BaseCommand):  # type: ignore[misc]
     help = (
         "Benchmark _QUAD_BUFFER_TARGET values with the real PetScan import path "
         "(including SQL/API enrichment backend)."
     )
 
-    def add_arguments(self, parser):
+    def add_arguments(self, parser: ArgumentParser) -> None:
         parser.add_argument(
             "--petscan-url",
             default=DEFAULT_PETSCAN_URL,
@@ -133,7 +134,7 @@ class Command(BaseCommand):
             help="Force enrichment backend used during benchmark (default: toolforge_sql).",
         )
 
-    def handle(self, *args, **options):
+    def handle(self, *args: Any, **options: Any) -> None:
         source_psid_from_url, petscan_params = _extract_psid_and_params_from_url(
             options["petscan_url"]
         )

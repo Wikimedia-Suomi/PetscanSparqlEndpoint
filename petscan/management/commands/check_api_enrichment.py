@@ -1,4 +1,5 @@
 import json
+from argparse import ArgumentParser
 from time import perf_counter
 from typing import Any, Dict, List, Mapping, Optional, Sequence, Set, Tuple
 from urllib.parse import parse_qs, urlencode, urlparse, urlsplit
@@ -177,13 +178,13 @@ def _probe_multi_title_request_error(
     return request_url, None
 
 
-class Command(BaseCommand):
+class Command(BaseCommand):  # type: ignore[misc]
     help = (
         "Validate API enrichment coverage (page_len + rev_timestamp) for all gil_link URIs "
         "from a PetScan result."
     )
 
-    def add_arguments(self, parser):
+    def add_arguments(self, parser: ArgumentParser) -> None:
         parser.add_argument(
             "--petscan-url",
             default=DEFAULT_PETSCAN_URL,
@@ -212,7 +213,7 @@ class Command(BaseCommand):
             help="Optional wiki hostname filter (example: en.wikipedia.org).",
         )
 
-    def handle(self, *args, **options):
+    def handle(self, *args: Any, **options: Any) -> None:
         psid_from_url, petscan_params = _extract_psid_and_params_from_url(options["petscan_url"])
         psid = int(options["psid"]) if options["psid"] is not None else psid_from_url
         sample_size = max(1, min(int(options["sample_size"]), _MAX_REASON_SAMPLES))

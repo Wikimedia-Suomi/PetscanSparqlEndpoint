@@ -1,7 +1,7 @@
 import json
 import logging
 from dataclasses import dataclass
-from typing import Any, Dict, List
+from typing import Any, Callable, Dict, List, TypeVar, cast
 from urllib.parse import parse_qs
 
 from django.http import HttpRequest, HttpResponse, JsonResponse
@@ -11,6 +11,11 @@ from django.views.decorators.csrf import csrf_exempt
 from . import service as petscan_service
 
 logger = logging.getLogger(__name__)
+_ViewFunc = TypeVar("_ViewFunc", bound=Callable[..., HttpResponse])
+
+
+def _csrf_exempt(view_func: _ViewFunc) -> _ViewFunc:
+    return cast(_ViewFunc, csrf_exempt(view_func))
 
 
 @dataclass(frozen=True)
@@ -108,15 +113,18 @@ def _parse_path_request_context(service_params: str) -> RequestContext:
 
 def _parse_sparql_query(request: HttpRequest) -> str:
     if request.method == "GET":
-        return request.GET.get("query", "").strip()
+        query = request.GET.get("query")
+        return str(query).strip() if query is not None else ""
 
     raw_content_type = str(request.headers.get("Content-Type", "") or request.META.get("CONTENT_TYPE", "")).strip()
     content_type = (request.content_type or "").split(";", 1)[0].strip().lower()
     if content_type == "application/sparql-query":
-        return request.body.decode("utf-8").strip()
+        body = bytes(request.body)
+        return body.decode("utf-8").strip()
 
     if content_type == "application/x-www-form-urlencoded":
-        return request.POST.get("query", "").strip()
+        query = request.POST.get("query")
+        return str(query).strip() if query is not None else ""
 
     logger.warning(
         (
@@ -151,7 +159,7 @@ def _parse_sparql_request(request: HttpRequest, service_params: str) -> SparqlRe
     )
 
 
-@csrf_exempt
+@_csrf_exempt
 def structure_endpoint(request: HttpRequest) -> JsonResponse:
     if request.method != "GET":
         return _json_error("Method not allowed. Use GET.", status=405)
@@ -178,7 +186,7 @@ def _add_cors_headers(response: HttpResponse) -> HttpResponse:
     return response
 
 
-@csrf_exempt
+@_csrf_exempt
 def sparql_endpoint(request: HttpRequest, service_params: str) -> HttpResponse:
     if request.method == "OPTIONS":
         response = HttpResponse(status=204)

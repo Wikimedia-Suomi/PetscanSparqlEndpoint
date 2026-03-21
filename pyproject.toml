@@ -18,6 +18,14 @@ check_untyped_defs = true
 warn_unused_ignores = true
 no_implicit_optional = true
 exclude = ["^43641756/"]
+disallow_untyped_defs = true
+strict = true
+
+[[tool.mypy.overrides]]
+module = ["tests.*"]
+disallow_untyped_defs = false
+check_untyped_defs = false
+disable_error_code = ["attr-defined", "misc", "no-any-return"]
 
 [tool.bandit]
 exclude_dirs = [".venv", "venv", "data", "tests"]

@@ -46,7 +46,8 @@ def read_meta(psid: int) -> Dict[str, Any]:
     if not path.exists():
         return {}
     try:
-        return json.loads(path.read_text(encoding="utf-8"))
+        payload = json.loads(path.read_text(encoding="utf-8"))
+        return payload if isinstance(payload, dict) else {}
     except Exception:
         return {}
 
