@@ -2,6 +2,9 @@ __pycache__/
 *.py[cod]
 *.sqlite3
 *.log
+.env
+.env.*
+replica.my.cnf
 .venv/
 venv/
 .mypy_cache/

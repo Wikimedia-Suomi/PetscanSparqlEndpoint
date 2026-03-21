@@ -11,12 +11,14 @@ This is a django app which works as SPARQL endpoint for PetScan query results.
 
 ## Requirements
 
-- Python 3.9+
+- Python 3.13
 - `pip`
 - Django
 - pyoxigraph
 - PyMySQL
 - rdflib
+
+Toolforge currently provides Python 3.13, and this repository targets Python 3.13 compatibility.
 
 ## Development Setup And Commands
 
