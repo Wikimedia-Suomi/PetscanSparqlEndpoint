@@ -2,19 +2,32 @@
 
 import re
 from collections.abc import Mapping as RuntimeMapping
+from dataclasses import dataclass
 from datetime import datetime, timezone
 from functools import lru_cache
-from typing import Any, Collection, Dict, Iterable, List, Mapping, Optional, Sequence, Tuple
+from typing import (
+    Any,
+    Collection,
+    Dict,
+    Iterable,
+    List,
+    Mapping,
+    MutableMapping,
+    Optional,
+    Sequence,
+    Tuple,
+)
 from urllib.parse import quote
 
 from . import service_links as links
 from .service_types import StructureField, StructureSummary
 
 try:
-    from pyoxigraph import Literal, NamedNode
+    from pyoxigraph import Literal, NamedNode, Quad
 except ImportError:  # pragma: no cover - dependency check at runtime
     Literal = None  # type: ignore[misc,assignment]
     NamedNode = None  # type: ignore[misc,assignment]
+    Quad = None  # type: ignore[misc,assignment]
 
 PREDICATE_BASE = "https://petscan.wmcloud.org/ontology/"
 ITEM_BASE = "https://petscan.wmcloud.org/psid"
@@ -25,6 +38,7 @@ XSD_BOOLEAN_IRI = "http://www.w3.org/2001/XMLSchema#boolean"
 XSD_DATE_TIME_IRI = "http://www.w3.org/2001/XMLSchema#dateTime"
 SPARQL_IRI_TYPE = "iri"
 _XSD_DATETIME_SCALAR_FIELDS = frozenset({"img_timestamp", "touched", "gil_link_rev_timestamp"})
+_SCALAR_VALUE_TYPES = (str, int, float, bool)
 __all__ = [
     "ITEM_BASE",
     "PREDICATE_BASE",
@@ -34,9 +48,14 @@ __all__ = [
     "XSD_DOUBLE_IRI",
     "XSD_INTEGER_IRI",
     "item_subject",
+    "append_scalar_field_quads",
     "iter_scalar_fields",
+    "iter_typed_gil_link_fields",
+    "iter_typed_scalar_fields",
     "literal_for",
+    "literal_for_scalar_field",
     "normalize_datetime_xsd",
+    "object_term_for_typed_value",
     "predicate_for",
     "sparql_type_for_scalar_field",
     "sparql_type_for_value",
@@ -49,55 +68,79 @@ if NamedNode is not None:
     _XSD_INTEGER_NODE = NamedNode(XSD_INTEGER_IRI)
     _XSD_DOUBLE_NODE = NamedNode(XSD_DOUBLE_IRI)
     _XSD_BOOLEAN_NODE = NamedNode(XSD_BOOLEAN_IRI)
+    _XSD_DATE_TIME_NODE = NamedNode(XSD_DATE_TIME_IRI)
 else:  # pragma: no cover - dependency check at runtime
     _XSD_INTEGER_NODE = None
     _XSD_DOUBLE_NODE = None
     _XSD_BOOLEAN_NODE = None
+    _XSD_DATE_TIME_NODE = None
 
 _FIELD_NAME_RE = re.compile(r"[^0-9A-Za-z_]+")
 _FIELD_RENAMES = {
     "id": "page_id",
 }
+_ROW_FIELD_KIND_BIT_BY_NAME = {
+    SPARQL_IRI_TYPE: 1 << 0,
+    "xsd:string": 1 << 1,
+    "xsd:integer": 1 << 2,
+    "xsd:double": 1 << 3,
+    "xsd:boolean": 1 << 4,
+    "xsd:dateTime": 1 << 5,
+}
+_ROW_FIELD_KIND_ITEMS = tuple(_ROW_FIELD_KIND_BIT_BY_NAME.items())
+_ROW_FIELD_KIND_STRING_BIT = _ROW_FIELD_KIND_BIT_BY_NAME["xsd:string"]
+_ROW_FIELD_KIND_INTEGER_BIT = _ROW_FIELD_KIND_BIT_BY_NAME["xsd:integer"]
+_ROW_FIELD_KIND_DOUBLE_BIT = _ROW_FIELD_KIND_BIT_BY_NAME["xsd:double"]
+_ROW_FIELD_KIND_BOOLEAN_BIT = _ROW_FIELD_KIND_BIT_BY_NAME["xsd:boolean"]
+_ROW_FIELD_KIND_DATETIME_BIT = _ROW_FIELD_KIND_BIT_BY_NAME["xsd:dateTime"]
+
+
+@dataclass(slots=True)
+class _StructureFieldState:
+    source_key: str
+    predicate: str
+    present_in_rows: int
+    type_counts: Dict[str, int]
 
 
 class StructureAccumulator:
     def __init__(self) -> None:
-        self._field_info: Dict[str, Dict[str, Any]] = {}
+        self._field_info: Dict[str, _StructureFieldState] = {}
 
-    def add_row_field_kinds(self, row_field_kinds: Mapping[str, Collection[str]]) -> None:
+    def add_row_field_kinds(self, row_field_kinds: Mapping[str, int | Collection[str] | str]) -> None:
         for key, kinds in row_field_kinds.items():
-            if not kinds:
+            kind_bits = _row_field_kind_bits(kinds)
+            if not kind_bits:
                 continue
-            info = self._field_info.setdefault(
-                key,
-                {
-                    "source_key": key,
-                    "predicate": PREDICATE_BASE + _field_name(key),
-                    "present_in_rows": 0,
-                    "type_counts": {},
-                },
-            )
-            info["present_in_rows"] += 1
+            info = self._field_info.get(key)
+            if info is None:
+                info = _StructureFieldState(
+                    source_key=key,
+                    predicate=PREDICATE_BASE + _field_name(key),
+                    present_in_rows=0,
+                    type_counts={},
+                )
+                self._field_info[key] = info
+            info.present_in_rows += 1
 
-            type_counts = info["type_counts"]
-            for kind in kinds:
+            type_counts = info.type_counts
+            for kind in _iter_row_field_kind_names(kind_bits):
                 type_counts[kind] = int(type_counts.get(kind, 0)) + 1
 
     def add_row_fields(self, row_fields: Mapping[str, Sequence[Any]]) -> None:
-        row_field_kinds: Dict[str, List[str]] = {}
+        row_field_kinds: Dict[str, int] = {}
+
         for key, values in row_fields.items():
-            seen = set()
             for value in values:
-                seen.add(sparql_type_for_scalar_field(key, value))
-            if seen:
-                row_field_kinds[key] = list(seen)
+                _normalized_value, sparql_type = _normalize_scalar_field_value_and_type(key, value)
+                _track_row_field_kind(row_field_kinds, key, sparql_type)
         self.add_row_field_kinds(row_field_kinds)
 
     def build_summary(self, row_count: int) -> StructureSummary:
         fields: List[StructureField] = []
         for key in sorted(self._field_info.keys()):
             info = self._field_info[key]
-            type_counts = info["type_counts"]
+            type_counts = info.type_counts
             observed_types = sorted(type_counts.keys())
             primary_type = max(
                 observed_types,
@@ -105,9 +148,9 @@ class StructureAccumulator:
             )
             fields.append(
                 {
-                    "source_key": info["source_key"],
-                    "predicate": info["predicate"],
-                    "present_in_rows": info["present_in_rows"],
+                    "source_key": info.source_key,
+                    "predicate": info.predicate,
+                    "present_in_rows": info.present_in_rows,
                     "primary_type": primary_type,
                     "observed_types": observed_types,
                 }
@@ -246,7 +289,41 @@ def iter_scalar_fields(
 ) -> Iterable[Tuple[str, Any]]:
     record_get = record.get
     metadata = record_get("metadata")
-    metadata_map = metadata if isinstance(metadata, RuntimeMapping) else {}
+    metadata_map = metadata if isinstance(metadata, RuntimeMapping) else None
+    if (
+        "gil" not in record
+        and "wikidata_id" not in record
+        and "qid" not in record
+        and "q" not in record
+        and "wikidata" not in record
+        and (
+            metadata_map is None
+            or (
+                "wikidata" not in metadata_map
+                and "image" not in metadata_map
+                and "coordinates" not in metadata_map
+            )
+        )
+    ):
+        for key, value in record.items():
+            if value is None or key == "metadata":
+                continue
+            if isinstance(value, _SCALAR_VALUE_TYPES):
+                yield key, value
+                continue
+            if isinstance(value, list):
+                scalar_values = []
+                for item in value:
+                    if not isinstance(item, _SCALAR_VALUE_TYPES):
+                        continue
+                    text = str(item).strip()
+                    if text:
+                        scalar_values.append(text)
+                if scalar_values:
+                    yield key, "; ".join(scalar_values)
+        return
+
+    metadata_map = metadata_map or {}
     if (
         "wikidata_id" in record
         or "qid" in record
@@ -284,13 +361,13 @@ def iter_scalar_fields(
             yield "gil_link_count", len(resolved_gil_links)
             continue
 
-        if isinstance(value, (str, int, float, bool)):
+        if isinstance(value, _SCALAR_VALUE_TYPES):
             yield key, value
             continue
         if isinstance(value, list):
             scalar_values = []
             for item in value:
-                if not isinstance(item, (str, int, float, bool)):
+                if not isinstance(item, _SCALAR_VALUE_TYPES):
                     continue
                 text = str(item).strip()
                 if text:
@@ -325,10 +402,100 @@ def sparql_type_for_value(value: Any) -> str:
     return "xsd:string"
 
 
+def _row_field_kind_bits(kinds: int | Collection[str] | str) -> int:
+    if isinstance(kinds, int):
+        return kinds
+    if isinstance(kinds, str):
+        return _ROW_FIELD_KIND_BIT_BY_NAME[kinds]
+
+    kind_bits = 0
+    for kind in kinds:
+        kind_bits |= _ROW_FIELD_KIND_BIT_BY_NAME[kind]
+    return kind_bits
+
+
+def _iter_row_field_kind_names(kind_bits: int) -> Iterable[str]:
+    for kind, bit in _ROW_FIELD_KIND_ITEMS:
+        if kind_bits & bit:
+            yield kind
+
+
+def _track_row_field_kind(
+    row_field_kinds: MutableMapping[str, int],
+    key: str,
+    kind: str,
+) -> None:
+    _track_row_field_kind_bits(row_field_kinds, key, _ROW_FIELD_KIND_BIT_BY_NAME[kind])
+
+
+def _track_row_field_kind_bits(
+    row_field_kinds: MutableMapping[str, int],
+    key: str,
+    kind_bits: int,
+) -> None:
+    row_field_kinds[key] = int(row_field_kinds.get(key, 0)) | kind_bits
+
+
+def _normalize_scalar_field_value_and_type(key: str, value: Any) -> Tuple[Any, str]:
+    if key in _XSD_DATETIME_SCALAR_FIELDS:
+        normalized_datetime = normalize_datetime_xsd(value)
+        if normalized_datetime is not None:
+            return normalized_datetime, "xsd:dateTime"
+    return value, sparql_type_for_value(value)
+
+
 def sparql_type_for_scalar_field(key: str, value: Any) -> str:
-    if key in _XSD_DATETIME_SCALAR_FIELDS and normalize_datetime_xsd(value) is not None:
-        return "xsd:dateTime"
-    return sparql_type_for_value(value)
+    return _normalize_scalar_field_value_and_type(key, value)[1]
+
+
+def object_term_for_typed_value(value: Any, sparql_type: str) -> Any:
+    if sparql_type == SPARQL_IRI_TYPE:
+        return NamedNode(str(value))
+    if sparql_type == "xsd:dateTime":
+        return Literal(str(value), datatype=_XSD_DATE_TIME_NODE)
+    return literal_for(value)
+
+
+def literal_for_scalar_field(key: str, value: Any) -> Any:
+    normalized_value, sparql_type = _normalize_scalar_field_value_and_type(key, value)
+    return object_term_for_typed_value(normalized_value, sparql_type)
+
+
+def iter_typed_scalar_fields(
+    record: Mapping[str, Any],
+    gil_links: Optional[Sequence[str]] = None,
+) -> Iterable[Tuple[str, Any, str]]:
+    for key, value in iter_scalar_fields(record, gil_links=gil_links):
+        normalized_value, sparql_type = _normalize_scalar_field_value_and_type(key, value)
+        yield key, normalized_value, sparql_type
+
+
+def append_scalar_field_quads(
+    *,
+    subject: Any,
+    record: Mapping[str, Any],
+    quad_buffer: List[Any],
+    row_field_kinds: MutableMapping[str, int],
+    gil_links: Optional[Sequence[str]] = None,
+) -> None:
+    append_quad = quad_buffer.append
+    literal_for_value = literal_for
+    predicate_for_key = predicate_for
+    track_row_field_kind = _track_row_field_kind
+    xsd_date_time_type = _XSD_DATE_TIME_NODE
+    sparql_iri_type = SPARQL_IRI_TYPE
+
+    for key, raw_value in iter_scalar_fields(record, gil_links=gil_links):
+        value, sparql_type = _normalize_scalar_field_value_and_type(key, raw_value)
+        track_row_field_kind(row_field_kinds, key, sparql_type)
+        object_term: Any
+        if sparql_type == sparql_iri_type:
+            object_term = NamedNode(str(value))
+        elif sparql_type == "xsd:dateTime":
+            object_term = Literal(str(value), datatype=xsd_date_time_type)
+        else:
+            object_term = literal_for_value(value)
+        append_quad(Quad(subject, predicate_for_key(key), object_term))
 
 
 def _normalize_page_len(value: Any) -> Optional[int]:
@@ -373,6 +540,31 @@ def normalize_datetime_xsd(value: Any) -> Optional[str]:
     return normalized.replace("+00:00", "Z")
 
 
+def iter_typed_gil_link_fields(
+    link_uri: str,
+    qid: Optional[str],
+    gil_link_enrichment_map: Optional[Mapping[str, Mapping[str, Any]]] = None,
+) -> Iterable[Tuple[str, Any, str]]:
+    yield "gil_link", link_uri, SPARQL_IRI_TYPE
+
+    payload = gil_link_enrichment_map.get(link_uri) if gil_link_enrichment_map is not None else None
+    if isinstance(payload, RuntimeMapping):
+        page_len = _normalize_page_len(payload.get("page_len"))
+        if page_len is not None:
+            yield "gil_link_page_len", page_len, "xsd:integer"
+
+        rev_timestamp, rev_timestamp_type = _normalize_scalar_field_value_and_type(
+            "gil_link_rev_timestamp",
+            payload.get("rev_timestamp"),
+        )
+        if rev_timestamp_type == "xsd:dateTime":
+            yield "gil_link_rev_timestamp", rev_timestamp, rev_timestamp_type
+
+    if qid is not None:
+        yield "gil_link_wikidata_id", qid, "xsd:string"
+        yield "gil_link_wikidata_entity", "http://www.wikidata.org/entity/{}".format(qid), SPARQL_IRI_TYPE
+
+
 def summarize_structure(
     records: Sequence[Mapping[str, Any]],
     gil_link_enrichment_map: Optional[Mapping[str, Mapping[str, Any]]] = None,
@@ -380,38 +572,23 @@ def summarize_structure(
     accumulator = StructureAccumulator()
 
     for row in records:
-        row_field_kinds: Dict[str, set[str]] = {}
-
-        def _track_row_field_kind(key: str, kind: str) -> None:
-            kinds = row_field_kinds.get(key)
-            if kinds is None:
-                row_field_kinds[key] = {kind}
-            else:
-                kinds.add(kind)
+        row_field_kinds: Dict[str, int] = {}
 
         resolved_gil_links = links.resolve_gil_links(
             row,
             gil_link_enrichment_map=gil_link_enrichment_map,
         )
         gil_link_uris = [link_uri for link_uri, _qid in resolved_gil_links]
-        for key, value in iter_scalar_fields(row, gil_links=gil_link_uris):
-            _track_row_field_kind(key, sparql_type_for_scalar_field(key, value))
+        for key, _value, sparql_type in iter_typed_scalar_fields(row, gil_links=gil_link_uris):
+            _track_row_field_kind(row_field_kinds, key, sparql_type)
 
         for link_uri, qid in resolved_gil_links:
-            _track_row_field_kind("gil_link", SPARQL_IRI_TYPE)
-            payload = gil_link_enrichment_map.get(link_uri) if gil_link_enrichment_map is not None else None
-            if isinstance(payload, RuntimeMapping):
-                page_len = _normalize_page_len(payload.get("page_len"))
-                if page_len is not None:
-                    _track_row_field_kind("gil_link_page_len", "xsd:integer")
-
-                rev_timestamp = normalize_datetime_xsd(payload.get("rev_timestamp"))
-                if rev_timestamp is not None:
-                    _track_row_field_kind("gil_link_rev_timestamp", "xsd:dateTime")
-
-            if qid is not None:
-                _track_row_field_kind("gil_link_wikidata_id", "xsd:string")
-                _track_row_field_kind("gil_link_wikidata_entity", SPARQL_IRI_TYPE)
+            for key, _value, sparql_type in iter_typed_gil_link_fields(
+                link_uri,
+                qid,
+                gil_link_enrichment_map=gil_link_enrichment_map,
+            ):
+                _track_row_field_kind(row_field_kinds, key, sparql_type)
 
         accumulator.add_row_field_kinds(row_field_kinds)
 

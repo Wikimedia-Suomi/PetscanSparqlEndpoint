@@ -53,6 +53,22 @@ class ServiceRdfTests(ServiceTestCase):
         self.assertEqual(len(parsed_counts), 1)
         self.assertEqual(parsed_counts[0], len(links.iter_gil_link_uris(first_row)))
 
+    def test_iter_scalar_fields_skips_irrelevant_metadata_mapping(self):
+        fields = list(
+            rdf.iter_scalar_fields(
+                {
+                    "id": 1,
+                    "title": "Example",
+                    "metadata": {
+                        "img_height": 2000,
+                        "img_width": 1000,
+                    },
+                }
+            )
+        )
+
+        self.assertEqual(fields, [("id", 1), ("title", "Example")])
+
     def test_item_subject_for_commons_file_uses_commons_entity_iri(self):
         record = {
             "id": 574781,
@@ -168,6 +184,100 @@ class ServiceRdfTests(ServiceTestCase):
 
     def test_normalize_datetime_xsd_rejects_invalid_value(self):
         self.assertIsNone(rdf.normalize_datetime_xsd("not-a-datetime"))
+
+    def test_iter_typed_scalar_fields_normalizes_datetime_semantics_once(self):
+        fields = list(
+            rdf.iter_typed_scalar_fields(
+                {
+                    "title": "Example",
+                    "img_timestamp": "20260315123456",
+                    "touched": "2026-03-15T12:35:30+02:00",
+                }
+            )
+        )
+
+        self.assertIn(("title", "Example", "xsd:string"), fields)
+        self.assertIn(("img_timestamp", "2026-03-15T12:34:56Z", "xsd:dateTime"), fields)
+        self.assertIn(("touched", "2026-03-15T10:35:30Z", "xsd:dateTime"), fields)
+
+    def test_append_scalar_field_quads_uses_default_graph(self):
+        if rdf.NamedNode is None:
+            self.skipTest("pyoxigraph is not installed")
+
+        quad_buffer: List[Any] = []
+        row_field_kinds: Dict[str, int] = {}
+
+        rdf.append_scalar_field_quads(
+            subject=rdf.NamedNode("https://example.com/item"),
+            record={"title": "Example", "img_timestamp": "20260315123456"},
+            quad_buffer=quad_buffer,
+            row_field_kinds=row_field_kinds,
+        )
+
+        self.assertEqual(len(quad_buffer), 2)
+        self.assertTrue(all(str(quad.graph_name) == "DEFAULT" for quad in quad_buffer))
+
+    def test_append_scalar_field_quads_does_not_coerce_stringified_integer_field(self):
+        if rdf.NamedNode is None:
+            self.skipTest("pyoxigraph is not installed")
+
+        quad_buffer: List[Any] = []
+        row_field_kinds: Dict[str, int] = {}
+
+        rdf.append_scalar_field_quads(
+            subject=rdf.NamedNode("https://example.com/item"),
+            record={"id": "123"},
+            quad_buffer=quad_buffer,
+            row_field_kinds=row_field_kinds,
+        )
+
+        self.assertEqual(len(quad_buffer), 1)
+        self.assertEqual(
+            quad_buffer[0].object.datatype.value,
+            "http://www.w3.org/2001/XMLSchema#string",
+        )
+
+    def test_iter_typed_gil_link_fields_normalizes_enrichment_semantics(self):
+        fields = list(
+            rdf.iter_typed_gil_link_fields(
+                "https://en.wikipedia.org/wiki/Federalist_No._42",
+                "Q5440615",
+                gil_link_enrichment_map={
+                    "https://en.wikipedia.org/wiki/Federalist_No._42": {
+                        "page_len": "12345",
+                        "rev_timestamp": "20260315100000",
+                    }
+                },
+            )
+        )
+
+        self.assertEqual(fields[0], ("gil_link", "https://en.wikipedia.org/wiki/Federalist_No._42", "iri"))
+        self.assertIn(("gil_link_page_len", 12345, "xsd:integer"), fields)
+        self.assertIn(("gil_link_rev_timestamp", "2026-03-15T10:00:00Z", "xsd:dateTime"), fields)
+        self.assertIn(("gil_link_wikidata_id", "Q5440615", "xsd:string"), fields)
+        self.assertIn(
+            (
+                "gil_link_wikidata_entity",
+                "http://www.wikidata.org/entity/Q5440615",
+                "iri",
+            ),
+            fields,
+        )
+
+    def test_structure_accumulator_accepts_compact_row_field_kind_values(self):
+        accumulator = rdf.StructureAccumulator()
+        accumulator.add_row_field_kinds(
+            {
+                "title": "xsd:string",
+                "mixed": {"xsd:string", "xsd:integer"},
+            }
+        )
+
+        summary = accumulator.build_summary(row_count=1)
+        field_map = self._field_map(summary)
+
+        self.assertEqual(field_map["title"]["observed_types"], ["xsd:string"])
+        self.assertEqual(field_map["mixed"]["observed_types"], ["xsd:integer", "xsd:string"])
 
     def test_second_example_parses_qid_thumbnail_and_coordinates(self):
         payload = self._load_payload(SECONDARY_EXAMPLE_FILE)

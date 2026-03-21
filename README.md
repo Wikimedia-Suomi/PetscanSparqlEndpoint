@@ -109,6 +109,21 @@ python manage.py check_api_enrichment --petscan-url 'https://petscan.wmcloud.org
 By default, the command fails if any `gil_link` is missing `page_len` or `rev_timestamp`.
 Use `--allow-missing` to print diagnostics without failing.
 
+### Run opt-in graph parity regression tests
+
+This suite compares the current refactored RDF graph build path against a
+test-local legacy implementation using the bundled example datasets. It stays
+out of the default test run because the large `psid=43706364` fixture is
+intentionally heavy.
+
+```bash
+source .venv/bin/activate
+export DJANGO_SECRET_KEY='dev-only-change-me'
+export OXIGRAPH_BASE_DIR="$PWD/data/oxigraph"
+export GRAPH_PARITY_REGRESSION_TESTS=1
+python manage.py test tests.test_graph_parity_regression
+```
+
 ## Environment Configuration
 
 Security-related Django settings are configured via environment variables:
@@ -127,6 +142,7 @@ for intentional local experiments.
 
 - `data/examples/petscan-43641756.json.gz`
 - `data/examples/petscan-43642782.json.gz`
+- `data/examples/petscan-43706364.json.gz`
 
 ## SPARQL Endpoint
 
