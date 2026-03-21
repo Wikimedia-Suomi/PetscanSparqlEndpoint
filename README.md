@@ -295,6 +295,17 @@ export TOOLFORGE_INTEGRATION_TESTS=1
 ./.venv/bin/python manage.py test tests.test_toolforge_integration
 ```
 
+### Live MediaWiki API enrichment test
+
+This opt-in test uses real MediaWiki API requests instead of mocks to verify that
+`fetch_wikibase_items_for_site_api()` still returns the expected payload shape for
+stable sample titles. It is skipped by default and intended to be run manually.
+
+```bash
+export LIVE_API_INTEGRATION_TESTS=1
+./.venv/bin/python manage.py test tests.test_enrichment_api_integration
+```
+
 ## License
 
 This project is licensed under the MIT License. See [LICENSE](LICENSE).

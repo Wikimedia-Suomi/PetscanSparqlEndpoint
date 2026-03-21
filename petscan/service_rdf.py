@@ -198,6 +198,12 @@ def item_subject(psid: int, record: Mapping[str, Any], index: int) -> Any:
 
     qid = links.extract_qid(record)
     if qid is not None:
+        # PetScan result rows come from a single source wiki. `gil_link` targets may
+        # point to other wikis, but those are modeled separately and do not become
+        # row subjects here. Within one wiki a Wikibase item/QID should belong to
+        # only one page, so using the QID as the subject is not expected to merge
+        # distinct PetScan result rows. Revisit this assumption if the input model
+        # changes in the future.
         return NamedNode("http://www.wikidata.org/entity/{}".format(qid))
 
     identifier = quote(_record_identifier(record, index), safe="")

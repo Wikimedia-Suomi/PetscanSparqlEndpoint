@@ -5,6 +5,7 @@ from types import ModuleType
 from typing import Any, Dict, List, MutableMapping, Optional, Sequence, Tuple, cast
 
 from .normalization import normalize_page_title, normalize_qid
+from .service_errors import GilLinkEnrichmentError
 
 _pymysql_module: Optional[ModuleType]
 try:
@@ -114,12 +115,14 @@ def fetch_wikibase_items_for_site_sql(
         with connection.cursor() as cursor:
             cursor.execute(sql, params)
             rows = cursor.fetchall()
-    except Exception:
+    except Exception as exc:
         elapsed_ms = (perf_counter() - started_at) * 1000.0
         if lookup_stats is not None:
             lookup_stats["sql_calls"] = float(lookup_stats.get("sql_calls", 0.0)) + 1.0
             lookup_stats["sql_ms_total"] = float(lookup_stats.get("sql_ms_total", 0.0)) + elapsed_ms
-        return {}
+        raise GilLinkEnrichmentError(
+            "Wikibase enrichment SQL query failed for site {}: {}".format(site, exc)
+        ) from exc
     finally:
         if connection is not None:
             connection.close()

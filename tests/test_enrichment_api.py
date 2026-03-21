@@ -4,6 +4,7 @@ from unittest.mock import patch
 from django.test import SimpleTestCase
 
 from petscan import enrichment_api
+from petscan.service_errors import GilLinkEnrichmentError
 
 
 class _FakeHttpResponse:
@@ -21,6 +22,42 @@ class _FakeHttpResponse:
 
 
 class EnrichmentApiTests(SimpleTestCase):
+    @patch("petscan.enrichment_api.urlopen")
+    def test_fetch_wikibase_items_raises_on_transport_error(self, urlopen_mock):
+        urlopen_mock.side_effect = RuntimeError("boom")
+
+        with self.assertRaisesMessage(
+            GilLinkEnrichmentError,
+            "Wikibase enrichment API request failed",
+        ):
+            enrichment_api.fetch_wikibase_items_for_site_api(
+                "https://fi.wikipedia.org/w/api.php",
+                ["Turku"],
+                user_agent="test-agent",
+                timeout_seconds=5,
+            )
+
+    @patch("petscan.enrichment_api.urlopen")
+    def test_fetch_wikibase_items_raises_on_api_error_payload(self, urlopen_mock):
+        payload = {
+            "error": {
+                "code": "badvalue",
+                "info": 'Unrecognized value for parameter "action": doesnotexist.',
+            }
+        }
+        urlopen_mock.return_value = _FakeHttpResponse(json.dumps(payload).encode("utf-8"))
+
+        with self.assertRaisesMessage(
+            GilLinkEnrichmentError,
+            "Wikibase enrichment API returned error badvalue",
+        ):
+            enrichment_api.fetch_wikibase_items_for_site_api(
+                "https://fi.wikipedia.org/w/api.php",
+                ["Turku"],
+                user_agent="test-agent",
+                timeout_seconds=5,
+            )
+
     @patch("petscan.enrichment_api.urlopen")
     def test_fetch_wikibase_items_returns_qid_page_len_and_rev_timestamp(self, urlopen_mock):
         payload = {
@@ -141,3 +178,17 @@ class EnrichmentApiTests(SimpleTestCase):
                 }
             },
         )
+
+    @patch("petscan.enrichment_api.urlopen")
+    def test_fetch_wikibase_items_allows_successful_empty_response(self, urlopen_mock):
+        payload = {"query": {"pages": []}}
+        urlopen_mock.return_value = _FakeHttpResponse(json.dumps(payload).encode("utf-8"))
+
+        resolved = enrichment_api.fetch_wikibase_items_for_site_api(
+            "https://fi.wikipedia.org/w/api.php",
+            ["Turku"],
+            user_agent="test-agent",
+            timeout_seconds=5,
+        )
+
+        self.assertEqual(resolved, {})

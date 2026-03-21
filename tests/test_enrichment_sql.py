@@ -4,9 +4,44 @@ from unittest.mock import MagicMock, patch
 from django.test import SimpleTestCase
 
 from petscan import enrichment_sql
+from petscan.service_errors import GilLinkEnrichmentError
 
 
 class EnrichmentSqlTests(SimpleTestCase):
+    @patch("petscan.enrichment_sql.pymysql")
+    def test_fetch_wikibase_items_raises_on_sql_error(self, pymysql_mock):
+        pymysql_mock.connect.side_effect = RuntimeError("db down")
+
+        with self.assertRaisesMessage(
+            GilLinkEnrichmentError,
+            "Wikibase enrichment SQL query failed for site enwiki",
+        ):
+            enrichment_sql.fetch_wikibase_items_for_site_sql(
+                "enwiki",
+                [(0, "Albert_Einstein", "Albert_Einstein")],
+                timeout_seconds=5,
+            )
+
+    @patch("petscan.enrichment_sql.pymysql")
+    def test_fetch_wikibase_items_allows_successful_empty_sql_response(self, pymysql_mock):
+        cursor = MagicMock()
+        cursor.fetchall.return_value = []
+
+        connection = MagicMock()
+        cursor_cm = MagicMock()
+        cursor_cm.__enter__.return_value = cursor
+        cursor_cm.__exit__.return_value = None
+        connection.cursor.return_value = cursor_cm
+        pymysql_mock.connect.return_value = connection
+
+        resolved = enrichment_sql.fetch_wikibase_items_for_site_sql(
+            "enwiki",
+            [(0, "Albert_Einstein", "Albert_Einstein")],
+            timeout_seconds=5,
+        )
+
+        self.assertEqual(resolved, {})
+
     @patch.dict(os.environ, {"TOOLFORGE_REPLICA_CNF": "$HOME/replica.my.cnf"}, clear=False)
     @patch("petscan.enrichment_sql.pymysql")
     def test_fetch_wikibase_items_uses_site_specific_host_and_cnf_only(self, pymysql_mock):

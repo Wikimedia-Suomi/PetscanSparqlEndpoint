@@ -2,7 +2,7 @@ from unittest.mock import patch
 
 from petscan import service_store as store
 from petscan import service_store_builder as store_builder
-from petscan.service_errors import PetscanServiceError
+from petscan.service_errors import GilLinkEnrichmentError, PetscanServiceError
 from tests.service_test_support import STORE_GIL_TEST_PSID, ServiceTestCase
 
 
@@ -94,7 +94,13 @@ class ServiceStoreBuilderTests(ServiceTestCase):
         self.assertEqual(meta["structure"]["row_count"], 1)
         self.assertEqual(meta["records"], 1)
 
-    def test_build_store_uses_precomputed_gil_links_in_write_loop(self):
+    @patch("petscan.service_links.wikidata_lookup_backend", return_value=store_builder.links.LOOKUP_BACKEND_API)
+    @patch("petscan.service_links.fetch_wikibase_items_for_site_api", return_value={})
+    def test_build_store_uses_precomputed_gil_links_in_write_loop(
+        self,
+        _api_fetch_mock,
+        _backend_mock,
+    ):
         if store_builder.Store is None:
             self.skipTest("pyoxigraph is not installed")
 
@@ -144,3 +150,78 @@ class ServiceStoreBuilderTests(ServiceTestCase):
         field_map = {field["source_key"]: field for field in meta["structure"]["fields"]}
         self.assertEqual(field_map["img_timestamp"]["primary_type"], "xsd:dateTime")
         self.assertEqual(field_map["touched"]["primary_type"], "xsd:dateTime")
+
+    @patch("petscan.service_links.wikidata_lookup_backend", return_value=store_builder.links.LOOKUP_BACKEND_API)
+    @patch("petscan.service_links.fetch_wikibase_items_for_site_api")
+    def test_build_store_raises_on_api_enrichment_failure_and_writes_no_meta(
+        self,
+        api_fetch_mock,
+        _backend_mock,
+    ):
+        if store_builder.Store is None:
+            self.skipTest("pyoxigraph is not installed")
+
+        psid = STORE_GIL_TEST_PSID + 4
+        self._cleanup_store(psid)
+        api_fetch_mock.side_effect = GilLinkEnrichmentError("api down")
+
+        with self.assertRaisesMessage(GilLinkEnrichmentError, "api down"):
+            store_builder.build_store(
+                psid,
+                [{"id": 1, "title": "Example", "gil": "enwiki:0:Albert_Einstein"}],
+                "https://example.invalid",
+            )
+
+        self.assertFalse(store.meta_path(psid).exists())
+
+    @patch("petscan.service_links.wikidata_lookup_backend", return_value=store_builder.links.LOOKUP_BACKEND_TOOLFORGE_SQL)
+    @patch("petscan.service_links.enrichment_sql.fetch_wikibase_items_for_site_sql")
+    def test_build_store_raises_on_sql_enrichment_failure_and_writes_no_meta(
+        self,
+        sql_fetch_mock,
+        _backend_mock,
+    ):
+        if store_builder.Store is None:
+            self.skipTest("pyoxigraph is not installed")
+
+        psid = STORE_GIL_TEST_PSID + 5
+        self._cleanup_store(psid)
+        sql_fetch_mock.side_effect = GilLinkEnrichmentError("sql down")
+
+        with self.assertRaisesMessage(GilLinkEnrichmentError, "sql down"):
+            store_builder.build_store(
+                psid,
+                [{"id": 1, "title": "Example", "gil": "enwiki:0:Albert_Einstein"}],
+                "https://example.invalid",
+            )
+
+        self.assertFalse(store.meta_path(psid).exists())
+
+    @patch("petscan.service_links.wikidata_lookup_backend", return_value=store_builder.links.LOOKUP_BACKEND_API)
+    @patch("petscan.service_links.fetch_wikibase_items_for_site_api", return_value={})
+    def test_build_store_allows_successful_empty_enrichment_response(
+        self,
+        _api_fetch_mock,
+        _backend_mock,
+    ):
+        if store_builder.Store is None:
+            self.skipTest("pyoxigraph is not installed")
+
+        psid = STORE_GIL_TEST_PSID + 6
+        self._cleanup_store(psid)
+
+        store_builder.build_store(
+            psid,
+            [{"id": 1, "title": "Example", "gil": "enwiki:0:Albert_Einstein"}],
+            "https://example.invalid",
+        )
+        store_instance = store_builder.Store(str(store.store_path(psid)))
+
+        ask_query = """
+        PREFIX petscan: <https://petscan.wmcloud.org/ontology/>
+        ASK {
+          ?item petscan:gil_link <https://en.wikipedia.org/wiki/Albert_Einstein> .
+        }
+        """
+        self.assertTrue(store_instance.query(ask_query))
+        self.assertTrue(store.meta_path(psid).exists())

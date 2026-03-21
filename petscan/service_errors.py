@@ -3,3 +3,7 @@
 
 class PetscanServiceError(RuntimeError):
     pass
+
+
+class GilLinkEnrichmentError(PetscanServiceError):
+    pass
