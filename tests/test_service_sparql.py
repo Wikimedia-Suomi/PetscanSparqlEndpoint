@@ -1,25 +1,10 @@
+from pyoxigraph import BlankNode, Literal, NamedNode
+
 from petscan import service_sparql as sparql
 from tests.service_test_support import ServiceTestCase
 
 XSD_INTEGER_IRI = "http://www.w3.org/2001/XMLSchema#integer"
 XSD_STRING_IRI = "http://www.w3.org/2001/XMLSchema#string"
-
-
-class NamedNode:
-    def __init__(self, value):
-        self.value = value
-
-
-class BlankNode:
-    def __init__(self, value):
-        self.value = value
-
-
-class Literal:
-    def __init__(self, value, language=None, datatype=None):
-        self.value = value
-        self.language = language
-        self.datatype = datatype
 
 
 class QueryBoolean:
@@ -181,7 +166,7 @@ class ServiceSparqlTests(ServiceTestCase):
                         ("?item", NamedNode("https://example.org/item/1")),
                         ("?label", Literal("Turku", language="fi")),
                         ("?datatype_string", Literal("plain text", datatype=NamedNode(XSD_STRING_IRI))),
-                        ("?node", BlankNode("_:b1")),
+                        ("?node", BlankNode("b1")),
                     ]
                 )
             ],

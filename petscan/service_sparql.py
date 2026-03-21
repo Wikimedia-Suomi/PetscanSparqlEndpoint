@@ -5,6 +5,17 @@ from typing import Any, Dict, Iterator, Optional, Set
 from .service_errors import PetscanServiceError
 
 try:
+    from pyoxigraph import BlankNode as OxigraphBlankNode
+    from pyoxigraph import Literal as OxigraphLiteral
+    from pyoxigraph import NamedNode as OxigraphNamedNode
+    from pyoxigraph import QueryBoolean as OxigraphQueryBoolean
+except ImportError:  # pragma: no cover - dependency check at runtime
+    OxigraphBlankNode = None  # type: ignore[misc,assignment]
+    OxigraphLiteral = None  # type: ignore[misc,assignment]
+    OxigraphNamedNode = None  # type: ignore[misc,assignment]
+    OxigraphQueryBoolean = None  # type: ignore[misc,assignment]
+
+try:
     from pyparsing.results import ParseResults
     from rdflib.plugins.sparql.parser import parseQuery
     from rdflib.plugins.sparql.parserutils import CompValue
@@ -150,15 +161,36 @@ def _variable_name(value: Any) -> str:
 
 
 def _is_named_node(term: Any) -> bool:
-    return term is not None and term.__class__.__name__ == "NamedNode"
+    if term is None:
+        return False
+    if OxigraphNamedNode is not None and isinstance(term, OxigraphNamedNode):
+        return True
+    text = str(term)
+    return hasattr(term, "value") and text.startswith("<") and text.endswith(">")
 
 
 def _is_blank_node(term: Any) -> bool:
-    return term is not None and term.__class__.__name__ == "BlankNode"
+    if term is None:
+        return False
+    if OxigraphBlankNode is not None and isinstance(term, OxigraphBlankNode):
+        return True
+    return hasattr(term, "value") and str(term).startswith("_:")
 
 
 def _is_literal(term: Any) -> bool:
-    return term is not None and term.__class__.__name__ == "Literal"
+    if term is None:
+        return False
+    if OxigraphLiteral is not None and isinstance(term, OxigraphLiteral):
+        return True
+    return hasattr(term, "value") and (hasattr(term, "language") or hasattr(term, "datatype"))
+
+
+def _is_query_boolean(result: Any) -> bool:
+    if result is None or isinstance(result, bool):
+        return False
+    if OxigraphQueryBoolean is not None and isinstance(result, OxigraphQueryBoolean):
+        return True
+    return hasattr(result, "value") and hasattr(result, "__bool__")
 
 
 def _term_value(term: Any) -> str:
@@ -252,7 +284,7 @@ def serialize_ask(result: Any) -> Dict[str, Any]:
     if isinstance(result, bool):
         return {"head": {}, "boolean": result}
 
-    if result is not None and result.__class__.__name__ == "QueryBoolean":
+    if _is_query_boolean(result):
         return {"head": {}, "boolean": bool(result)}
 
     # Some implementations expose ASK as iterable with one row; fallback handles that.

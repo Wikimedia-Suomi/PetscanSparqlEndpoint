@@ -1,4 +1,5 @@
 import io
+import tempfile
 from unittest.mock import patch
 
 from django.core.management import call_command
@@ -103,3 +104,70 @@ class BenchmarkQuadBufferTargetCommandTests(SimpleTestCase):
             )
 
         self.assertIn("--candidates values must be greater than zero", str(context.exception))
+
+    @patch("petscan.management.commands.benchmark_quad_buffer_target.store_builder.build_store")
+    @patch("petscan.management.commands.benchmark_quad_buffer_target.source.extract_records")
+    @patch("petscan.management.commands.benchmark_quad_buffer_target.source.fetch_petscan_json")
+    def test_command_writes_cprofile_output_when_requested(
+        self,
+        fetch_petscan_json_mock,
+        extract_records_mock,
+        build_store_mock,
+    ):
+        records = [{"id": 1, "title": "Example"}]
+        fetch_petscan_json_mock.return_value = (
+            {"payload": True},
+            "https://petscan.example/?psid=43641756",
+        )
+        extract_records_mock.return_value = records
+
+        stdout = io.StringIO()
+        stderr = io.StringIO()
+
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            profile_path = "{}/build.prof".format(tmp_dir)
+            call_command(
+                "benchmark_quad_buffer_target",
+                "--psid",
+                "43641756",
+                "--candidates",
+                "10",
+                "--runs",
+                "1",
+                "--warmup",
+                "0",
+                "--backend",
+                "auto",
+                "--profile-output",
+                profile_path,
+                stdout=stdout,
+                stderr=stderr,
+            )
+
+            with open(profile_path, "rb") as profile_file:
+                payload = profile_file.read()
+
+        self.assertGreater(len(payload), 0)
+        self.assertEqual(build_store_mock.call_count, 1)
+        self.assertIn("profile_output=", stdout.getvalue())
+        self.assertEqual(stderr.getvalue(), "")
+
+    def test_command_rejects_profile_output_with_multiple_candidates(self):
+        with self.assertRaises(CommandError) as context:
+            call_command(
+                "benchmark_quad_buffer_target",
+                "--psid",
+                "43641756",
+                "--candidates",
+                "10,20",
+                "--runs",
+                "1",
+                "--warmup",
+                "0",
+                "--backend",
+                "auto",
+                "--profile-output",
+                "/tmp/example.prof",
+            )
+
+        self.assertIn("--profile-output requires exactly one --candidates value", str(context.exception))

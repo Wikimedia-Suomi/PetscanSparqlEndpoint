@@ -1,6 +1,8 @@
+import cProfile
 import json
 from argparse import ArgumentParser
 from contextlib import nullcontext
+from pathlib import Path
 from time import perf_counter
 from typing import Any, Dict, List, Mapping, Optional, Tuple
 from unittest.mock import patch
@@ -81,6 +83,39 @@ def _load_records(
     return records, source_url, fetch_ms, extract_ms
 
 
+def _run_build_store(
+    store_psid: int,
+    records: List[Dict[str, Any]],
+    source_url: str,
+    petscan_params: Mapping[str, Any],
+) -> None:
+    store_builder.build_store(
+        store_psid,
+        records,
+        source_url,
+        source_params=petscan_params,
+    )
+
+
+def _profile_build_store(
+    output_path: Path,
+    store_psid: int,
+    records: List[Dict[str, Any]],
+    source_url: str,
+    petscan_params: Mapping[str, Any],
+) -> None:
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    profiler = cProfile.Profile()
+    profiler.runcall(
+        _run_build_store,
+        store_psid,
+        records,
+        source_url,
+        petscan_params,
+    )
+    profiler.dump_stats(str(output_path))
+
+
 class Command(BaseCommand):  # type: ignore[misc]
     help = (
         "Benchmark _QUAD_BUFFER_TARGET values with the real PetScan import path "
@@ -133,6 +168,14 @@ class Command(BaseCommand):  # type: ignore[misc]
             default="toolforge_sql",
             help="Force enrichment backend used during benchmark (default: toolforge_sql).",
         )
+        parser.add_argument(
+            "--profile-output",
+            default="",
+            help=(
+                "Optional cProfile output path for the measured build_store run. "
+                "Requires exactly one candidate, --runs=1, and --warmup=0."
+            ),
+        )
 
     def handle(self, *args: Any, **options: Any) -> None:
         source_psid_from_url, petscan_params = _extract_psid_and_params_from_url(
@@ -158,6 +201,16 @@ class Command(BaseCommand):  # type: ignore[misc]
         refresh_source_each_run = bool(options["refresh_source_each_run"])
         backend = str(options["backend"] or "").strip().lower()
         candidates = _parse_candidates(options["candidates"])
+        profile_output_raw = str(options["profile_output"] or "").strip()
+        profile_output = Path(profile_output_raw) if profile_output_raw else None
+
+        if profile_output is not None:
+            if len(candidates) != 1:
+                raise CommandError("--profile-output requires exactly one --candidates value.")
+            if runs != 1:
+                raise CommandError("--profile-output requires --runs=1.")
+            if warmup != 0:
+                raise CommandError("--profile-output requires --warmup=0.")
 
         if backend == "toolforge_sql" and enrichment_sql.pymysql is None:
             raise CommandError("PyMySQL is required when --backend=toolforge_sql.")
@@ -234,15 +287,26 @@ class Command(BaseCommand):  # type: ignore[misc]
                             extract_ms = 0.0
 
                         started_at = perf_counter()
-                        store_builder.build_store(
-                            store_psid,
-                            records,
-                            source_url,
-                            source_params=petscan_params,
-                        )
+                        profiled_run = profile_output is not None and not is_warmup
+                        if profiled_run:
+                            assert profile_output is not None
+                            _profile_build_store(
+                                profile_output,
+                                store_psid,
+                                records,
+                                source_url,
+                                petscan_params,
+                            )
+                        else:
+                            _run_build_store(
+                                store_psid,
+                                records,
+                                source_url,
+                                petscan_params,
+                            )
                         build_store_ms = (perf_counter() - started_at) * 1000.0
 
-                        run_result = {
+                        run_result: Dict[str, Any] = {
                             "run_index": iteration_index + 1,
                             "warmup": is_warmup,
                             "records": len(records),
@@ -251,6 +315,8 @@ class Command(BaseCommand):  # type: ignore[misc]
                             "build_store_ms": build_store_ms,
                             "total_ms": fetch_ms + extract_ms + build_store_ms,
                         }
+                        if profiled_run:
+                            run_result["profile_output"] = str(profile_output)
                         if not is_warmup:
                             measured_runs.append(run_result)
 
@@ -291,6 +357,8 @@ class Command(BaseCommand):  # type: ignore[misc]
                             avg_source_extract_ms,
                         )
                     )
+                    if profile_output is not None:
+                        self.stdout.write("profile_output={}".format(profile_output))
         finally:
             store_builder._QUAD_BUFFER_TARGET = original_quad_buffer_target
 
@@ -318,4 +386,6 @@ class Command(BaseCommand):  # type: ignore[misc]
             "best_quad_buffer_target": best["quad_buffer_target"],
             "best_avg_total_ms": best["avg_total_ms"],
         }
+        if profile_output is not None:
+            report["profile_output"] = str(profile_output)
         self.stdout.write(json.dumps(report, indent=2, sort_keys=True))
