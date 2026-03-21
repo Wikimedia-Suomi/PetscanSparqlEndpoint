@@ -12,6 +12,8 @@ jobs:
     env:
       DJANGO_SECRET_KEY: ci-test-secret-key
       OXIGRAPH_BASE_DIR: /tmp/petscan-oxigraph
+      COVERAGE_FAIL_UNDER: "60"
+      PERFORMANCE_BASELINE_TESTS: "1"
     steps:
       - name: Checkout
         uses: actions/checkout@v4

@@ -38,4 +38,8 @@ echo "Combining coverage data..."
 "${PYTHON}" -m coverage combine
 
 echo "Coverage report..."
-"${PYTHON}" -m coverage report -m
+if [[ -n "${COVERAGE_FAIL_UNDER:-}" ]]; then
+  "${PYTHON}" -m coverage report -m --fail-under "${COVERAGE_FAIL_UNDER}"
+else
+  "${PYTHON}" -m coverage report -m
+fi

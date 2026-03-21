@@ -161,8 +161,14 @@ class ToolforgeWikidataLookupParityTests(SimpleTestCase):
         records = service_source.extract_records(payload)
         self.assertTrue(records, "PetScan returned no records for {}".format(source_url))
 
-        api_result = links.build_gil_link_enrichment_map(records, backend=links.LOOKUP_BACKEND_API)
-        sql_result = links.build_gil_link_enrichment_map(records, backend=links.LOOKUP_BACKEND_TOOLFORGE_SQL)
+        api_result = links.build_gil_link_enrichment(
+            records,
+            backend=links.LOOKUP_BACKEND_API,
+        ).enrichment_by_link
+        sql_result = links.build_gil_link_enrichment(
+            records,
+            backend=links.LOOKUP_BACKEND_TOOLFORGE_SQL,
+        ).enrichment_by_link
 
         (
             only_in_api,

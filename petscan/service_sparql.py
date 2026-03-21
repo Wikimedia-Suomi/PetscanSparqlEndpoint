@@ -1,5 +1,6 @@
 """SPARQL query validation and result serialization."""
 
+from dataclasses import dataclass
 from typing import Any, Dict, Iterator, Optional, Set
 
 from .service_errors import PetscanServiceError
@@ -45,6 +46,17 @@ _FORBIDDEN_PATTERN_NAMES = {
     "ServiceGraphPattern": "SERVICE clauses are not allowed in this endpoint.",
     "DatasetClause": "Dataset clauses are not allowed in this endpoint.",
 }
+_URI_TERM_MARKERS = frozenset({"iri", "uri", "namednode", "named_node"})
+_BNODE_TERM_MARKERS = frozenset({"bnode", "blanknode", "blank_node"})
+_LITERAL_TERM_MARKERS = frozenset({"literal"})
+
+
+@dataclass(frozen=True)
+class _ClassifiedTerm:
+    kind: str
+    value: str
+    language: Optional[str] = None
+    datatype: Optional[Any] = None
 
 
 def _ensure_parser() -> None:
@@ -160,29 +172,57 @@ def _variable_name(value: Any) -> str:
     return text[1:] if text.startswith("?") else text
 
 
-def _is_named_node(term: Any) -> bool:
+def _normalize_term_marker(value: Any) -> str:
+    return str(value or "").strip().lower().replace("-", "_")
+
+
+def _classify_term(term: Any) -> Optional[_ClassifiedTerm]:
     if term is None:
-        return False
+        return None
     if OxigraphNamedNode is not None and isinstance(term, OxigraphNamedNode):
-        return True
-    text = str(term)
-    return hasattr(term, "value") and text.startswith("<") and text.endswith(">")
-
-
-def _is_blank_node(term: Any) -> bool:
-    if term is None:
-        return False
+        return _ClassifiedTerm("uri", _term_value(term))
     if OxigraphBlankNode is not None and isinstance(term, OxigraphBlankNode):
-        return True
-    return hasattr(term, "value") and str(term).startswith("_:")
-
-
-def _is_literal(term: Any) -> bool:
-    if term is None:
-        return False
+        return _ClassifiedTerm("bnode", _term_value(term))
     if OxigraphLiteral is not None and isinstance(term, OxigraphLiteral):
-        return True
-    return hasattr(term, "value") and (hasattr(term, "language") or hasattr(term, "datatype"))
+        language = getattr(term, "language", None)
+        return _ClassifiedTerm(
+            "literal",
+            _term_value(term),
+            str(language) if language else None,
+            getattr(term, "datatype", None),
+        )
+
+    if not hasattr(term, "value"):
+        return None
+
+    marker = ""
+    for attr_name in ("term_type", "kind"):
+        marker = _normalize_term_marker(getattr(term, attr_name, ""))
+        if marker:
+            break
+
+    if marker in _URI_TERM_MARKERS or bool(getattr(term, "is_named_node", False)):
+        return _ClassifiedTerm("uri", _term_value(term))
+
+    if marker in _BNODE_TERM_MARKERS or bool(getattr(term, "is_blank_node", False)):
+        return _ClassifiedTerm("bnode", _term_value(term))
+
+    language = getattr(term, "language", None)
+    datatype = getattr(term, "datatype", None)
+    if (
+        marker in _LITERAL_TERM_MARKERS
+        or bool(getattr(term, "is_literal", False))
+        or language is not None
+        or datatype is not None
+    ):
+        return _ClassifiedTerm(
+            "literal",
+            _term_value(term),
+            str(language) if language else None,
+            datatype,
+        )
+
+    return _ClassifiedTerm("literal", _term_value(term))
 
 
 def _is_query_boolean(result: Any) -> bool:
@@ -199,24 +239,26 @@ def _term_value(term: Any) -> str:
 
 
 def _term_to_sparql_binding(term: Any) -> Dict[str, Any]:
-    if _is_named_node(term):
-        return {"type": "uri", "value": _term_value(term)}
+    classified = _classify_term(term)
+    if classified is None:
+        return {"type": "literal", "value": str(term)}
 
-    if _is_blank_node(term):
-        raw = _term_value(term)
+    if classified.kind == "uri":
+        return {"type": "uri", "value": classified.value}
+
+    if classified.kind == "bnode":
+        raw = classified.value
         return {
             "type": "bnode",
             "value": raw[2:] if raw.startswith("_:") else raw,
         }
 
-    if _is_literal(term):
-        data = {"type": "literal", "value": _term_value(term)}
-        language = getattr(term, "language", None)
-        datatype = getattr(term, "datatype", None)
-        if language:
-            data["xml:lang"] = str(language)
-        elif datatype:
-            datatype_iri = _term_value(datatype)
+    if classified.kind == "literal":
+        data = {"type": "literal", "value": classified.value}
+        if classified.language:
+            data["xml:lang"] = classified.language
+        elif classified.datatype:
+            datatype_iri = _term_value(classified.datatype)
             if datatype_iri != "http://www.w3.org/2001/XMLSchema#string":
                 data["datatype"] = datatype_iri
         return data
@@ -225,27 +267,29 @@ def _term_to_sparql_binding(term: Any) -> Dict[str, Any]:
 
 
 def _term_to_ntriples(term: Any) -> str:
-    if _is_named_node(term):
-        return "<{}>".format(_term_value(term))
+    classified = _classify_term(term)
+    if classified is None:
+        return '"{}"'.format(str(term).replace('"', '\\"'))
 
-    if _is_blank_node(term):
-        text = _term_value(term)
+    if classified.kind == "uri":
+        return "<{}>".format(classified.value)
+
+    if classified.kind == "bnode":
+        text = classified.value
         return text if text.startswith("_:") else "_:{}".format(text)
 
-    if _is_literal(term):
+    if classified.kind == "literal":
         escaped = (
-            _term_value(term)
+            classified.value
             .replace("\\", "\\\\")
             .replace("\n", "\\n")
             .replace("\r", "\\r")
             .replace('"', '\\"')
         )
-        language = getattr(term, "language", None)
-        datatype = getattr(term, "datatype", None)
-        if language:
-            return '"{}"@{}'.format(escaped, language)
-        if datatype:
-            return '"{}"^^<{}>'.format(escaped, _term_value(datatype))
+        if classified.language:
+            return '"{}"@{}'.format(escaped, classified.language)
+        if classified.datatype:
+            return '"{}"^^<{}>'.format(escaped, _term_value(classified.datatype))
         return '"{}"'.format(escaped)
 
     return '"{}"'.format(str(term).replace('"', '\\"'))

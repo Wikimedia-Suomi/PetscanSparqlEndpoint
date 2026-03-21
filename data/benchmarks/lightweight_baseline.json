@@ -1,0 +1,26 @@
+{
+  "datasets": [
+    {
+      "name": "gil_enriched_small",
+      "file_name": "petscan-43641756.json.gz",
+      "psid": 43641756,
+      "expected_records": 2638,
+      "use_fake_api": true,
+      "warmup_runs": 1,
+      "measured_runs": 3,
+      "baseline_median_ms": 623.5,
+      "max_median_ms": 3000.0
+    },
+    {
+      "name": "parse_only_tiny",
+      "file_name": "petscan-43642782.json.gz",
+      "psid": 43642782,
+      "expected_records": 23,
+      "use_fake_api": false,
+      "warmup_runs": 1,
+      "measured_runs": 3,
+      "baseline_median_ms": 96.2,
+      "max_median_ms": 600.0
+    }
+  ]
+}

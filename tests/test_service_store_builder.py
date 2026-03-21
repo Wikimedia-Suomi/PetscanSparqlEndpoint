@@ -1,5 +1,6 @@
 from unittest.mock import patch
 
+from petscan import service_links as links
 from petscan import service_store as store
 from petscan import service_store_builder as store_builder
 from petscan.service_errors import GilLinkEnrichmentError, PetscanServiceError
@@ -13,7 +14,7 @@ class ServiceStoreBuilderTests(ServiceTestCase):
             store_builder.build_store(123, [{"id": 1, "title": "Example"}], "https://example.invalid")
         self.assertIn("pyoxigraph is not installed", str(context.exception))
 
-    @patch("petscan.service_store_builder.links.build_gil_link_enrichment_map")
+    @patch("petscan.service_store_builder.links.build_gil_link_enrichment")
     def test_store_contains_gil_link_relation_triples(self, gil_map_mock):
         if store_builder.Store is None:
             self.skipTest("pyoxigraph is not installed")
@@ -27,16 +28,18 @@ class ServiceStoreBuilderTests(ServiceTestCase):
             }
         }
 
-        def _mock_build_map(records, backend=None, resolved_links_by_row_out=None):
-            if isinstance(resolved_links_by_row_out, list):
-                resolved_links_by_row_out.clear()
-                for row in records:
-                    resolved_links_by_row_out.append(
-                        store_builder.links.resolve_gil_links(row, gil_link_enrichment_map=enrichment_map)
-                    )
-            return enrichment_map
+        def _mock_build_enrichment(records, backend=None):
+            resolved_links_by_row = [
+                store_builder.links.resolve_gil_links(row, gil_link_enrichment_map=enrichment_map)
+                for row in records
+            ]
+            return links.GilLinkEnrichmentBuildResult(
+                enrichment_by_link=enrichment_map,
+                resolved_links_by_row=resolved_links_by_row,
+                lookup_stats=links.GilLinkLookupStats(),
+            )
 
-        gil_map_mock.side_effect = _mock_build_map
+        gil_map_mock.side_effect = _mock_build_enrichment
         psid = STORE_GIL_TEST_PSID
         self._cleanup_store(psid)
 
@@ -59,7 +62,7 @@ class ServiceStoreBuilderTests(ServiceTestCase):
 
     @patch("petscan.service_store_builder._optimize_store")
     @patch("petscan.service_store_builder.rdf.summarize_structure")
-    @patch("petscan.service_store_builder.links.build_gil_link_enrichment_map")
+    @patch("petscan.service_store_builder.links.build_gil_link_enrichment")
     def test_build_store_uses_one_pass_structure_accumulator(
         self,
         gil_map_mock,
@@ -69,16 +72,17 @@ class ServiceStoreBuilderTests(ServiceTestCase):
         if store_builder.Store is None:
             self.skipTest("pyoxigraph is not installed")
 
-        def _mock_build_map(records, backend=None, resolved_links_by_row_out=None):
-            if isinstance(resolved_links_by_row_out, list):
-                resolved_links_by_row_out.clear()
-                for row in records:
-                    resolved_links_by_row_out.append(
-                        store_builder.links.resolve_gil_links(row, gil_link_enrichment_map={})
-                    )
-            return {}
+        def _mock_build_enrichment(records, backend=None):
+            return links.GilLinkEnrichmentBuildResult(
+                enrichment_by_link={},
+                resolved_links_by_row=[
+                    store_builder.links.resolve_gil_links(row, gil_link_enrichment_map={})
+                    for row in records
+                ],
+                lookup_stats=links.GilLinkLookupStats(),
+            )
 
-        gil_map_mock.side_effect = _mock_build_map
+        gil_map_mock.side_effect = _mock_build_enrichment
 
         psid = STORE_GIL_TEST_PSID + 1
         self._cleanup_store(psid)

@@ -47,6 +47,38 @@ class Triple:
         self.object = object_term
 
 
+class ProtocolNamedNode:
+    term_type = "uri"
+
+    def __init__(self, value):
+        self.value = value
+
+    def __str__(self):
+        return "not-an-iri({})".format(self.value)
+
+
+class ProtocolBlankNode:
+    kind = "bnode"
+
+    def __init__(self, value):
+        self.value = value
+
+    def __str__(self):
+        return "not-a-bnode({})".format(self.value)
+
+
+class ProtocolLiteral:
+    term_type = "literal"
+
+    def __init__(self, value, datatype=None, language=None):
+        self.value = value
+        self.datatype = datatype
+        self.language = language
+
+    def __str__(self):
+        return "not-a-literal({})".format(self.value)
+
+
 class ServiceSparqlTests(ServiceTestCase):
     def test_detects_service_clause(self):
         query = """
@@ -238,6 +270,40 @@ class ServiceSparqlTests(ServiceTestCase):
             },
         )
 
+    def test_serialize_select_supports_protocol_term_fallback_without_string_shape_hints(self):
+        result = SelectResult(
+            variables=["?item", "?label", "?node"],
+            solutions=[
+                MappingSolution(
+                    [
+                        ("?item", ProtocolNamedNode("https://example.org/item/9")),
+                        ("?label", ProtocolLiteral("Turku", language="fi")),
+                        ("?node", ProtocolBlankNode("proto-node")),
+                    ]
+                )
+            ],
+        )
+
+        self.assertEqual(
+            sparql.serialize_select(result),
+            {
+                "head": {"vars": ["item", "label", "node"]},
+                "results": {
+                    "bindings": [
+                        {
+                            "item": {"type": "uri", "value": "https://example.org/item/9"},
+                            "label": {
+                                "type": "literal",
+                                "value": "Turku",
+                                "xml:lang": "fi",
+                            },
+                            "node": {"type": "bnode", "value": "proto-node"},
+                        }
+                    ]
+                },
+            },
+        )
+
     def test_serialize_ask_accepts_query_boolean_wrapper(self):
         self.assertEqual(
             sparql.serialize_ask(QueryBoolean(True)),
@@ -276,5 +342,27 @@ class ServiceSparqlTests(ServiceTestCase):
                 '<https://example.org/s> <https://example.org/p> "Line 1\\nLine \\"2\\""@en .\n'
                 '_:node-2 <https://example.org/count> "42"^^<http://www.w3.org/2001/XMLSchema#integer> .\n'
                 '<https://example.org/fallback> <https://example.org/value> "7" .\n'
+            ),
+        )
+
+    def test_serialize_graph_supports_protocol_term_fallback_without_string_shape_hints(self):
+        result = [
+            Triple(
+                ProtocolNamedNode("https://example.org/proto-s"),
+                ProtocolNamedNode("https://example.org/proto-p"),
+                ProtocolLiteral("42", datatype=NamedNode(XSD_INTEGER_IRI)),
+            ),
+            (
+                ProtocolBlankNode("proto-node"),
+                ProtocolNamedNode("https://example.org/label"),
+                ProtocolLiteral('Line 1\nLine "2"'),
+            ),
+        ]
+
+        self.assertEqual(
+            sparql.serialize_graph(result),
+            (
+                '<https://example.org/proto-s> <https://example.org/proto-p> "42"^^<http://www.w3.org/2001/XMLSchema#integer> .\n'
+                '_:proto-node <https://example.org/label> "Line 1\\nLine \\"2\\"" .\n'
             ),
         )

@@ -191,11 +191,11 @@ def build_store(
     store_instance = store_class(str(store_path))
     try:
         predicates = _build_store_predicates()
-        resolved_gil_links_by_row: List[List[Tuple[str, Optional[str]]]] = []
-        gil_link_enrichment_map = links.build_gil_link_enrichment_map(
+        gil_link_result = links.build_gil_link_enrichment(
             records,
-            resolved_links_by_row_out=resolved_gil_links_by_row,
         )
+        resolved_gil_links_by_row = gil_link_result.resolved_links_by_row
+        gil_link_enrichment_map = gil_link_result.enrichment_by_link
         loaded_at = datetime.now(timezone.utc).replace(microsecond=0).isoformat()
         structure_accumulator = rdf.StructureAccumulator()
         write_context = _RecordWriteContext(

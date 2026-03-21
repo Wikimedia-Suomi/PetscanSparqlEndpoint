@@ -33,9 +33,11 @@ _MAX_TITLES_PER_MEDIAWIKI_BATCH = 50
 LOOKUP_BACKEND_API = "api"
 LOOKUP_BACKEND_TOOLFORGE_SQL = "toolforge_sql"
 __all__ = [
+    "GilLinkEnrichmentBuildResult",
+    "GilLinkLookupStats",
     "LOOKUP_BACKEND_API",
     "LOOKUP_BACKEND_TOOLFORGE_SQL",
-    "build_gil_link_enrichment_map",
+    "build_gil_link_enrichment",
     "extract_qid",
     "iter_gil_link_enrichment",
     "iter_gil_link_uris",
@@ -59,6 +61,21 @@ class SiteLookupTarget:
     namespace: int
     api_title: str
     db_title: str
+
+
+@dataclass(frozen=True, slots=True)
+class GilLinkLookupStats:
+    api_calls: int = 0
+    api_ms_total: float = 0.0
+    sql_calls: int = 0
+    sql_ms_total: float = 0.0
+
+
+@dataclass(frozen=True, slots=True)
+class GilLinkEnrichmentBuildResult:
+    enrichment_by_link: Dict[str, Dict[str, Any]]
+    resolved_links_by_row: List[List[Tuple[str, Optional[str]]]]
+    lookup_stats: GilLinkLookupStats
 
 
 def _split_pipe_values(text: str) -> List[str]:
@@ -557,18 +574,26 @@ def _build_resolved_links_by_row(
     return resolved_links_by_row
 
 
-def build_gil_link_enrichment_map(
+def _lookup_stats_from_mapping(lookup_stats: Mapping[str, float]) -> GilLinkLookupStats:
+    return GilLinkLookupStats(
+        api_calls=int(lookup_stats.get("api_calls", 0.0)),
+        api_ms_total=float(lookup_stats.get("api_ms_total", 0.0)),
+        sql_calls=int(lookup_stats.get("sql_calls", 0.0)),
+        sql_ms_total=float(lookup_stats.get("sql_ms_total", 0.0)),
+    )
+
+
+def build_gil_link_enrichment(
     records: Sequence[Mapping[str, Any]],
     backend: Optional[str] = None,
-    resolved_links_by_row_out: Optional[List[List[Tuple[str, Optional[str]]]]] = None,
-) -> Dict[str, Dict[str, Any]]:
+) -> GilLinkEnrichmentBuildResult:
     lookup_stats: Dict[str, float] = {
         "api_calls": 0.0,
         "api_ms_total": 0.0,
         "sql_calls": 0.0,
         "sql_ms_total": 0.0,
     }
-    row_link_uris: Optional[List[List[str]]] = [] if resolved_links_by_row_out is not None else None
+    row_link_uris: List[List[str]] = []
     link_targets_by_uri, site_lookup_targets, direct_qids_by_link = _collect_lookup_inputs(
         records,
         include_direct_lookup_targets=True,
@@ -584,19 +609,8 @@ def build_gil_link_enrichment_map(
         direct_qids_by_link,
         resolved_by_site_title,
     )
-    if resolved_links_by_row_out is not None:
-        resolved_links_by_row_out.clear()
-        if row_link_uris is not None:
-            resolved_links_by_row_out.extend(_build_resolved_links_by_row(row_link_uris, result))
-    total_calls = int(lookup_stats.get("api_calls", 0.0)) + int(lookup_stats.get("sql_calls", 0.0))
-    if total_calls > 0:
-        print(
-            "[wikimedia-lookup] SUMMARY api_calls={} api_total_ms={:.1f} sql_calls={} sql_total_ms={:.1f}".format(
-                int(lookup_stats.get("api_calls", 0.0)),
-                float(lookup_stats.get("api_ms_total", 0.0)),
-                int(lookup_stats.get("sql_calls", 0.0)),
-                float(lookup_stats.get("sql_ms_total", 0.0)),
-            ),
-            flush=True,
-        )
-    return result
+    return GilLinkEnrichmentBuildResult(
+        enrichment_by_link=result,
+        resolved_links_by_row=_build_resolved_links_by_row(row_link_uris, result),
+        lookup_stats=_lookup_stats_from_mapping(lookup_stats),
+    )

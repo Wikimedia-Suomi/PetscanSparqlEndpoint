@@ -124,6 +124,20 @@ export GRAPH_PARITY_REGRESSION_TESTS=1
 python manage.py test tests.test_graph_parity_regression
 ```
 
+### Run lightweight performance baseline tests
+
+This suite uses bundled example datasets and deterministic fake enrichment, so it
+does not need network access. It is enabled in CI and can also be run locally
+when you want a quick regression check for the `build_store()` hot path.
+
+```bash
+source .venv/bin/activate
+export DJANGO_SECRET_KEY='dev-only-change-me'
+export OXIGRAPH_BASE_DIR="$PWD/data/oxigraph"
+export PERFORMANCE_BASELINE_TESTS=1
+python manage.py test tests.test_performance_baseline
+```
+
 ## Environment Configuration
 
 Security-related Django settings are configured via environment variables:

@@ -1,4 +1,3 @@
-from typing import List, Optional, Tuple
 from unittest.mock import patch
 from urllib.parse import urlparse
 
@@ -64,7 +63,8 @@ class ServiceLinksTests(ServiceTestCase):
         de_links = ["dewiki:0:Artikel_{}".format(i) for i in range(3)]
         records = [{"gil": "|".join(en_links + de_links)}]
 
-        link_map = links.build_gil_link_enrichment_map(records)
+        result = links.build_gil_link_enrichment(records)
+        link_map = result.enrichment_by_link
 
         self.assertEqual(len(link_map), 64)
         self.assertIn("https://en.wikipedia.org/wiki/Article_0", link_map)
@@ -92,7 +92,8 @@ class ServiceLinksTests(ServiceTestCase):
         }
         records = [{"gil": "wikidatawiki:0:Q42|enwiki:0:Albert_Einstein"}]
 
-        link_map = links.build_gil_link_enrichment_map(records)
+        result = links.build_gil_link_enrichment(records)
+        link_map = result.enrichment_by_link
 
         self.assertEqual(
             link_map.get("https://www.wikidata.org/wiki/Q42"),
@@ -137,7 +138,7 @@ class ServiceLinksTests(ServiceTestCase):
         fetch_mock.side_effect = fake_fetch
         records = [{"gil": "wikidatawiki:0:Q42|enwiki:0:Albert_Einstein"}]
 
-        enrichment = links.build_gil_link_enrichment_map(records)
+        enrichment = links.build_gil_link_enrichment(records).enrichment_by_link
 
         self.assertEqual(
             enrichment["https://www.wikidata.org/wiki/Q42"],
@@ -159,7 +160,7 @@ class ServiceLinksTests(ServiceTestCase):
 
     @patch("petscan.service_links.wikidata_lookup_backend", return_value=links.LOOKUP_BACKEND_API)
     @patch("petscan.service_links.fetch_wikibase_items_for_site_api")
-    def test_build_gil_link_enrichment_map_populates_resolved_links_by_row_out(self, fetch_mock, _backend_mock):
+    def test_build_gil_link_enrichment_returns_resolved_links_by_row(self, fetch_mock, _backend_mock):
         def fake_fetch(api_url, _titles, **_kwargs):
             if "www.wikidata.org" in api_url:
                 return {
@@ -192,15 +193,10 @@ class ServiceLinksTests(ServiceTestCase):
             {"gil": "wikidatawiki:0:Q42|enwiki:0:Albert_Einstein"},
             {"gil": "dewiki:0:Berlin"},
         ]
-        resolved_links_by_row: List[List[Tuple[str, Optional[str]]]] = []
-
-        enrichment = links.build_gil_link_enrichment_map(
-            records,
-            resolved_links_by_row_out=resolved_links_by_row,
-        )
+        result = links.build_gil_link_enrichment(records)
 
         self.assertEqual(
-            resolved_links_by_row,
+            result.resolved_links_by_row,
             [
                 [
                     ("https://www.wikidata.org/wiki/Q42", "Q42"),
@@ -209,7 +205,7 @@ class ServiceLinksTests(ServiceTestCase):
                 [("https://de.wikipedia.org/wiki/Berlin", "Q64")],
             ],
         )
-        self.assertIn("https://de.wikipedia.org/wiki/Berlin", enrichment)
+        self.assertIn("https://de.wikipedia.org/wiki/Berlin", result.enrichment_by_link)
 
     @patch("petscan.service_links.fetch_wikibase_items_for_site_api")
     def test_api_lookup_accepts_enriched_payload_shape(self, api_fetch_mock):
@@ -253,7 +249,7 @@ class ServiceLinksTests(ServiceTestCase):
 
     @patch("petscan.service_links.wikidata_lookup_backend", return_value=links.LOOKUP_BACKEND_TOOLFORGE_SQL)
     @patch("petscan.service_links.enrichment_sql.fetch_wikibase_items_for_site_sql")
-    def test_build_gil_link_enrichment_map_normalizes_sql_timestamp_to_xsd(self, sql_fetch_mock, _backend_mock):
+    def test_build_gil_link_enrichment_normalizes_sql_timestamp_to_xsd(self, sql_fetch_mock, _backend_mock):
         sql_fetch_mock.return_value = {
             "Albert_Einstein": {
                 "wikidata_id": "Q937",
@@ -263,7 +259,7 @@ class ServiceLinksTests(ServiceTestCase):
         }
         records = [{"gil": "enwiki:0:Albert_Einstein"}]
 
-        enrichment = links.build_gil_link_enrichment_map(records)
+        enrichment = links.build_gil_link_enrichment(records).enrichment_by_link
 
         self.assertEqual(
             enrichment,

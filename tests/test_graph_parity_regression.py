@@ -2,14 +2,17 @@ import gc
 import gzip
 import hashlib
 import json
+import re
 import unittest
 from collections import Counter
 from collections.abc import Iterable, Sequence
 from collections.abc import Mapping as RuntimeMapping
 from dataclasses import dataclass
+from datetime import datetime, timezone
+from functools import lru_cache
 from pathlib import Path
 from tempfile import TemporaryDirectory
-from typing import Any, Dict, List, Mapping, MutableMapping, Optional, Tuple
+from typing import Any, Dict, List, Mapping, Optional, Tuple
 from unittest.mock import patch
 from urllib.parse import urlparse
 
@@ -23,7 +26,15 @@ from petscan import service_store_builder as store_builder
 
 EXAMPLES_DIR = Path(settings.BASE_DIR) / "data" / "examples"
 FIXED_LOADED_AT = "2026-03-21T00:00:00Z"
+FIXED_LOADED_AT_DATETIME = datetime(2026, 3, 21, tzinfo=timezone.utc)
 _LEGACY_SCALAR_VALUE_TYPES = (str, int, float, bool)
+_LEGACY_XSD_DATETIME_SCALAR_FIELDS = frozenset(
+    {"img_timestamp", "touched", "gil_link_rev_timestamp"}
+)
+_LEGACY_FIELD_NAME_RE = re.compile(r"[^0-9A-Za-z_]+")
+_LEGACY_FIELD_RENAMES = {
+    "id": "page_id",
+}
 
 try:
     from pyoxigraph import DefaultGraph as _DefaultGraph
@@ -40,6 +51,12 @@ class _GraphSignature:
     sum_digest_a_hex: str
     sum_digest_b_hex: str
     predicate_counts: Tuple[Tuple[str, int], ...]
+
+
+class _FixedDateTime:
+    @staticmethod
+    def now(_tz: Optional[timezone] = None) -> datetime:
+        return FIXED_LOADED_AT_DATETIME
 
 
 def _load_records(file_name: str) -> List[Dict[str, Any]]:
@@ -152,20 +169,107 @@ def _legacy_append_scalar_field_quads(
     subject: Any,
     record: RuntimeMapping[str, Any],
     quad_buffer: List[Any],
-    row_field_kinds: MutableMapping[str, int],
     gil_links: Optional[Sequence[str]] = None,
 ) -> None:
     for key, raw_value in _legacy_iter_scalar_fields(record, gil_links=gil_links):
-        value, sparql_type = rdf._normalize_scalar_field_value_and_type(key, raw_value)
-        rdf._track_row_field_kind(row_field_kinds, key, sparql_type)
+        value, sparql_type = _legacy_normalize_scalar_field_value_and_type(key, raw_value)
         quad_buffer.append(
             rdf.Quad(
                 subject,
-                rdf.predicate_for(key),
-                rdf.object_term_for_typed_value(value, sparql_type),
+                _legacy_predicate_for(key),
+                _legacy_object_term_for_typed_value(value, sparql_type),
                 DefaultGraph(),
             )
         )
+
+
+@lru_cache(maxsize=512)
+def _legacy_field_name(key: str) -> str:
+    canonical = _LEGACY_FIELD_RENAMES.get(key, key)
+    cleaned = _LEGACY_FIELD_NAME_RE.sub("_", canonical).strip("_")
+    if not cleaned:
+        cleaned = "field"
+    if cleaned[0].isdigit():
+        cleaned = "field_{}".format(cleaned)
+    return cleaned
+
+
+@lru_cache(maxsize=512)
+def _legacy_predicate_for(key: str) -> Any:
+    return rdf.NamedNode(rdf.PREDICATE_BASE + _legacy_field_name(key))
+
+
+def _legacy_sparql_type_for_value(value: Any) -> str:
+    if isinstance(value, bool):
+        return "xsd:boolean"
+    if isinstance(value, int):
+        return "xsd:integer"
+    if isinstance(value, float):
+        return "xsd:double"
+    return "xsd:string"
+
+
+def _legacy_normalize_scalar_field_value_and_type(key: str, value: Any) -> Tuple[Any, str]:
+    if key in _LEGACY_XSD_DATETIME_SCALAR_FIELDS:
+        normalized_datetime = rdf.normalize_datetime_xsd(value)
+        if normalized_datetime is not None:
+            return normalized_datetime, "xsd:dateTime"
+    return value, _legacy_sparql_type_for_value(value)
+
+
+def _legacy_literal_for(value: Any) -> Any:
+    if isinstance(value, bool):
+        return rdf.Literal("true" if value else "false", datatype=rdf.NamedNode(rdf.XSD_BOOLEAN_IRI))
+    if isinstance(value, int):
+        return rdf.Literal(str(value), datatype=rdf.NamedNode(rdf.XSD_INTEGER_IRI))
+    if isinstance(value, float):
+        return rdf.Literal(repr(value), datatype=rdf.NamedNode(rdf.XSD_DOUBLE_IRI))
+    return rdf.Literal(str(value))
+
+
+def _legacy_object_term_for_typed_value(value: Any, sparql_type: str) -> Any:
+    if sparql_type == rdf.SPARQL_IRI_TYPE:
+        return rdf.NamedNode(str(value))
+    if sparql_type == "xsd:dateTime":
+        return rdf.Literal(str(value), datatype=rdf.NamedNode(rdf.XSD_DATE_TIME_IRI))
+    return _legacy_literal_for(value)
+
+
+def _legacy_normalize_page_len(value: Any) -> Optional[int]:
+    if value is None:
+        return None
+    try:
+        page_len = int(value)
+    except Exception:
+        return None
+    if page_len < 0:
+        return None
+    return page_len
+
+
+def _legacy_iter_typed_gil_link_fields(
+    link_uri: str,
+    qid: Optional[str],
+    gil_link_enrichment_map: Mapping[str, Mapping[str, Any]],
+) -> Iterable[Tuple[str, Any, str]]:
+    yield "gil_link", link_uri, rdf.SPARQL_IRI_TYPE
+
+    payload = gil_link_enrichment_map.get(link_uri)
+    if isinstance(payload, RuntimeMapping):
+        page_len = _legacy_normalize_page_len(payload.get("page_len"))
+        if page_len is not None:
+            yield "gil_link_page_len", page_len, "xsd:integer"
+
+        rev_timestamp, rev_timestamp_type = _legacy_normalize_scalar_field_value_and_type(
+            "gil_link_rev_timestamp",
+            payload.get("rev_timestamp"),
+        )
+        if rev_timestamp_type == "xsd:dateTime":
+            yield "gil_link_rev_timestamp", rev_timestamp, rev_timestamp_type
+
+    if qid is not None:
+        yield "gil_link_wikidata_id", qid, "xsd:string"
+        yield "gil_link_wikidata_entity", "http://www.wikidata.org/entity/{}".format(qid), rdf.SPARQL_IRI_TYPE
 
 
 def _build_current_store_signature(
@@ -176,35 +280,37 @@ def _build_current_store_signature(
 ) -> _GraphSignature:
     signature: Optional[_GraphSignature] = None
     with TemporaryDirectory(prefix="graph-parity-current-") as temp_dir:
-        store_instance: Any = store_builder.Store(str(Path(temp_dir) / "store"))
-        predicates = store_builder._build_store_predicates()
-        xsd_integer_type = rdf.NamedNode(rdf.XSD_INTEGER_IRI)
-        write_context = store_builder._RecordWriteContext(
-            predicates=predicates,
-            psid=psid,
-            gil_link_enrichment_map=gil_link_enrichment_map,
-            xsd_integer_type=xsd_integer_type,
-            psid_literal=rdf.Literal(str(psid), datatype=xsd_integer_type),
-            loaded_at_literal=rdf.Literal(
-                FIXED_LOADED_AT,
-                datatype=rdf.NamedNode(rdf.XSD_DATE_TIME_IRI),
+        temp_root = Path(temp_dir)
+
+        def _store_path(value_psid: int) -> Path:
+            return temp_root / str(value_psid)
+
+        def _meta_path(value_psid: int) -> Path:
+            return _store_path(value_psid) / "meta.json"
+
+        with (
+            patch("petscan.service_store_builder.store.store_path", side_effect=_store_path),
+            patch("petscan.service_store_builder.store.meta_path", side_effect=_meta_path),
+            patch(
+                "petscan.service_store_builder.links.build_gil_link_enrichment",
+                return_value=links.GilLinkEnrichmentBuildResult(
+                    enrichment_by_link={
+                        link_uri: dict(payload)
+                        for link_uri, payload in gil_link_enrichment_map.items()
+                    },
+                    resolved_links_by_row=[list(row) for row in resolved_gil_links_by_row],
+                    lookup_stats=links.GilLinkLookupStats(),
+                ),
             ),
-        )
-        quad_buffer: List[Any] = []
-
-        for index, row in enumerate(records):
-            store_builder._write_record_quads(
-                index=index,
-                row=row,
-                context=write_context,
-                resolved_gil_links=resolved_gil_links_by_row[index],
-                quad_buffer=quad_buffer,
+            patch("petscan.service_store_builder.datetime", _FixedDateTime),
+        ):
+            store_builder.build_store(
+                psid,
+                records,
+                "https://example.invalid",
             )
-            if len(quad_buffer) >= store_builder._QUAD_BUFFER_TARGET:
-                store_builder._flush_quads(store_instance, quad_buffer)
 
-        store_builder._flush_quads(store_instance, quad_buffer)
-        store_instance.flush()
+        store_instance: Any = store_builder.Store(str(temp_root / str(psid)))
         signature = _graph_signature(store_instance)
         store_instance = None
         gc.collect()
@@ -222,7 +328,11 @@ def _build_legacy_store_signature(
     signature: Optional[_GraphSignature] = None
     with TemporaryDirectory(prefix="graph-parity-legacy-") as temp_dir:
         store_instance: Any = store_builder.Store(str(Path(temp_dir) / "store"))
-        predicates = store_builder._build_store_predicates()
+        page_class = rdf.NamedNode(rdf.PREDICATE_BASE + "Page")
+        rdf_type = rdf.NamedNode(rdf.RDF_TYPE_IRI)
+        psid_predicate = rdf.NamedNode(rdf.PREDICATE_BASE + "psid")
+        position_predicate = rdf.NamedNode(rdf.PREDICATE_BASE + "position")
+        loaded_at_predicate = rdf.NamedNode(rdf.PREDICATE_BASE + "loadedAt")
         quad_buffer: List[Any] = []
         xsd_integer_type = rdf.NamedNode(rdf.XSD_INTEGER_IRI)
         psid_literal = rdf.Literal(str(psid), datatype=xsd_integer_type)
@@ -234,61 +344,61 @@ def _build_legacy_store_signature(
         for index, row in enumerate(records):
             subject = rdf.item_subject(psid, row, index)
             resolved_gil_links = resolved_gil_links_by_row[index]
-            row_field_kinds: Dict[str, int] = {}
             gil_link_uris = [link_uri for link_uri, _qid in resolved_gil_links] if "gil" in row else None
-            gil_link_predicate = rdf.predicate_for("gil_link")
+            gil_link_predicate = _legacy_predicate_for("gil_link")
             quad_buffer.append(
-                rdf.Quad(subject, predicates.rdf_type, predicates.page_class, DefaultGraph())
+                rdf.Quad(subject, rdf_type, page_class, DefaultGraph())
             )
             quad_buffer.append(
-                rdf.Quad(subject, predicates.psid, psid_literal, DefaultGraph())
+                rdf.Quad(subject, psid_predicate, psid_literal, DefaultGraph())
             )
             quad_buffer.append(
                 rdf.Quad(
                     subject,
-                    predicates.position,
+                    position_predicate,
                     rdf.Literal(str(index), datatype=xsd_integer_type),
                     DefaultGraph(),
                 )
             )
             quad_buffer.append(
-                rdf.Quad(subject, predicates.loaded_at, loaded_at_literal, DefaultGraph())
+                rdf.Quad(subject, loaded_at_predicate, loaded_at_literal, DefaultGraph())
             )
             _legacy_append_scalar_field_quads(
                 subject=subject,
                 record=row,
                 quad_buffer=quad_buffer,
-                row_field_kinds=row_field_kinds,
                 gil_links=gil_link_uris,
             )
 
             for link_uri, qid in resolved_gil_links:
                 link_node = rdf.NamedNode(link_uri)
-                for key, value, sparql_type in rdf.iter_typed_gil_link_fields(
+                for key, value, sparql_type in _legacy_iter_typed_gil_link_fields(
                     link_uri,
                     qid,
                     gil_link_enrichment_map=gil_link_enrichment_map,
                 ):
-                    rdf._track_row_field_kind(row_field_kinds, key, sparql_type)
                     quad_subject = subject if key == "gil_link" else link_node
                     quad_object = (
                         link_node
                         if key == "gil_link"
-                        else rdf.object_term_for_typed_value(value, sparql_type)
+                        else _legacy_object_term_for_typed_value(value, sparql_type)
                     )
                     quad_buffer.append(
                         rdf.Quad(
                             quad_subject,
-                            gil_link_predicate if key == "gil_link" else rdf.predicate_for(key),
+                            gil_link_predicate if key == "gil_link" else _legacy_predicate_for(key),
                             quad_object,
                             DefaultGraph(),
                         )
                     )
 
             if len(quad_buffer) >= store_builder._QUAD_BUFFER_TARGET:
-                store_builder._flush_quads(store_instance, quad_buffer)
+                store_instance.bulk_extend(quad_buffer)
+                quad_buffer.clear()
 
-        store_builder._flush_quads(store_instance, quad_buffer)
+        if quad_buffer:
+            store_instance.bulk_extend(quad_buffer)
+            quad_buffer.clear()
         store_instance.flush()
         signature = _graph_signature(store_instance)
         store_instance = None
@@ -347,13 +457,13 @@ class GraphParityRegressionTests(SimpleTestCase):
             self.skipTest("pyoxigraph is not installed")
 
         records = _load_records(file_name)
-        resolved_gil_links_by_row: List[List[Tuple[str, Optional[str]]]] = []
         with patch("petscan.service_links.fetch_wikibase_items_for_site_api", side_effect=_fake_enrichment_fetch):
-            gil_link_enrichment_map = links.build_gil_link_enrichment_map(
+            gil_link_result = links.build_gil_link_enrichment(
                 records,
                 backend=links.LOOKUP_BACKEND_API,
-                resolved_links_by_row_out=resolved_gil_links_by_row,
             )
+        gil_link_enrichment_map = gil_link_result.enrichment_by_link
+        resolved_gil_links_by_row = gil_link_result.resolved_links_by_row
 
         if any("gil" in row for row in records):
             self.assertTrue(gil_link_enrichment_map)
