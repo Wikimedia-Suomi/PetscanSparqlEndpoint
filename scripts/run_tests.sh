@@ -24,8 +24,17 @@ echo "Running security scan (bandit)..."
 echo "Running dependency audit (pip-audit)..."
 "${PYTHON}" -m pip_audit -r requirements.txt --cache-dir /tmp/pip-audit-cache
 
-echo "Running Django tests..."
-"${PYTHON}" manage.py test
+echo "Resetting coverage data..."
+"${PYTHON}" -m coverage erase
 
-echo "Running API snapshot tests (pytest + syrupy)..."
-"${PYTHON}" -m pytest tests/test_api_snapshots.py
+echo "Running Django tests with coverage..."
+"${PYTHON}" -m coverage run --parallel-mode manage.py test
+
+echo "Running API snapshot tests with coverage..."
+"${PYTHON}" -m coverage run --parallel-mode -m pytest tests/test_api_snapshots.py
+
+echo "Combining coverage data..."
+"${PYTHON}" -m coverage combine
+
+echo "Coverage report..."
+"${PYTHON}" -m coverage report -m

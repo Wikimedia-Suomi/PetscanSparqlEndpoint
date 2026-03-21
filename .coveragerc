@@ -1,0 +1,16 @@
+[run]
+branch = True
+parallel = True
+relative_files = True
+source =
+    petscan
+    petscan_endpoint
+
+[report]
+show_missing = True
+skip_covered = True
+omit =
+    manage.py
+    tests/*
+    */__init__.py
+    */migrations/*
