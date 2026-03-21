@@ -243,6 +243,49 @@ class ServiceModuleTests(ServiceTestCase):
             service.execute_query(psid, query, refresh=False)
 
     @patch("petscan.service.ensure_loaded")
+    @patch("petscan.service._open_query_store")
+    def test_execute_query_releases_query_result_before_store_instance(
+        self,
+        open_query_store_mock,
+        ensure_loaded_mock,
+    ):
+        psid = 123
+        query = "SELECT ?s WHERE { ?s ?p ?o }"
+        ensure_loaded_mock.return_value = {
+            "psid": psid,
+            "records": 1,
+            "source_url": "https://example.invalid",
+            "source_params": {},
+            "loaded_at": "2026-01-01T00:00:00+00:00",
+            "structure": {"row_count": 1, "field_count": 1, "fields": []},
+        }
+        cleanup_events = []
+
+        class FakeQueryResult:
+            variables = []
+
+            def __iter__(self):
+                return iter(())
+
+            def __del__(self):
+                cleanup_events.append("result")
+
+        class FakeStore:
+            def query(self, _query):
+                return FakeQueryResult()
+
+            def __del__(self):
+                cleanup_events.append("store")
+
+        open_query_store_mock.side_effect = lambda _psid: FakeStore()
+
+        execution = service.execute_query(psid, query, refresh=False)
+
+        self.assertEqual(execution["query_type"], "SELECT")
+        self.assertEqual(execution["sparql_json"]["results"]["bindings"], [])
+        self.assertEqual(cleanup_events, ["result", "store"])
+
+    @patch("petscan.service.ensure_loaded")
     @patch("petscan.service.Store")
     def test_execute_query_wraps_store_open_errors(
         self,

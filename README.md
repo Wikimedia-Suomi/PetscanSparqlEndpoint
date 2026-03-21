@@ -50,6 +50,23 @@ export OXIGRAPH_BASE_DIR="$PWD/data/oxigraph"
 
 On macOS, the smoke tests try to use an installed Google Chrome by default.
 
+### Run browser E2E tests against live PetScan
+
+```bash
+source .venv/bin/activate
+export DJANGO_SECRET_KEY='dev-only-change-me'
+export OXIGRAPH_BASE_DIR="$PWD/data/oxigraph"
+# Optional overrides:
+# export PETSCAN_E2E_PSID=43641756
+# export PETSCAN_E2E_OUTPUT_LIMIT=5
+# export PLAYWRIGHT_DEFAULT_TIMEOUT_MS=60000
+./scripts/run_e2e_tests.sh
+```
+
+This E2E script keeps its own temporary Oxigraph store under `OXIGRAPH_BASE_DIR`, so the initial
+load is not satisfied from a previous cached dataset. Unlike the smoke tests, it uses real network
+requests to PetScan and is intentionally kept out of the default `run_tests.sh` path.
+
 ### Run app
 
 ```bash

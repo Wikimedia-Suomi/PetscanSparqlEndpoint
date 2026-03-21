@@ -30,8 +30,8 @@ echo "Resetting coverage data..."
 echo "Running Django tests with coverage..."
 "${PYTHON}" -m coverage run --parallel-mode manage.py test
 
-echo "Running API snapshot tests with coverage..."
-"${PYTHON}" -m coverage run --parallel-mode -m pytest tests/test_api_snapshots.py
+echo "Running API contract and snapshot tests with coverage..."
+"${PYTHON}" -m coverage run --parallel-mode -m pytest tests/test_api_snapshots.py tests/test_api_contracts.py
 
 echo "Combining coverage data..."
 "${PYTHON}" -m coverage combine

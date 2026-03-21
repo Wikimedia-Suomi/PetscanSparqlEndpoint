@@ -8,3 +8,4 @@ pytest-django>=4.11,<5
 syrupy>=4.8,<5
 coverage>=7.6,<8
 playwright>=1.55,<2
+jsonschema>=4.23,<5

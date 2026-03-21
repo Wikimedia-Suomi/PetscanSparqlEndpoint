@@ -1,12 +1,11 @@
 import json
-import os
-import sys
-from typing import Any, Dict, Iterator, Optional
+from typing import Any, Dict, Iterator
 from urllib.parse import unquote
 
 import pytest
-from playwright.sync_api import Error as PlaywrightError
-from playwright.sync_api import Page, Route, expect, sync_playwright
+from playwright.sync_api import Page, Route, expect
+
+from tests.playwright_support import goto_app, managed_page
 
 pytestmark = [pytest.mark.smoke]
 
@@ -59,42 +58,12 @@ SPARQL_SELECT_RESPONSE = {
 }
 
 
-def _playwright_browser_channel() -> Optional[str]:
-    configured = str(os.getenv("PLAYWRIGHT_BROWSER_CHANNEL", "")).strip()
-    if configured:
-        return configured
-    if sys.platform == "darwin":
-        return "chrome"
-    return None
-
-
-def _browser_error_message(channel: Optional[str]) -> str:
-    base_message = "Unable to launch a Playwright browser for smoke tests."
-    if channel is not None:
-        return (
-            base_message
-            + " Set PLAYWRIGHT_BROWSER_CHANNEL to another installed browser channel, or install a "
-            + "Playwright-managed browser with `.venv/bin/python -m playwright install chromium`."
-        )
-    return (
-        base_message
-        + " Install a Playwright-managed browser with "
-        + "`.venv/bin/python -m playwright install chromium`, or set PLAYWRIGHT_BROWSER_CHANNEL "
-        + "to an installed Chrome-compatible browser."
-    )
-
-
 def _fulfill_json(route: Route, payload: Dict[str, Any], status: int = 200) -> None:
     route.fulfill(
         status=status,
         content_type="application/json; charset=utf-8",
         body=json.dumps(payload),
     )
-
-
-def _goto_app(page: Page, live_server: Any) -> None:
-    page.goto("{}/petscan/".format(live_server.url), wait_until="domcontentloaded")
-    expect(page.get_by_role("heading", name="PetScan SPARQL Endpoint")).to_be_visible()
 
 
 def _stub_structure_success(page: Page) -> None:
@@ -113,45 +82,21 @@ def _stub_select_query_success(page: Page) -> None:
 
 
 def _load_structure_successfully(page: Page, live_server: Any) -> None:
-    _goto_app(page, live_server)
+    goto_app(page, live_server)
     page.get_by_role("button", name="Load data").click()
     expect(page.locator(".status.is-success")).to_contain_text("Data structure loaded")
 
 
 @pytest.fixture()
 def page(live_server: Any) -> Iterator[Page]:
-    browser_channel = _playwright_browser_channel()
-    headless = str(os.getenv("PLAYWRIGHT_HEADLESS", "1")).strip() != "0"
-
-    with sync_playwright() as playwright:
-        browser = None
-        if browser_channel is not None:
-            try:
-                browser = playwright.chromium.launch(channel=browser_channel, headless=headless)
-            except PlaywrightError:
-                browser = None
-
-        if browser is None:
-            try:
-                browser = playwright.chromium.launch(headless=headless)
-            except PlaywrightError as exc:
-                raise RuntimeError(_browser_error_message(browser_channel)) from exc
-
-        context = browser.new_context()
-        page = context.new_page()
-        page.set_default_timeout(15000)
-
-        try:
-            yield page
-        finally:
-            context.close()
-            browser.close()
+    with managed_page(default_timeout_ms=15000, suite_label="smoke tests") as browser_page:
+        yield browser_page
 
 
 def test_playwright_smoke_can_load_structure(page: Page, live_server: Any) -> None:
     _stub_structure_success(page)
 
-    _goto_app(page, live_server)
+    goto_app(page, live_server)
     expect(page.get_by_label("PetScan ID (psid)")).to_have_value("43641756")
 
     page.get_by_role("button", name="Load data").click()
@@ -183,7 +128,7 @@ def test_playwright_smoke_surfaces_load_errors(page: Page, live_server: Any) -> 
         lambda route: _fulfill_json(route, {"error": "PetScan upstream returned an error."}, status=502),
     )
 
-    _goto_app(page, live_server)
+    goto_app(page, live_server)
     page.get_by_role("button", name="Load data").click()
 
     expect(page.locator(".status.is-error")).to_contain_text("PetScan upstream returned an error.")

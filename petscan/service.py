@@ -166,39 +166,49 @@ def execute_query(
     meta = ensure_loaded(psid, refresh=refresh, petscan_params=petscan_params)
 
     store_instance = _open_query_store(psid)
+    raw_result = None
+    execution: Optional[QueryExecution] = None
 
     try:
-        raw_result = store_instance.query(query)
-    except Exception as exc:
-        client_error = _as_client_query_error(exc)
-        if client_error is not None:
-            raise ValueError(client_error) from exc
-        raise PetscanServiceError("SPARQL query failed: {}".format(exc)) from exc
+        try:
+            raw_result = store_instance.query(query)
+        except Exception as exc:
+            client_error = _as_client_query_error(exc)
+            if client_error is not None:
+                raise ValueError(client_error) from exc
+            raise PetscanServiceError("SPARQL query failed: {}".format(exc)) from exc
+
+        if qtype == "SELECT":
+            result = QueryExecutionModel(
+                query_type=qtype,
+                result_format="sparql-json",
+                sparql_json=sparql.serialize_select(raw_result),
+                meta=meta,
+            )
+            execution = result.to_dict()
+        elif qtype == "ASK":
+            result = QueryExecutionModel(
+                query_type=qtype,
+                result_format="sparql-json",
+                sparql_json=sparql.serialize_ask(raw_result),
+                meta=meta,
+            )
+            execution = result.to_dict()
+        else:
+            result = QueryExecutionModel(
+                query_type=qtype,
+                result_format="n-triples",
+                ntriples=sparql.serialize_graph(raw_result),
+                meta=meta,
+            )
+            execution = result.to_dict()
     finally:
+        # Drop query iterators before closing the store so pyoxigraph cleanup stays
+        # on the request thread that created them.
+        raw_result = None
         store_instance = None
 
-    if qtype == "SELECT":
-        result = QueryExecutionModel(
-            query_type=qtype,
-            result_format="sparql-json",
-            sparql_json=sparql.serialize_select(raw_result),
-            meta=meta,
-        )
-        return result.to_dict()
+    if execution is None:
+        raise PetscanServiceError("SPARQL query did not return a result.")
 
-    if qtype == "ASK":
-        result = QueryExecutionModel(
-            query_type=qtype,
-            result_format="sparql-json",
-            sparql_json=sparql.serialize_ask(raw_result),
-            meta=meta,
-        )
-        return result.to_dict()
-
-    result = QueryExecutionModel(
-        query_type=qtype,
-        result_format="n-triples",
-        ntriples=sparql.serialize_graph(raw_result),
-        meta=meta,
-    )
-    return result.to_dict()
+    return execution
