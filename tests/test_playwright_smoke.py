@@ -2,6 +2,7 @@ import json
 import os
 import sys
 from typing import Any, Dict, Iterator, Optional
+from urllib.parse import unquote
 
 import pytest
 from playwright.sync_api import Error as PlaywrightError
@@ -96,6 +97,27 @@ def _goto_app(page: Page, live_server: Any) -> None:
     expect(page.get_by_role("heading", name="PetScan SPARQL Endpoint")).to_be_visible()
 
 
+def _stub_structure_success(page: Page) -> None:
+    page.route("**/petscan/api/structure**", lambda route: _fulfill_json(route, STRUCTURE_RESPONSE))
+
+
+def _stub_select_query_success(page: Page) -> None:
+    page.route(
+        "**/petscan/sparql/**",
+        lambda route: route.fulfill(
+            status=200,
+            content_type="application/sparql-results+json; charset=utf-8",
+            body=json.dumps(SPARQL_SELECT_RESPONSE),
+        ),
+    )
+
+
+def _load_structure_successfully(page: Page, live_server: Any) -> None:
+    _goto_app(page, live_server)
+    page.get_by_role("button", name="Load data").click()
+    expect(page.locator(".status.is-success")).to_contain_text("Data structure loaded")
+
+
 @pytest.fixture()
 def page(live_server: Any) -> Iterator[Page]:
     browser_channel = _playwright_browser_channel()
@@ -127,7 +149,7 @@ def page(live_server: Any) -> Iterator[Page]:
 
 
 def test_playwright_smoke_can_load_structure(page: Page, live_server: Any) -> None:
-    page.route("**/petscan/api/structure**", lambda route: _fulfill_json(route, STRUCTURE_RESPONSE))
+    _stub_structure_success(page)
 
     _goto_app(page, live_server)
     expect(page.get_by_label("PetScan ID (psid)")).to_have_value("43641756")
@@ -142,19 +164,10 @@ def test_playwright_smoke_can_load_structure(page: Page, live_server: Any) -> No
 
 
 def test_playwright_smoke_can_run_query_and_render_results(page: Page, live_server: Any) -> None:
-    page.route("**/petscan/api/structure**", lambda route: _fulfill_json(route, STRUCTURE_RESPONSE))
-    page.route(
-        "**/petscan/sparql/**",
-        lambda route: route.fulfill(
-            status=200,
-            content_type="application/sparql-results+json; charset=utf-8",
-            body=json.dumps(SPARQL_SELECT_RESPONSE),
-        ),
-    )
+    _stub_structure_success(page)
+    _stub_select_query_success(page)
 
-    _goto_app(page, live_server)
-    page.get_by_role("button", name="Load data").click()
-    expect(page.locator(".status.is-success")).to_contain_text("Data structure loaded")
+    _load_structure_successfully(page, live_server)
 
     page.get_by_role("button", name="Run query").click()
 
@@ -174,3 +187,73 @@ def test_playwright_smoke_surfaces_load_errors(page: Page, live_server: Any) -> 
     page.get_by_role("button", name="Load data").click()
 
     expect(page.locator(".status.is-error")).to_contain_text("PetScan upstream returned an error.")
+
+
+def test_playwright_smoke_surfaces_query_errors(page: Page, live_server: Any) -> None:
+    _stub_structure_success(page)
+    page.route(
+        "**/petscan/sparql/**",
+        lambda route: route.fulfill(
+            status=400,
+            content_type="text/plain; charset=utf-8",
+            body="SERVICE clauses are not allowed in this endpoint.",
+        ),
+    )
+
+    _load_structure_successfully(page, live_server)
+    page.get_by_role("button", name="Run query").click()
+
+    expect(page.locator(".status-query.is-error")).to_contain_text(
+        "SERVICE clauses are not allowed in this endpoint."
+    )
+    expect(page.get_by_role("heading", name="SPARQL Query Result")).to_have_count(0)
+
+
+def test_playwright_smoke_can_toggle_select_results_between_table_and_cards(page: Page, live_server: Any) -> None:
+    _stub_structure_success(page)
+    _stub_select_query_success(page)
+
+    _load_structure_successfully(page, live_server)
+    page.get_by_role("button", name="Run query").click()
+
+    expect(page.locator(".result-block .table-wrap")).to_have_count(1)
+    page.get_by_role("button", name="Cards").click()
+
+    expect(page.locator(".result-cards")).to_be_visible()
+    expect(page.locator(".result-card")).to_contain_text("Turku")
+    expect(page.locator(".result-block .table-wrap")).to_have_count(0)
+
+    page.get_by_role("button", name="Table").click()
+    expect(page.locator(".result-block .table-wrap")).to_have_count(1)
+
+
+def test_playwright_smoke_open_query_dialog_builds_wdqs_url(page: Page, live_server: Any) -> None:
+    _stub_structure_success(page)
+
+    _load_structure_successfully(page, live_server)
+    page.evaluate(
+        """
+        () => {
+          window.__openedUrls = [];
+          window.open = (url) => {
+            window.__openedUrls.push(url);
+            return {};
+          };
+        }
+        """
+    )
+
+    page.get_by_role("button", name="Open query as Federated query in...").click()
+    expect(page.get_by_role("heading", name="Open Federated Query In")).to_be_visible()
+    dialog = page.locator("dialog.query-target-dialog")
+
+    dialog.get_by_role("button", name="Open", exact=True).click()
+
+    opened_url = page.evaluate("() => window.__openedUrls[0]")
+    self_query = "{}/petscan/sparql/psid=43641756&output_limit=10".format(live_server.url)
+
+    assert str(opened_url).startswith("https://query.wikidata.org/#")
+    decoded_query = unquote(str(opened_url).split("#", 1)[1])
+    assert "SERVICE <https://sophox.org/sparql>" in decoded_query
+    assert "SERVICE <{}>".format(self_query) in decoded_query
+    assert "PREFIX petscan: <https://petscan.wmcloud.org/ontology/>" in decoded_query

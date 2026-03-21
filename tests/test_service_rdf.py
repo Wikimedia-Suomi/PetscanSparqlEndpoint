@@ -64,6 +64,18 @@ class ServiceRdfTests(ServiceTestCase):
 
         self.assertEqual(subject.value, "https://commons.wikimedia.org/entity/M574781")
 
+    def test_item_subject_for_explicit_commons_host_file_page_uses_commons_entity_iri(self):
+        record = {
+            "pageid": "98765",
+            "wiki": "commons.wikimedia.org",
+            "namespace": "6",
+            "nstext": "file",
+            "title": "File:Example image.jpg",
+        }
+        subject = rdf.item_subject(PRIMARY_EXAMPLE_PSID, record, 0)
+
+        self.assertEqual(subject.value, "https://commons.wikimedia.org/entity/M98765")
+
     def test_item_subject_for_non_commons_record_uses_local_psid_item_iri(self):
         record = {
             "id": 42,
@@ -123,6 +135,39 @@ class ServiceRdfTests(ServiceTestCase):
         subject = rdf.item_subject(PRIMARY_EXAMPLE_PSID, record, 0)
 
         self.assertEqual(subject.value, "http://www.wikidata.org/entity/Q42")
+
+    def test_thumbnail_url_normalizes_spaces_and_preserves_safe_characters(self):
+        thumbnail_url = rdf._thumbnail_url("Example file(name),v1.jpg")
+
+        self.assertEqual(
+            thumbnail_url,
+            "https://commons.wikimedia.org/wiki/Special:FilePath/Example_file(name),v1.jpg?width=320",
+        )
+
+    def test_parse_coordinates_accepts_semicolon_separator(self):
+        self.assertEqual(
+            rdf._parse_coordinates("60.45138889;22.26666667"),
+            (60.45138889, 22.26666667),
+        )
+
+    def test_parse_coordinates_rejects_out_of_bounds_values(self):
+        self.assertIsNone(rdf._parse_coordinates("95,22.2"))
+        self.assertIsNone(rdf._parse_coordinates("60.4,190"))
+
+    def test_normalize_datetime_xsd_supports_compact_timestamp(self):
+        self.assertEqual(
+            rdf.normalize_datetime_xsd("20260315100000"),
+            "2026-03-15T10:00:00Z",
+        )
+
+    def test_normalize_datetime_xsd_converts_offset_to_utc(self):
+        self.assertEqual(
+            rdf.normalize_datetime_xsd("2026-03-15T12:00:00+02:00"),
+            "2026-03-15T10:00:00Z",
+        )
+
+    def test_normalize_datetime_xsd_rejects_invalid_value(self):
+        self.assertIsNone(rdf.normalize_datetime_xsd("not-a-datetime"))
 
     def test_second_example_parses_qid_thumbnail_and_coordinates(self):
         payload = self._load_payload(SECONDARY_EXAMPLE_FILE)
@@ -203,3 +248,56 @@ class ServiceRdfTests(ServiceTestCase):
                 ("https://de.wikipedia.org/wiki/Berlin", None),
             ],
         )
+
+    def test_iter_scalar_fields_handles_metadata_and_list_edge_cases(self):
+        record = {
+            "title": "Example",
+            "tags": ["  first  ", "", None, "second", {"skip": True}, 3],
+            "empty_values": ["", "   ", None],
+            "metadata": "not-a-mapping",
+            "other": {"nested": True},
+        }
+
+        fields = list(rdf.iter_scalar_fields(record))
+
+        self.assertIn(("title", "Example"), fields)
+        self.assertIn(("tags", "first; second; 3"), fields)
+        self.assertNotIn(("empty_values", ""), fields)
+        self.assertFalse(any(key == "thumbnail_image" for key, _value in fields))
+        self.assertFalse(any(key == "coordinates" for key, _value in fields))
+        self.assertFalse(any(key == "other" for key, _value in fields))
+
+    def test_iter_scalar_fields_uses_explicit_gil_links_for_link_count(self):
+        record = {"gil": "enwiki:0:Albert_Einstein|dewiki:0:Berlin"}
+
+        fields = list(
+            rdf.iter_scalar_fields(
+                record,
+                gil_links=["https://example.org/one", "https://example.org/two", "https://example.org/three"],
+            )
+        )
+
+        self.assertIn(("gil", "enwiki:0:Albert_Einstein|dewiki:0:Berlin"), fields)
+        self.assertIn(("gil_link_count", 3), fields)
+
+    def test_iter_scalar_fields_emits_thumbnail_and_coordinates_from_metadata(self):
+        record = {
+            "metadata": {
+                "image": "Turku postcard 2013.png",
+                "coordinates": "60.45138889 / 22.26666667",
+            }
+        }
+
+        fields = list(rdf.iter_scalar_fields(record))
+        fields_by_key: Dict[str, List[Any]] = {}
+        for key, value in fields:
+            fields_by_key.setdefault(key, []).append(value)
+
+        self.assertEqual(
+            fields_by_key["thumbnail_image"],
+            ["https://commons.wikimedia.org/wiki/Special:FilePath/Turku_postcard_2013.png?width=320"],
+        )
+        self.assertEqual(fields_by_key["thumbnail_image_file"], ["Turku postcard 2013.png"])
+        self.assertEqual(fields_by_key["coordinates"], ["60.45138889 / 22.26666667"])
+        self.assertAlmostEqual(fields_by_key["coordinate_lat"][0], 60.45138889)
+        self.assertAlmostEqual(fields_by_key["coordinate_lon"][0], 22.26666667)

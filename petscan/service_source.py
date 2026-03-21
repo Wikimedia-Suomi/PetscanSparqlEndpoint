@@ -46,10 +46,14 @@ def normalize_petscan_params(params: Optional[Mapping[str, Any]]) -> Dict[str, L
         values = []  # type: List[str]
         if isinstance(raw_value, (list, tuple, set)):
             for item in raw_value:
+                if item is None:
+                    continue
                 text_value = str(item).strip()
                 if text_value:
                     values.append(text_value)
         else:
+            if raw_value is None:
+                continue
             text_value = str(raw_value).strip()
             if text_value:
                 values.append(text_value)

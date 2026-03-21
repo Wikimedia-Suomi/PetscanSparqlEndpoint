@@ -1,6 +1,66 @@
 from petscan import service_sparql as sparql
 from tests.service_test_support import ServiceTestCase
 
+XSD_INTEGER_IRI = "http://www.w3.org/2001/XMLSchema#integer"
+XSD_STRING_IRI = "http://www.w3.org/2001/XMLSchema#string"
+
+
+class NamedNode:
+    def __init__(self, value):
+        self.value = value
+
+
+class BlankNode:
+    def __init__(self, value):
+        self.value = value
+
+
+class Literal:
+    def __init__(self, value, language=None, datatype=None):
+        self.value = value
+        self.language = language
+        self.datatype = datatype
+
+
+class QueryBoolean:
+    def __init__(self, value):
+        self.value = value
+
+    def __bool__(self):
+        return bool(self.value)
+
+
+class SelectResult:
+    def __init__(self, variables, solutions):
+        self.variables = variables
+        self._solutions = solutions
+
+    def __iter__(self):
+        return iter(self._solutions)
+
+
+class MappingSolution:
+    def __init__(self, items):
+        self._items = items
+
+    def items(self):
+        return list(self._items)
+
+
+class IndexedSolution:
+    def __init__(self, values):
+        self._values = values
+
+    def __getitem__(self, key):
+        return self._values[key]
+
+
+class Triple:
+    def __init__(self, subject, predicate, object_term):
+        self.subject = subject
+        self.predicate = predicate
+        self.object = object_term
+
 
 class ServiceSparqlTests(ServiceTestCase):
     def test_detects_service_clause(self):
@@ -111,3 +171,125 @@ class ServiceSparqlTests(ServiceTestCase):
         query = "SELECT WHERE { ?s ?p ?o }"
         with self.assertRaisesMessage(ValueError, "SPARQL query is invalid:"):
             sparql.validate_query(query)
+
+    def test_serialize_select_supports_mapping_rows_and_rdf_term_shapes(self):
+        result = SelectResult(
+            variables=["?item", "?label", "?datatype_string", "?node"],
+            solutions=[
+                MappingSolution(
+                    [
+                        ("?item", NamedNode("https://example.org/item/1")),
+                        ("?label", Literal("Turku", language="fi")),
+                        ("?datatype_string", Literal("plain text", datatype=NamedNode(XSD_STRING_IRI))),
+                        ("?node", BlankNode("_:b1")),
+                    ]
+                )
+            ],
+        )
+
+        self.assertEqual(
+            sparql.serialize_select(result),
+            {
+                "head": {"vars": ["item", "label", "datatype_string", "node"]},
+                "results": {
+                    "bindings": [
+                        {
+                            "item": {"type": "uri", "value": "https://example.org/item/1"},
+                            "label": {
+                                "type": "literal",
+                                "value": "Turku",
+                                "xml:lang": "fi",
+                            },
+                            "datatype_string": {
+                                "type": "literal",
+                                "value": "plain text",
+                            },
+                            "node": {"type": "bnode", "value": "b1"},
+                        }
+                    ]
+                },
+            },
+        )
+
+    def test_serialize_select_supports_indexed_rows_and_omits_missing_bindings(self):
+        result = SelectResult(
+            variables=["?item", "?count", "?missing"],
+            solutions=[
+                IndexedSolution(
+                    {
+                        "item": NamedNode("https://example.org/item/2"),
+                        "count": Literal("42", datatype=NamedNode(XSD_INTEGER_IRI)),
+                    }
+                ),
+                IndexedSolution(
+                    {
+                        "item": NamedNode("https://example.org/item/3"),
+                        "count": 7,
+                    }
+                ),
+            ],
+        )
+
+        self.assertEqual(
+            sparql.serialize_select(result),
+            {
+                "head": {"vars": ["item", "count", "missing"]},
+                "results": {
+                    "bindings": [
+                        {
+                            "item": {"type": "uri", "value": "https://example.org/item/2"},
+                            "count": {
+                                "type": "literal",
+                                "value": "42",
+                                "datatype": XSD_INTEGER_IRI,
+                            },
+                        },
+                        {
+                            "item": {"type": "uri", "value": "https://example.org/item/3"},
+                            "count": {"type": "literal", "value": "7"},
+                        },
+                    ]
+                },
+            },
+        )
+
+    def test_serialize_ask_accepts_query_boolean_wrapper(self):
+        self.assertEqual(
+            sparql.serialize_ask(QueryBoolean(True)),
+            {"head": {}, "boolean": True},
+        )
+
+    def test_serialize_ask_accepts_iterable_bool_fallback(self):
+        self.assertEqual(
+            sparql.serialize_ask(iter([False])),
+            {"head": {}, "boolean": False},
+        )
+
+    def test_serialize_ask_raises_for_unserializable_result(self):
+        with self.assertRaisesMessage(sparql.PetscanServiceError, "ASK result could not be serialized."):
+            sparql.serialize_ask(iter(["not-a-bool"]))
+
+    def test_serialize_graph_supports_object_attributes_tuple_fallback_and_escaping(self):
+        result = [
+            Triple(
+                NamedNode("https://example.org/s"),
+                NamedNode("https://example.org/p"),
+                Literal('Line 1\nLine "2"', language="en"),
+            ),
+            (
+                BlankNode("node-2"),
+                NamedNode("https://example.org/count"),
+                Literal("42", datatype=NamedNode(XSD_INTEGER_IRI)),
+            ),
+            (NamedNode("https://example.org/fallback"), NamedNode("https://example.org/value"), 7),
+            ("skip",),
+        ]
+
+        self.assertEqual(
+            sparql.serialize_graph(result),
+            (
+                '<https://example.org/s> <https://example.org/p> "Line 1\\nLine \\"2\\""@en .\n'
+                '_:node-2 <https://example.org/count> "42"^^<http://www.w3.org/2001/XMLSchema#integer> .\n'
+                '<https://example.org/fallback> <https://example.org/value> "7" .\n'
+            ),
+        )
