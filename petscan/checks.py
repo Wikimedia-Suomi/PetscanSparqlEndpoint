@@ -2,7 +2,7 @@ import sys
 from typing import Any, Callable, cast
 
 from django.conf import settings
-from django.core.checks import CheckMessage, Error, register
+from django.core.checks import CheckMessage, Warning, register
 
 CheckFunction = Callable[..., list[CheckMessage]]
 register_check = cast(Callable[[CheckFunction], CheckFunction], register())
@@ -13,17 +13,20 @@ def _running_runserver() -> bool:
 
 
 @register_check
-def error_if_runserver_without_debug(app_configs: Any, **kwargs: Any) -> list[CheckMessage]:
+def warn_if_runserver_without_debug(app_configs: Any, **kwargs: Any) -> list[CheckMessage]:
     if settings.DEBUG or not _running_runserver():
         return []
 
+    # This is intentionally only a soft reminder for local development. We keep
+    # the guard bypassable with Django's own `--skip-checks` flag so that
+    # intentional DEBUG=0 experiments are still possible.
     return [
-        Error(
-            "DJANGO_DEBUG must be enabled when using manage.py runserver.",
+        Warning(
+            "DJANGO_DEBUG should be enabled when using manage.py runserver.",
             hint=(
                 "Set DJANGO_DEBUG=1 before starting the development server so Django serves "
-                "static files correctly."
+                "the UI static files by default."
             ),
-            id="petscan.E001",
+            id="petscan.W001",
         )
     ]

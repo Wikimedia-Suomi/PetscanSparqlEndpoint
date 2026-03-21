@@ -116,9 +116,10 @@ Security-related Django settings are configured via environment variables:
 - `DJANGO_ALLOWED_HOSTS` (comma-separated list, example: `localhost,127.0.0.1,mydomain.tld`)
 - `OXIGRAPH_BASE_DIR` (required absolute path for Oxigraph store directory)
 
-When using `manage.py runserver`, keep `DJANGO_DEBUG=1`. The app now refuses to start the
-development server if debug is disabled, because Django will not serve `/static/` files for the UI
-in that mode.
+When using `manage.py runserver`, keep `DJANGO_DEBUG=1`. The app emits a startup warning if debug
+is disabled, because Django will not serve the UI static files by default in that mode. This check
+is intentionally only a reminder and can be bypassed with `python manage.py runserver --skip-checks`
+for intentional local experiments.
 
 ## Example PetScan JSON Files
 
