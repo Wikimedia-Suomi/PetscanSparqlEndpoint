@@ -13,4 +13,6 @@ venv/
 .coverage
 .coverage.*
 data/oxigraph/
+data/oxigraph-bench*/
+data/oxigraph-opt-bench*/
 .DS_Store
