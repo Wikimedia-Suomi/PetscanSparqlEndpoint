@@ -46,6 +46,12 @@ class ApiViewTests(SimpleTestCase):
         self.assertContains(response, "Quarry")
         self.assertContains(response, 'href="/petscan/"', html=False)
         self.assertContains(response, 'href="/quarry/"', html=False)
+        self.assertContains(response, 'href="https://meta.wikimedia.org/wiki/PetScan"', html=False)
+        self.assertContains(
+            response,
+            'href="https://meta.wikimedia.org/wiki/Research:Quarry"',
+            html=False,
+        )
 
     def test_petscan_index_renders_header_with_home_link(self) -> None:
         response = self.client.get("/petscan/")
@@ -56,6 +62,13 @@ class ApiViewTests(SimpleTestCase):
         self.assertContains(response, '<li><a href="/">All data sources</a></li>', html=True)
         self.assertContains(response, '<li aria-current="page">PetScan</li>', html=True)
         self.assertContains(response, "<h1>PetScan SPARQL endpoint</h1>", html=True)
+        self.assertContains(response, "<h2 id=\"source-info-heading\">About PetScan Bridge</h2>", html=True)
+        self.assertContains(
+            response,
+            "is a tool that allows users to extract data, generate lists of Wikipedia",
+            html=False,
+        )
+        self.assertContains(response, 'href="https://meta.wikimedia.org/wiki/PetScan"', html=False)
 
     @patch("petscan.views.petscan_service.ensure_loaded")
     def test_structure_endpoint_returns_meta(self, ensure_loaded):

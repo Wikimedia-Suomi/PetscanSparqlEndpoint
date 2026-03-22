@@ -112,6 +112,10 @@ body {
   max-width: 60ch;
 }
 
+.hero-home p {
+  margin-top: 0.15rem;
+}
+
 .card {
   background: var(--surface);
   border: 1px solid var(--border);
@@ -357,6 +361,7 @@ button:disabled {
   margin: 0;
   font-size: 1.1rem;
 }
+
 
 .status {
   min-height: 1.5rem;
