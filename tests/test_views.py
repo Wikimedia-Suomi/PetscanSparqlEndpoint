@@ -37,10 +37,14 @@ class ApiViewTests(SimpleTestCase):
             "meta": {},
         }
 
-    def test_root_redirects_to_petscan_ui(self):
+    def test_root_renders_supported_data_sources(self):
         response = self.client.get("/")
-        self.assertEqual(response.status_code, 302)
-        self.assertEqual(response["Location"], "/petscan/")
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "SPARQL Bridge")
+        self.assertContains(response, "PetScan")
+        self.assertContains(response, "Quarry")
+        self.assertContains(response, 'href="/petscan/"', html=False)
+        self.assertContains(response, 'href="/quarry/"', html=False)
 
     @patch("petscan.views.petscan_service.ensure_loaded")
     def test_structure_endpoint_returns_meta(self, ensure_loaded):

@@ -1,0 +1,50 @@
+{% load static %}
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>SPARQL Bridge</title>
+    <link rel="stylesheet" href="{% static 'css/app.css' %}" />
+  </head>
+  <body>
+    <main class="page">
+      <header class="hero" role="banner">
+        <h1>SPARQL Bridge</h1>
+        <p>Load data and query it using SPARQL.</p>
+      </header>
+
+      <section class="card" aria-labelledby="sources-heading">
+        <h2 id="sources-heading">Choose A Source</h2>
+
+        <div class="source-grid">
+          <article class="source-card">
+            <h3>PetScan</h3>
+            <p class="help">
+              Load <a href="https://petscan.wmcloud.org" target="_blank" rel="noopener noreferrer">PetScan</a>
+              results into Oxigraph and query them using SPARQL.
+            </p>
+            <div class="actions">
+              <a class="button-link primary" href="/petscan/">Open PetScan SPARQL proxy</a>
+            </div>
+          </article>
+
+          <article class="source-card">
+            <h3>Quarry</h3>
+            <p class="help">
+              Load <a href="https://quarry.wmcloud.org" target="_blank" rel="noopener noreferrer">Quarry</a>
+              results into Oxigraph and query them using SPARQL.
+            </p>
+            <div class="actions">
+              <a class="button-link primary" href="/quarry/">Open Quarry SPARQL proxy</a>
+            </div>
+          </article>
+        </div>
+      </section>
+
+      <p class="help footer-source-link">
+        Source code: <a href="https://github.com/Wikimedia-Suomi/PetscanSparqlEndpoint" target="_blank" rel="noopener noreferrer">github.com/Wikimedia-Suomi/PetscanSparqlEndpoint</a>
+      </p>
+    </main>
+  </body>
+</html>

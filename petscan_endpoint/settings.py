@@ -37,6 +37,7 @@ INSTALLED_APPS = [
     "django.contrib.contenttypes",
     "django.contrib.staticfiles",
     "petscan.apps.PetscanConfig",
+    "quarry.apps.QuarryConfig",
 ]
 
 MIDDLEWARE = [

@@ -74,6 +74,17 @@ def test_js_helper_build_service_param_path_encodes_refresh_and_params(page: Pag
     assert result == "psid=43641756&refresh=1&categories=Turku%20%26%20Aura"
 
 
+def test_js_helper_build_named_service_param_path_supports_quarry_ids(page: Page, live_server: Any) -> None:
+    result = _call_js_helper(
+        page,
+        live_server,
+        "buildNamedServiceParamPath",
+        ["quarry_id", "103479", [["limit", "25"]], True],
+    )
+
+    assert result == "quarry_id=103479&refresh=1&limit=25"
+
+
 def test_js_helper_build_open_query_url_uses_wdqs_and_sophox(page: Page, live_server: Any) -> None:
     result = _call_js_helper(
         page,
@@ -110,3 +121,63 @@ def test_js_helper_build_wizard_query_includes_gil_link_enrichment_block(page: P
     assert "SELECT ?item ?title ?gil_link ?gil_link_wikidata_id" in result
     assert "?item petscan:gil_link ?gil_link ." in result
     assert "?gil_link petscan:gil_link_wikidata_id ?gil_link_wikidata_id ." in result
+
+
+def test_js_helper_normalize_selected_query_field_keys_falls_back_to_first_five_fields(
+    page: Page, live_server: Any
+) -> None:
+    result = _call_js_helper(
+        page,
+        live_server,
+        "normalizeSelectedQueryFieldKeys",
+        [
+            [
+                {"source_key": "alpha"},
+                {"source_key": "beta"},
+                {"source_key": "gamma"},
+                {"source_key": "delta"},
+                {"source_key": "epsilon"},
+                {"source_key": "zeta"},
+            ],
+            ["title", "namespace"],
+            5,
+        ],
+    )
+
+    assert result == {
+        "keys": ["alpha", "beta", "gamma", "delta", "epsilon"],
+        "changed": True,
+        "usedFallback": True,
+    }
+
+
+def test_js_helper_build_quarry_urls(page: Page, live_server: Any) -> None:
+    query_url = _call_js_helper(page, live_server, "buildQuarryQueryUrl", ["103479"])
+    json_url = _call_js_helper(page, live_server, "buildQuarryJsonUrl", ["1084251"])
+
+    assert query_url == "https://quarry.wmcloud.org/query/103479"
+    assert json_url == "https://quarry.wmcloud.org/run/1084251/output/0/json"
+
+
+def test_js_helper_build_wizard_query_with_custom_subject_variable(page: Page, live_server: Any) -> None:
+    result = _call_js_helper(
+        page,
+        live_server,
+        "buildWizardQueryWithOntology",
+        [
+            [
+                {"source_key": "rc_title"},
+            ],
+            ["rc_title"],
+            "quarrycol",
+            "https://quarry.wmcloud.org/ontology/",
+            "quarry_row_id",
+            [["quarry", "https://quarry.wmcloud.org/query/"]],
+        ],
+    )
+
+    assert "PREFIX quarrycol: <https://quarry.wmcloud.org/ontology/>" in result
+    assert "PREFIX quarry: <https://quarry.wmcloud.org/query/>" in result
+    assert "SELECT ?quarry_row_id ?rc_title" in result
+    assert "?quarry_row_id a quarrycol:Page ." in result
+    assert "?quarry_row_id quarrycol:rc_title ?rc_title ." in result

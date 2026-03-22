@@ -252,9 +252,52 @@ button.secondary {
   color: var(--text);
 }
 
+.button-link {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 0;
+  border-radius: 10px;
+  padding: 0.7rem 1rem;
+  font: inherit;
+  font-weight: 600;
+  text-decoration: none;
+  cursor: pointer;
+}
+
+.button-link.primary {
+  background: var(--accent);
+  color: #fff;
+}
+
+.button-link.secondary {
+  background: #d8e3e9;
+  color: var(--text);
+}
+
 button:disabled {
   opacity: 0.6;
   cursor: not-allowed;
+}
+
+.source-grid {
+  display: grid;
+  gap: 1rem;
+  grid-template-columns: repeat(auto-fit, minmax(18rem, 1fr));
+}
+
+.source-card {
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: linear-gradient(180deg, #f8fbfc 0%, #ffffff 100%);
+  padding: 1rem;
+  display: grid;
+  gap: 0.75rem;
+}
+
+.source-card h3 {
+  margin: 0;
+  font-size: 1.1rem;
 }
 
 .status {

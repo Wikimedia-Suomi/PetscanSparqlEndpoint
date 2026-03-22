@@ -1,4 +1,10 @@
 export const DEFAULT_SELECTED_QUERY_FIELDS = ["title", "namespace"];
+export const PETSCAN_ONTOLOGY_PREFIX = "petscan";
+export const PETSCAN_ONTOLOGY_BASE = "https://petscan.wmcloud.org/ontology/";
+export const QUARRY_ONTOLOGY_PREFIX = "quarrycol";
+export const QUARRY_ONTOLOGY_BASE = "https://quarry.wmcloud.org/ontology/";
+export const QUARRY_QUERY_PREFIX = "quarry";
+export const QUARRY_QUERY_BASE = "https://quarry.wmcloud.org/query/";
 
 export const OPEN_QUERY_TARGETS = [
   { value: "wdqs", label: "Wikidata Query Service (via Sophox)" },
@@ -6,17 +12,38 @@ export const OPEN_QUERY_TARGETS = [
   { value: "qlever", label: "QLever endpoint" },
 ];
 
-export function defaultQueryText() {
-  return [
-    "PREFIX petscan: <https://petscan.wmcloud.org/ontology/>",
-    "SELECT ?item ?title ?ns",
+export function buildDefaultQueryText(prefixName, ontologyBase, subjectVariableName, extraPrefixEntries) {
+  var normalizedPrefix = String(prefixName || "").trim() || PETSCAN_ONTOLOGY_PREFIX;
+  var normalizedBase = String(ontologyBase || "").trim() || PETSCAN_ONTOLOGY_BASE;
+  var normalizedSubjectVariableName = String(subjectVariableName || "").trim() || "item";
+  var subjectVariable = "?" + normalizedSubjectVariableName;
+  var prefixLines = [
+    "PREFIX " + normalizedPrefix + ": <" + normalizedBase + ">",
+  ];
+  (Array.isArray(extraPrefixEntries) ? extraPrefixEntries : []).forEach(function (entry) {
+    if (!Array.isArray(entry) || entry.length < 2) {
+      return;
+    }
+    var extraPrefixName = String(entry[0] || "").trim();
+    var extraPrefixBase = String(entry[1] || "").trim();
+    if (!extraPrefixName || !extraPrefixBase) {
+      return;
+    }
+    prefixLines.push("PREFIX " + extraPrefixName + ": <" + extraPrefixBase + ">");
+  });
+  return prefixLines.concat([
+    "SELECT " + subjectVariable + " ?title ?ns",
     "WHERE {",
-    "  ?item a petscan:Page .",
-    "  OPTIONAL { ?item petscan:title ?title }",
-    "  OPTIONAL { ?item petscan:namespace ?ns }",
+    "  " + subjectVariable + " a " + normalizedPrefix + ":Page .",
+    "  OPTIONAL { " + subjectVariable + " " + normalizedPrefix + ":title ?title }",
+    "  OPTIONAL { " + subjectVariable + " " + normalizedPrefix + ":namespace ?ns }",
     "}",
     "LIMIT 50",
-  ].join("\n");
+  ]).join("\n");
+}
+
+export function defaultQueryText() {
+  return buildDefaultQueryText(PETSCAN_ONTOLOGY_PREFIX, PETSCAN_ONTOLOGY_BASE);
 }
 
 export function parseForwardedPetscanParams(rawValue) {
@@ -67,19 +94,20 @@ export function appendOutputLimit(entries, limitValue) {
   return nextEntries;
 }
 
-export function buildServiceParamPath(psidValue, effectivePetscanParams, refresh) {
-  var psid = String(psidValue || "").trim();
+export function buildNamedServiceParamPath(idParamName, idValue, extraEntries, refresh) {
+  var paramName = String(idParamName || "").trim();
+  var normalizedIdValue = String(idValue || "").trim();
   var entries = [];
 
-  if (psid) {
-    entries.push(["psid", psid]);
+  if (paramName && normalizedIdValue) {
+    entries.push([paramName, normalizedIdValue]);
   }
   if (refresh) {
     entries.push(["refresh", "1"]);
   }
 
-  if (Array.isArray(effectivePetscanParams)) {
-    effectivePetscanParams.forEach(function (entry) {
+  if (Array.isArray(extraEntries)) {
+    extraEntries.forEach(function (entry) {
       entries.push([entry[0], entry[1]]);
     });
   }
@@ -93,6 +121,10 @@ export function buildServiceParamPath(psidValue, effectivePetscanParams, refresh
       return encodeURIComponent(entry[0]) + "=" + encodeURIComponent(entry[1]);
     })
     .join("&");
+}
+
+export function buildServiceParamPath(psidValue, effectivePetscanParams, refresh) {
+  return buildNamedServiceParamPath("psid", psidValue, effectivePetscanParams, refresh);
 }
 
 export function buildPetscanServiceUrl(origin, sparqlBasePath, servicePath) {
@@ -133,6 +165,22 @@ export function buildPetscanJsonUrl(psidValue, effectivePetscanParams) {
     });
   }
   return "https://petscan.wmcloud.org/?" + params.toString();
+}
+
+export function buildQuarryQueryUrl(quarryIdValue) {
+  var quarryId = String(quarryIdValue || "").trim();
+  if (!quarryId) {
+    return "https://quarry.wmcloud.org/";
+  }
+  return "https://quarry.wmcloud.org/query/" + encodeURIComponent(quarryId);
+}
+
+export function buildQuarryJsonUrl(qrunIdValue) {
+  var qrunId = String(qrunIdValue || "").trim();
+  if (!qrunId) {
+    return "";
+  }
+  return "https://quarry.wmcloud.org/run/" + encodeURIComponent(qrunId) + "/output/0/json";
 }
 
 export function inferQueryType(query) {
@@ -360,8 +408,81 @@ export function normalizeFieldVariableName(fieldKey) {
   return normalized;
 }
 
-export function buildWizardQuery(structureFields, selectedQueryFieldKeys) {
+function arraysEqual(left, right) {
+  if (left.length !== right.length) {
+    return false;
+  }
+  for (var index = 0; index < left.length; index += 1) {
+    if (left[index] !== right[index]) {
+      return false;
+    }
+  }
+  return true;
+}
+
+function firstSelectableStructureFieldKeys(structureFields, limit) {
+  var normalizedLimit = typeof limit === "number" && Number.isFinite(limit) ? Math.max(0, limit) : 5;
+  var next = [];
+  (Array.isArray(structureFields) ? structureFields : []).forEach(function (field) {
+    if (next.length >= normalizedLimit) {
+      return;
+    }
+    var key = String((field && field.source_key) || "").trim();
+    if (!key || next.indexOf(key) !== -1) {
+      return;
+    }
+    next.push(key);
+  });
+  return next;
+}
+
+export function normalizeSelectedQueryFieldKeys(structureFields, selectedQueryFieldKeys, fallbackLimit) {
+  var structure = Array.isArray(structureFields) ? structureFields : [];
+  var selected = Array.isArray(selectedQueryFieldKeys) ? selectedQueryFieldKeys : [];
+  var allowed = {};
+  structure.forEach(function (field) {
+    var key = String((field && field.source_key) || "").trim();
+    if (key) {
+      allowed[key] = true;
+    }
+  });
+
+  var next = [];
+  selected.forEach(function (key) {
+    var normalized = String(key || "").trim();
+    if (!normalized || !allowed[normalized] || next.indexOf(normalized) !== -1) {
+      return;
+    }
+    next.push(normalized);
+  });
+
+  var shouldFallbackToFirstFields = arraysEqual(selected, DEFAULT_SELECTED_QUERY_FIELDS);
+  var usedFallback = false;
+  if (!next.length && shouldFallbackToFirstFields) {
+    next = firstSelectableStructureFieldKeys(structure, fallbackLimit);
+    usedFallback = next.length > 0;
+  }
+
+  return {
+    keys: next,
+    changed: !arraysEqual(selected, next),
+    usedFallback: usedFallback,
+  };
+}
+
+export function buildWizardQueryWithOntology(
+  structureFields,
+  selectedQueryFieldKeys,
+  prefixName,
+  ontologyBase,
+  subjectVariableName,
+  extraPrefixEntries
+) {
   var normalizedStructureFields = Array.isArray(structureFields) ? structureFields : [];
+  var normalizedPrefix = String(prefixName || "").trim() || PETSCAN_ONTOLOGY_PREFIX;
+  var normalizedBase = String(ontologyBase || "").trim() || PETSCAN_ONTOLOGY_BASE;
+  var normalizedSubjectVariableName = String(subjectVariableName || "").trim() || "item";
+  var subjectVariable = "?" + normalizedSubjectVariableName;
   var selected = {};
   (Array.isArray(selectedQueryFieldKeys) ? selectedQueryFieldKeys : []).forEach(function (key) {
     selected[key] = true;
@@ -389,16 +510,18 @@ export function buildWizardQuery(structureFields, selectedQueryFieldKeys) {
       selectVars.push(varName);
     }
   };
-  pushSelectVar("?item");
+  pushSelectVar(subjectVariable);
 
-  var whereLines = ["  ?item a petscan:Page ."];
+  var whereLines = ["  " + subjectVariable + " a " + normalizedPrefix + ":Page ."];
   orderedKeys.forEach(function (key) {
     if (key === "gil_link" || key.indexOf("gil_link_") === 0) {
       return;
     }
     var variableName = "?" + normalizeFieldVariableName(key);
     pushSelectVar(variableName);
-    whereLines.push("  OPTIONAL { ?item petscan:" + key + " " + variableName + " . }");
+    whereLines.push(
+      "  OPTIONAL { " + subjectVariable + " " + normalizedPrefix + ":" + key + " " + variableName + " . }"
+    );
   });
 
   var selectedGilLinkFields = [
@@ -413,42 +536,72 @@ export function buildWizardQuery(structureFields, selectedQueryFieldKeys) {
   });
   if (includeGilLinkBlock) {
     whereLines.push("  OPTIONAL {");
-    whereLines.push("    ?item petscan:gil_link ?gil_link .");
+    whereLines.push("    " + subjectVariable + " " + normalizedPrefix + ":gil_link ?gil_link .");
     if (selected.gil_link) {
       pushSelectVar("?gil_link");
     }
     if (selected.gil_link_wikidata_id) {
       pushSelectVar("?gil_link_wikidata_id");
-      whereLines.push("    OPTIONAL { ?gil_link petscan:gil_link_wikidata_id ?gil_link_wikidata_id . }");
+      whereLines.push(
+        "    OPTIONAL { ?gil_link "
+        + normalizedPrefix
+        + ":gil_link_wikidata_id ?gil_link_wikidata_id . }"
+      );
     }
     if (selected.gil_link_wikidata_entity) {
       pushSelectVar("?gil_link_wikidata_entity");
       whereLines.push(
-        "    OPTIONAL { ?gil_link petscan:gil_link_wikidata_entity ?gil_link_wikidata_entity . }"
+        "    OPTIONAL { ?gil_link "
+        + normalizedPrefix
+        + ":gil_link_wikidata_entity ?gil_link_wikidata_entity . }"
       );
     }
     if (selected.gil_link_page_len) {
       pushSelectVar("?gil_link_page_len");
-      whereLines.push("    OPTIONAL { ?gil_link petscan:gil_link_page_len ?gil_link_page_len . }");
+      whereLines.push(
+        "    OPTIONAL { ?gil_link " + normalizedPrefix + ":gil_link_page_len ?gil_link_page_len . }"
+      );
     }
     if (selected.gil_link_rev_timestamp) {
       pushSelectVar("?gil_link_rev_timestamp");
       whereLines.push(
-        "    OPTIONAL { ?gil_link petscan:gil_link_rev_timestamp ?gil_link_rev_timestamp . }"
+        "    OPTIONAL { ?gil_link "
+        + normalizedPrefix
+        + ":gil_link_rev_timestamp ?gil_link_rev_timestamp . }"
       );
     }
     whereLines.push("  }");
   }
 
   var lines = [
-    "PREFIX petscan: <https://petscan.wmcloud.org/ontology/>",
-    "SELECT " + selectVars.join(" "),
-    "WHERE {",
+    "PREFIX " + normalizedPrefix + ": <" + normalizedBase + ">",
   ];
+  (Array.isArray(extraPrefixEntries) ? extraPrefixEntries : []).forEach(function (entry) {
+    if (!Array.isArray(entry) || entry.length < 2) {
+      return;
+    }
+    var extraPrefixName = String(entry[0] || "").trim();
+    var extraPrefixBase = String(entry[1] || "").trim();
+    if (!extraPrefixName || !extraPrefixBase) {
+      return;
+    }
+    lines.push("PREFIX " + extraPrefixName + ": <" + extraPrefixBase + ">");
+  });
+  lines.push("SELECT " + selectVars.join(" "));
+  lines.push("WHERE {");
   whereLines.forEach(function (line) {
     lines.push(line);
   });
   lines.push("}");
   lines.push("LIMIT 50");
   return lines.join("\n");
+}
+
+export function buildWizardQuery(structureFields, selectedQueryFieldKeys) {
+  return buildWizardQueryWithOntology(
+    structureFields,
+    selectedQueryFieldKeys,
+    PETSCAN_ONTOLOGY_PREFIX,
+    PETSCAN_ONTOLOGY_BASE
+  );
 }

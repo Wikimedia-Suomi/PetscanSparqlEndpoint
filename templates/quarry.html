@@ -4,7 +4,7 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>PetScan SPARQL Endpoint</title>
+    <title>Quarry SPARQL Endpoint</title>
     <link rel="stylesheet" href="{% static 'css/app.css' %}" />
   </head>
   <body>
@@ -15,73 +15,61 @@
     {% verbatim %}
     <main id="app" class="page" v-cloak>
       <header class="hero" role="banner">
-        <h1>PetScan SPARQL Endpoint</h1>
+        <h1>Quarry SPARQL Endpoint</h1>
       </header>
 
       <section class="card" aria-labelledby="query-heading">
         <h2 id="query-heading">Data Loading</h2>
 
         <form class="query-form">
-          <label for="psid">PetScan ID (psid)</label>
+          <label for="quarry-id">Quarry ID</label>
           <input
-            id="psid"
+            id="quarry-id"
             type="number"
             inputmode="numeric"
             min="1"
             required
-            v-model.trim="psid"
-            aria-describedby="psid-help"
+            v-model.trim="quarryId"
+            aria-describedby="quarry-id-help"
           />
-          <p id="psid-help" class="help">
-            Example: 43641756
+          <p id="quarry-id-help" class="help">
+            Example: 103479
           </p>
 
-          <label for="petscan-extra-params">PetScan extra GET params</label>
+          <label for="quarry-limit">Load data limit</label>
           <input
-            id="petscan-extra-params"
-            type="text"
-            inputmode="url"
-            spellcheck="false"
-            placeholder="categories=Turku&language=fi"
-            v-model.trim="petscanGetParams"
-            aria-describedby="petscan-extra-help"
-          />
-          <p id="petscan-extra-help" class="help">
-            Optional query-string pairs forwarded to PetScan (except reserved keys:
-            <code>psid</code>, <code>format</code>, <code>query</code>, <code>refresh</code>, <code>output_limit</code>).
-          </p>
-          <label for="petscan-limit">Load data limit</label>
-          <input
-            id="petscan-limit"
+            id="quarry-limit"
             type="text"
             inputmode="numeric"
             spellcheck="false"
             placeholder="10"
-            v-model.trim="petscanLimit"
-            aria-describedby="petscan-limit-help"
+            v-model.trim="quarryLimit"
+            aria-describedby="quarry-limit-help"
           />
-          <p id="petscan-limit-help" class="help">
-            Default is <code>10</code>. Clear this field to omit <code>output_limit</code> from PetScan requests.
+          <p id="quarry-limit-help" class="help">
+            Default is <code>10</code>. Clear this field to load all rows from the Quarry JSON output into Oxigraph.
           </p>
+
           <div class="actions">
             <button type="button" class="primary" :disabled="isBusy" @click="loadStructure">
               Load data
             </button>
           </div>
 
-          <p class="help help-links" v-if="psid">
+          <p class="help help-links" v-if="quarryId">
             Source data:
-            <a :href="petscanQueryUrl" target="_blank" rel="noopener noreferrer">Open PetScan query</a>
-            <span aria-hidden="true">|</span>
-            <a :href="petscanJsonUrl" target="_blank" rel="noopener noreferrer">Open PetScan JSON</a>
+            <a :href="quarryQueryUrl" target="_blank" rel="noopener noreferrer">Open Quarry [[ quarryId ]]</a>
+            <template v-if="resolvedQrunId">
+              <span aria-hidden="true">|</span>
+              <a :href="quarryJsonUrl" target="_blank" rel="noopener noreferrer">Open Quarry [[ quarryId ]] JSON</a>
+            </template>
           </p>
           <p class="help" v-if="jsonResultCount !== null">
-            PetScan JSON results: <strong>[[ jsonResultCount ]]</strong>
+            Loaded Quarry rows: <strong>[[ jsonResultCount ]]</strong>
           </p>
           <p class="help" v-else>
-            PetScan JSON results: not loaded for this psid yet.
+            Quarry rows: not loaded for this query yet.
           </p>
-
         </form>
 
         <p class="status" :class="'is-' + loadStatusLevel" role="status" aria-live="polite">[[ loadStatusMessage ]]</p>
@@ -107,7 +95,7 @@
               </button>
               <label class="checkbox-row query-refresh-toggle" for="refresh">
                 <input id="refresh" type="checkbox" v-model="refreshBeforeQuery" />
-                Refresh data from PetScan before running query
+                Refresh data from Quarry before running query
               </label>
               <button
                 type="button"
@@ -121,7 +109,7 @@
 
             <details ref="structureWizardDetails" class="structure-collapsible" open>
               <summary>
-                <span class="summary-title">Select fields to include in the SPARQL query from loaded PetScan data (psid [[ loadedPsid || psid ]]).</span>
+                <span class="summary-title">Select fields to include in the SPARQL query from loaded Quarry data (query id [[ loadedQuarryId || quarryId ]]).</span>
                 <span class="summary-controls">
                   <span class="help" v-if="canShowStructure">([[ selectedQueryFieldKeys.length ]] selected)</span>
                   <span class="collapsible-hint">Collapse/expand</span>
@@ -177,7 +165,7 @@
               </div>
 
               <div class="structure-inline-body" v-else>
-                <p class="help">No loaded data structure available for the current psid.</p>
+                <p class="help">No loaded data structure available for the current Quarry query.</p>
               </div>
             </details>
           </section>
@@ -242,9 +230,9 @@
                       target="_blank"
                       rel="noopener noreferrer"
                     >
-                      [[ formatCell(row[v]) ]]
+                      [[ formatCell(v, row[v]) ]]
                     </a>
-                    <span v-else>[[ formatCell(row[v]) ]]</span>
+                    <span v-else>[[ formatCell(v, row[v]) ]]</span>
                   </td>
                 </tr>
               </tbody>
@@ -263,9 +251,9 @@
                       target="_blank"
                       rel="noopener noreferrer"
                     >
-                      [[ formatCell(row[v]) ]]
+                      [[ formatCell(v, row[v]) ]]
                     </a>
-                    <span v-else>[[ formatCell(row[v]) ]]</span>
+                    <span v-else>[[ formatCell(v, row[v]) ]]</span>
                   </div>
                 </div>
               </div>
@@ -293,7 +281,7 @@
         </p>
         <p>
           For federated queries, use path parameters in the endpoint URL, for example
-          <code>/petscan/sparql/psid=43641756&amp;categories=Turku</code>.
+          <code>/quarry/sparql/quarry_id=103479&amp;limit=10</code>.
         </p>
       </section>
 
@@ -335,6 +323,6 @@
     {% endverbatim %}
 
     <script src="{% static 'vendor/vue.global.prod.min.js' %}?v=3.5.22"></script>
-    <script type="module" src="{% static 'js/app.js' %}?v=20260321-01"></script>
+    <script type="module" src="{% static 'js/quarry_app.js' %}?v=20260321-01"></script>
   </body>
 </html>

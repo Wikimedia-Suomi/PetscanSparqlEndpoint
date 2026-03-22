@@ -108,6 +108,32 @@ def test_playwright_smoke_can_load_structure(page: Page, live_server: Any) -> No
     expect(page.locator("details table")).to_contain_text("namespace")
 
 
+def test_playwright_smoke_hides_source_links_when_psid_is_empty(page: Page, live_server: Any) -> None:
+    goto_app(page, live_server)
+
+    page.get_by_label("PetScan ID (psid)").fill("")
+
+    expect(page.get_by_role("link", name="Open PetScan query")).to_have_count(0)
+    expect(page.get_by_role("link", name="Open PetScan JSON")).to_have_count(0)
+
+
+def test_playwright_smoke_load_data_always_requests_refresh(page: Page, live_server: Any) -> None:
+    seen_urls = []
+
+    def _fulfill_structure(route: Route) -> None:
+        seen_urls.append(route.request.url)
+        _fulfill_json(route, STRUCTURE_RESPONSE)
+
+    page.route("**/petscan/api/structure**", _fulfill_structure)
+
+    goto_app(page, live_server)
+    page.get_by_role("button", name="Load data").click()
+
+    expect(page.locator(".status.is-success")).to_contain_text("Data structure loaded")
+    assert seen_urls
+    assert "refresh=1" in seen_urls[0]
+
+
 def test_playwright_smoke_can_run_query_and_render_results(page: Page, live_server: Any) -> None:
     _stub_structure_success(page)
     _stub_select_query_success(page)

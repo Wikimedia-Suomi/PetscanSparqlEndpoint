@@ -1,7 +1,9 @@
 from django.urls import include, path
-from django.views.generic import RedirectView
+
+from . import views
 
 urlpatterns = [
-    path("", RedirectView.as_view(url="/petscan/", permanent=False), name="root_redirect"),
+    path("", views.home, name="root_home"),
     path("petscan/", include("petscan.urls")),
+    path("quarry/", include("quarry.urls")),
 ]
