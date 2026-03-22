@@ -41,7 +41,7 @@ class ApiViewTests(SimpleTestCase):
         response = self.client.get("/")
         self.assertEqual(response.status_code, 200)
         self.assertContains(response, "SPARQL Bridge")
-        self.assertContains(response, '<h1><a href="/">SPARQL Bridge</a></h1>', html=True)
+        self.assertContains(response, "<h1>SPARQL Bridge</h1>", html=True)
         self.assertContains(response, "PetScan")
         self.assertContains(response, "Quarry")
         self.assertContains(response, 'href="/petscan/"', html=False)
@@ -51,7 +51,11 @@ class ApiViewTests(SimpleTestCase):
         response = self.client.get("/petscan/")
 
         self.assertEqual(response.status_code, 200)
-        self.assertContains(response, '<h1><a href="/">SPARQL Bridge</a> / PetScan</h1>', html=True)
+        self.assertContains(response, 'class="breadcrumb-nav page-breadcrumb"', html=False)
+        self.assertContains(response, 'aria-label="Breadcrumb"', html=False)
+        self.assertContains(response, '<li><a href="/">All data sources</a></li>', html=True)
+        self.assertContains(response, '<li aria-current="page">PetScan</li>', html=True)
+        self.assertContains(response, "<h1>PetScan SPARQL endpoint</h1>", html=True)
 
     @patch("petscan.views.petscan_service.ensure_loaded")
     def test_structure_endpoint_returns_meta(self, ensure_loaded):

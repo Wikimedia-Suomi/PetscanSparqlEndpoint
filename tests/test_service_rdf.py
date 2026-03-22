@@ -17,7 +17,7 @@ class ServiceRdfTests(ServiceTestCase):
     def _field_map(summary: Mapping[str, Any]) -> Dict[str, Dict[str, Any]]:
         return {field["source_key"]: field for field in summary["fields"]}
 
-    def test_structure_summary_contains_title_field_and_predicate(self):
+    def test_structure_summary_contains_title_field_and_predicate(self) -> None:
         payload = self._load_payload(PRIMARY_EXAMPLE_FILE)
         records = source.extract_records(payload)
 
@@ -39,7 +39,7 @@ class ServiceRdfTests(ServiceTestCase):
         self.assertIn("gil_link", field_map)
         self.assertIn("gil_link_count", field_map)
 
-    def test_gil_field_emits_link_count_scalar_field(self):
+    def test_gil_field_emits_link_count_scalar_field(self) -> None:
         payload = self._load_payload(PRIMARY_EXAMPLE_FILE)
         records = source.extract_records(payload)
 
@@ -53,7 +53,7 @@ class ServiceRdfTests(ServiceTestCase):
         self.assertEqual(len(parsed_counts), 1)
         self.assertEqual(parsed_counts[0], len(links.iter_gil_link_uris(first_row)))
 
-    def test_iter_scalar_fields_skips_irrelevant_metadata_mapping(self):
+    def test_iter_scalar_fields_skips_irrelevant_metadata_mapping(self) -> None:
         fields = list(
             rdf.iter_scalar_fields(
                 {
@@ -69,7 +69,7 @@ class ServiceRdfTests(ServiceTestCase):
 
         self.assertEqual(fields, [("id", 1), ("title", "Example")])
 
-    def test_item_subject_for_commons_file_uses_commons_entity_iri(self):
+    def test_item_subject_for_commons_file_uses_commons_entity_iri(self) -> None:
         record = {
             "id": 574781,
             "namespace": 6,
@@ -80,7 +80,7 @@ class ServiceRdfTests(ServiceTestCase):
 
         self.assertEqual(subject.value, "https://commons.wikimedia.org/entity/M574781")
 
-    def test_item_subject_for_explicit_commons_host_file_page_uses_commons_entity_iri(self):
+    def test_item_subject_for_explicit_commons_host_file_page_uses_commons_entity_iri(self) -> None:
         record = {
             "pageid": "98765",
             "wiki": "commons.wikimedia.org",
@@ -92,7 +92,7 @@ class ServiceRdfTests(ServiceTestCase):
 
         self.assertEqual(subject.value, "https://commons.wikimedia.org/entity/M98765")
 
-    def test_item_subject_for_non_commons_record_uses_local_psid_item_iri(self):
+    def test_item_subject_for_non_commons_record_uses_local_psid_item_iri(self) -> None:
         record = {
             "id": 42,
             "namespace": 0,
@@ -103,7 +103,7 @@ class ServiceRdfTests(ServiceTestCase):
 
         self.assertEqual(subject.value, "https://petscan.wmcloud.org/psid/43641756/item/42")
 
-    def test_item_subject_for_wikidata_id_uses_wikidata_entity_iri(self):
+    def test_item_subject_for_wikidata_id_uses_wikidata_entity_iri(self) -> None:
         record = {
             "id": 574781,
             "namespace": 6,
@@ -115,7 +115,7 @@ class ServiceRdfTests(ServiceTestCase):
 
         self.assertEqual(subject.value, "https://commons.wikimedia.org/entity/M574781")
 
-    def test_item_subject_for_non_commons_wikidata_id_uses_wikidata_entity_iri(self):
+    def test_item_subject_for_non_commons_wikidata_id_uses_wikidata_entity_iri(self) -> None:
         record = {
             "id": 123,
             "namespace": 0,
@@ -127,7 +127,7 @@ class ServiceRdfTests(ServiceTestCase):
 
         self.assertEqual(subject.value, "http://www.wikidata.org/entity/Q378619")
 
-    def test_item_subject_does_not_use_commons_entity_for_non_file_commons_page(self):
+    def test_item_subject_does_not_use_commons_entity_for_non_file_commons_page(self) -> None:
         record = {
             "id": 321,
             "wiki": "commonswiki",
@@ -139,7 +139,7 @@ class ServiceRdfTests(ServiceTestCase):
 
         self.assertEqual(subject.value, "https://petscan.wmcloud.org/psid/43641756/item/321")
 
-    def test_item_subject_does_not_use_commons_entity_for_non_commons_file_page(self):
+    def test_item_subject_does_not_use_commons_entity_for_non_commons_file_page(self) -> None:
         record = {
             "id": 777,
             "wiki": "enwiki",
@@ -152,7 +152,7 @@ class ServiceRdfTests(ServiceTestCase):
 
         self.assertEqual(subject.value, "http://www.wikidata.org/entity/Q42")
 
-    def test_thumbnail_url_normalizes_spaces_and_preserves_safe_characters(self):
+    def test_thumbnail_url_normalizes_spaces_and_preserves_safe_characters(self) -> None:
         thumbnail_url = rdf._thumbnail_url("Example file(name),v1.jpg")
 
         self.assertEqual(
@@ -160,32 +160,32 @@ class ServiceRdfTests(ServiceTestCase):
             "https://commons.wikimedia.org/wiki/Special:FilePath/Example_file(name),v1.jpg?width=320",
         )
 
-    def test_parse_coordinates_accepts_semicolon_separator(self):
+    def test_parse_coordinates_accepts_semicolon_separator(self) -> None:
         self.assertEqual(
             rdf._parse_coordinates("60.45138889;22.26666667"),
             (60.45138889, 22.26666667),
         )
 
-    def test_parse_coordinates_rejects_out_of_bounds_values(self):
+    def test_parse_coordinates_rejects_out_of_bounds_values(self) -> None:
         self.assertIsNone(rdf._parse_coordinates("95,22.2"))
         self.assertIsNone(rdf._parse_coordinates("60.4,190"))
 
-    def test_normalize_datetime_xsd_supports_compact_timestamp(self):
+    def test_normalize_datetime_xsd_supports_compact_timestamp(self) -> None:
         self.assertEqual(
             rdf.normalize_datetime_xsd("20260315100000"),
             "2026-03-15T10:00:00Z",
         )
 
-    def test_normalize_datetime_xsd_converts_offset_to_utc(self):
+    def test_normalize_datetime_xsd_converts_offset_to_utc(self) -> None:
         self.assertEqual(
             rdf.normalize_datetime_xsd("2026-03-15T12:00:00+02:00"),
             "2026-03-15T10:00:00Z",
         )
 
-    def test_normalize_datetime_xsd_rejects_invalid_value(self):
+    def test_normalize_datetime_xsd_rejects_invalid_value(self) -> None:
         self.assertIsNone(rdf.normalize_datetime_xsd("not-a-datetime"))
 
-    def test_iter_typed_scalar_fields_normalizes_datetime_semantics_once(self):
+    def test_iter_typed_scalar_fields_normalizes_datetime_semantics_once(self) -> None:
         fields = list(
             rdf.iter_typed_scalar_fields(
                 {
@@ -200,7 +200,7 @@ class ServiceRdfTests(ServiceTestCase):
         self.assertIn(("img_timestamp", "2026-03-15T12:34:56Z", "xsd:dateTime"), fields)
         self.assertIn(("touched", "2026-03-15T10:35:30Z", "xsd:dateTime"), fields)
 
-    def test_append_scalar_field_quads_uses_default_graph(self):
+    def test_append_scalar_field_quads_uses_default_graph(self) -> None:
         if rdf.NamedNode is None:
             self.skipTest("pyoxigraph is not installed")
 
@@ -217,7 +217,7 @@ class ServiceRdfTests(ServiceTestCase):
         self.assertEqual(len(quad_buffer), 2)
         self.assertTrue(all(str(quad.graph_name) == "DEFAULT" for quad in quad_buffer))
 
-    def test_append_scalar_field_quads_does_not_coerce_stringified_integer_field(self):
+    def test_append_scalar_field_quads_does_not_coerce_stringified_integer_field(self) -> None:
         if rdf.NamedNode is None:
             self.skipTest("pyoxigraph is not installed")
 
@@ -237,7 +237,7 @@ class ServiceRdfTests(ServiceTestCase):
             "http://www.w3.org/2001/XMLSchema#string",
         )
 
-    def test_iter_typed_gil_link_fields_normalizes_enrichment_semantics(self):
+    def test_iter_typed_gil_link_fields_normalizes_enrichment_semantics(self) -> None:
         fields = list(
             rdf.iter_typed_gil_link_fields(
                 "https://en.wikipedia.org/wiki/Federalist_No._42",
@@ -264,7 +264,7 @@ class ServiceRdfTests(ServiceTestCase):
             fields,
         )
 
-    def test_structure_accumulator_accepts_compact_row_field_kind_values(self):
+    def test_structure_accumulator_accepts_compact_row_field_kind_values(self) -> None:
         accumulator = rdf.StructureAccumulator()
         accumulator.add_row_field_kinds(
             {
@@ -279,7 +279,7 @@ class ServiceRdfTests(ServiceTestCase):
         self.assertEqual(field_map["title"]["observed_types"], ["xsd:string"])
         self.assertEqual(field_map["mixed"]["observed_types"], ["xsd:integer", "xsd:string"])
 
-    def test_second_example_parses_qid_thumbnail_and_coordinates(self):
+    def test_second_example_parses_qid_thumbnail_and_coordinates(self) -> None:
         payload = self._load_payload(SECONDARY_EXAMPLE_FILE)
         records = source.extract_records(payload)
 
@@ -308,7 +308,7 @@ class ServiceRdfTests(ServiceTestCase):
         self.assertAlmostEqual(fields_by_key["coordinate_lat"][0], 60.45138889)
         self.assertAlmostEqual(fields_by_key["coordinate_lon"][0], 22.26666667)
 
-    def test_second_example_structure_summary_includes_derived_fields(self):
+    def test_second_example_structure_summary_includes_derived_fields(self) -> None:
         payload = self._load_payload(SECONDARY_EXAMPLE_FILE)
         records = source.extract_records(payload)
         summary = rdf.summarize_structure(records)
@@ -320,7 +320,7 @@ class ServiceRdfTests(ServiceTestCase):
         self.assertIn("coordinate_lat", field_map)
         self.assertIn("coordinate_lon", field_map)
 
-    def test_summary_includes_gil_link_relation_fields(self):
+    def test_summary_includes_gil_link_relation_fields(self) -> None:
         record = {"gil": "enwiki:0:Federalist_No._42"}
         gil_map = {
             "https://en.wikipedia.org/wiki/Federalist_No._42": {
@@ -340,7 +340,7 @@ class ServiceRdfTests(ServiceTestCase):
         self.assertEqual(field_map["gil_link_page_len"]["primary_type"], "xsd:integer")
         self.assertEqual(field_map["gil_link_rev_timestamp"]["primary_type"], "xsd:dateTime")
 
-    def test_gil_wikidata_fields_are_emitted_when_mapping_exists(self):
+    def test_gil_wikidata_fields_are_emitted_when_mapping_exists(self) -> None:
         record = {"gil": "enwiki:0:Albert_Einstein|dewiki:0:Berlin"}
         gil_map = {
             "https://en.wikipedia.org/wiki/Albert_Einstein": {
@@ -359,7 +359,7 @@ class ServiceRdfTests(ServiceTestCase):
             ],
         )
 
-    def test_iter_scalar_fields_handles_metadata_and_list_edge_cases(self):
+    def test_iter_scalar_fields_handles_metadata_and_list_edge_cases(self) -> None:
         record = {
             "title": "Example",
             "tags": ["  first  ", "", None, "second", {"skip": True}, 3],
@@ -377,7 +377,7 @@ class ServiceRdfTests(ServiceTestCase):
         self.assertFalse(any(key == "coordinates" for key, _value in fields))
         self.assertFalse(any(key == "other" for key, _value in fields))
 
-    def test_iter_scalar_fields_uses_explicit_gil_links_for_link_count(self):
+    def test_iter_scalar_fields_uses_explicit_gil_links_for_link_count(self) -> None:
         record = {"gil": "enwiki:0:Albert_Einstein|dewiki:0:Berlin"}
 
         fields = list(
@@ -390,7 +390,7 @@ class ServiceRdfTests(ServiceTestCase):
         self.assertIn(("gil", "enwiki:0:Albert_Einstein|dewiki:0:Berlin"), fields)
         self.assertIn(("gil_link_count", 3), fields)
 
-    def test_iter_scalar_fields_emits_thumbnail_and_coordinates_from_metadata(self):
+    def test_iter_scalar_fields_emits_thumbnail_and_coordinates_from_metadata(self) -> None:
         record = {
             "metadata": {
                 "image": "Turku postcard 2013.png",

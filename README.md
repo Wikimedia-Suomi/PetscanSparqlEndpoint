@@ -52,6 +52,21 @@ export OXIGRAPH_BASE_DIR="$PWD/data/oxigraph"
 
 On macOS, the smoke tests try to use an installed Google Chrome by default.
 
+### Run browser accessibility tests
+
+```bash
+source .venv/bin/activate
+export DJANGO_SECRET_KEY='dev-only-change-me'
+export OXIGRAPH_BASE_DIR="$PWD/data/oxigraph"
+# If you do not have a local Chrome/Chromium available, install one Playwright browser once:
+# python -m playwright install chromium
+./scripts/run_a11y_tests.sh
+```
+
+These tests use `axe-playwright-python`, so accessibility scans run fully from the Python virtual
+environment without requiring `node` or `npm`. The default target set is
+`wcag2a + wcag2aa + wcag21a + wcag21aa + wcag22aa + best-practice + wcag2aaa`.
+
 ### Run JavaScript helper tests
 
 ```bash
@@ -65,7 +80,7 @@ export OXIGRAPH_BASE_DIR="$PWD/data/oxigraph"
 
 This helper suite executes pure functions from `static/js/app_logic.js` in a real browser via Playwright Python, so no `node` or `npm` installation is required.
 
-### Run browser E2E tests against live PetScan
+### Run browser E2E tests against live PetScan and Quarry
 
 ```bash
 source .venv/bin/activate
@@ -74,13 +89,15 @@ export OXIGRAPH_BASE_DIR="$PWD/data/oxigraph"
 # Optional overrides:
 # export PETSCAN_E2E_PSID=43641756
 # export PETSCAN_E2E_OUTPUT_LIMIT=5
+# export QUARRY_E2E_QUERY_ID=103479
+# export QUARRY_E2E_LIMIT=5
 # export PLAYWRIGHT_DEFAULT_TIMEOUT_MS=60000
 ./scripts/run_e2e_tests.sh
 ```
 
 This E2E script keeps its own temporary Oxigraph store under `OXIGRAPH_BASE_DIR`, so the initial
 load is not satisfied from a previous cached dataset. Unlike the smoke tests, it uses real network
-requests to PetScan and is intentionally kept out of the default `run_tests.sh` path.
+requests to PetScan and Quarry and is intentionally kept out of the default `run_tests.sh` path.
 
 ### Run app
 

@@ -70,7 +70,13 @@ def _fulfill_json(route: Route, payload: Dict[str, Any], status: int = 200) -> N
 
 def _goto_quarry_app(page: Page, live_server: Any) -> None:
     page.goto("{}/quarry/".format(live_server.url), wait_until="domcontentloaded")
-    expect(page.get_by_role("heading", name="SPARQL Bridge / Quarry")).to_be_visible()
+    expect(page.get_by_role("heading", name="Quarry SPARQL endpoint")).to_be_visible()
+
+
+def _load_quarry_structure_successfully(page: Page, live_server: Any) -> None:
+    _goto_quarry_app(page, live_server)
+    page.get_by_role("button", name="Load data").click()
+    expect(page.locator(".status.is-success")).to_contain_text("Quarry data loaded")
 
 
 def _stub_quarry_select_query_success(page: Page) -> None:
@@ -123,6 +129,25 @@ def test_playwright_quarry_smoke_can_load_structure_and_show_links(page: Page, l
     expect(page.locator("details table")).to_contain_text("rc_title")
 
 
+def test_playwright_quarry_smoke_can_toggle_structure_details(page: Page, live_server: Any) -> None:
+    page.route("**/quarry/api/structure**", lambda route: _fulfill_json(route, QUARRY_STRUCTURE_RESPONSE))
+
+    _load_quarry_structure_successfully(page, live_server)
+
+    details = page.locator("details.structure-collapsible")
+    summary = details.locator("summary")
+
+    expect(details).to_have_attribute("open", "")
+    expect(page.locator("details table")).to_contain_text("rc_title")
+
+    summary.click()
+    expect(details).not_to_have_attribute("open", "")
+
+    summary.click()
+    expect(details).to_have_attribute("open", "")
+    expect(page.locator("details table")).to_contain_text("rc_namespace")
+
+
 def test_playwright_quarry_smoke_load_data_always_requests_refresh(page: Page, live_server: Any) -> None:
     seen_urls = []
 
@@ -144,8 +169,7 @@ def test_playwright_quarry_smoke_renders_quarry_row_links_with_short_text(page: 
     page.route("**/quarry/api/structure**", lambda route: _fulfill_json(route, QUARRY_STRUCTURE_RESPONSE))
     _stub_quarry_select_query_success(page)
 
-    _goto_quarry_app(page, live_server)
-    page.get_by_role("button", name="Load data").click()
+    _load_quarry_structure_successfully(page, live_server)
     page.get_by_role("button", name="Run query").click()
 
     expect(page.locator(".status-query.is-success")).to_contain_text("Query completed")

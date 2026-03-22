@@ -78,4 +78,14 @@ def managed_page(default_timeout_ms: int = 15000, suite_label: str = "Playwright
 
 def goto_app(page: Page, live_server: Any) -> None:
     page.goto("{}/petscan/".format(live_server.url), wait_until="domcontentloaded")
-    expect(page.get_by_role("heading", name="SPARQL Bridge / PetScan")).to_be_visible()
+    expect(page.get_by_role("heading", name="PetScan SPARQL endpoint")).to_be_visible()
+
+
+def goto_home(page: Page, live_server: Any) -> None:
+    page.goto("{}/".format(live_server.url), wait_until="domcontentloaded")
+    expect(page.get_by_role("heading", name="SPARQL Bridge")).to_be_visible()
+
+
+def goto_quarry_app(page: Page, live_server: Any) -> None:
+    page.goto("{}/quarry/".format(live_server.url), wait_until="domcontentloaded")
+    expect(page.get_by_role("heading", name="Quarry SPARQL endpoint")).to_be_visible()

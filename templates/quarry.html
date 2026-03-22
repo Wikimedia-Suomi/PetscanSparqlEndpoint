@@ -14,8 +14,15 @@
 
     {% verbatim %}
     <main id="app" class="page" v-cloak>
-      <header class="hero" role="banner">
-        <h1><a href="/">SPARQL Bridge</a> / Quarry</h1>
+      <nav class="breadcrumb-nav page-breadcrumb" aria-label="Breadcrumb">
+        <ol class="breadcrumb-list">
+          <li><a href="/">All data sources</a></li>
+          <li aria-current="page">Quarry</li>
+        </ol>
+      </nav>
+
+      <header class="hero">
+        <h1>Quarry SPARQL endpoint</h1>
       </header>
 
       <section class="card" aria-labelledby="query-heading">

@@ -4,12 +4,13 @@
   --surface-2: #eef2f5;
   --text: #0d1b22;
   --muted: #495863;
+  --muted-strong: #3d4d57;
   --accent: #005f73;
   --accent-2: #0a9396;
   --border: #c8d3da;
   --danger: #b42318;
   --danger-surface: #fdecea;
-  --success: #146c43;
+  --success: #0f5a37;
   --success-surface: #e8f5ee;
   --info-surface: #ecf5f8;
 }
@@ -49,17 +50,61 @@ body {
   font-size: clamp(1.5rem, 4vw, 2rem);
 }
 
-.hero h1 a,
-.hero h1 a:visited,
-.hero h1 a:active {
+.hero a,
+.hero a:visited,
+.hero a:active {
   color: inherit;
   text-decoration: none;
 }
 
-.hero h1 a:hover,
-.hero h1 a:focus-visible {
+.hero a:hover,
+.hero a:focus-visible {
   color: inherit;
   text-decoration: underline;
+}
+
+.breadcrumb-nav {
+  margin-bottom: 0.55rem;
+}
+
+.page-breadcrumb {
+  margin-bottom: 0;
+  color: var(--muted);
+}
+
+.page-breadcrumb a,
+.page-breadcrumb a:visited,
+.page-breadcrumb a:active {
+  color: var(--accent);
+  text-decoration: none;
+}
+
+.page-breadcrumb a:hover,
+.page-breadcrumb a:focus-visible {
+  color: var(--accent);
+  text-decoration: underline;
+}
+
+.breadcrumb-list {
+  list-style: none;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  align-items: center;
+  margin: 0;
+  padding: 0;
+  font-size: 0.95rem;
+}
+
+.breadcrumb-list li {
+  display: inline-flex;
+  align-items: center;
+}
+
+.breadcrumb-list li + li::before {
+  content: "/";
+  margin-right: 0.4rem;
+  opacity: 0.8;
 }
 
 .hero p {
@@ -315,7 +360,7 @@ button:disabled {
 
 .status {
   min-height: 1.5rem;
-  color: var(--muted);
+  color: var(--muted-strong);
   background: var(--info-surface);
   border: 1px solid color-mix(in srgb, var(--border) 75%, white);
   border-left: 4px solid var(--accent-2);

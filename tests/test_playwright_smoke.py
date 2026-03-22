@@ -148,6 +148,25 @@ def test_playwright_smoke_can_run_query_and_render_results(page: Page, live_serv
     expect(page.get_by_role("link", name="w:fi:Turku")).to_be_visible()
 
 
+def test_playwright_smoke_can_toggle_structure_details(page: Page, live_server: Any) -> None:
+    _stub_structure_success(page)
+
+    _load_structure_successfully(page, live_server)
+
+    details = page.locator("details.structure-collapsible")
+    summary = details.locator("summary")
+
+    expect(details).to_have_attribute("open", "")
+    expect(page.locator("details table")).to_contain_text("title")
+
+    summary.click()
+    expect(details).not_to_have_attribute("open", "")
+
+    summary.click()
+    expect(details).to_have_attribute("open", "")
+    expect(page.locator("details table")).to_contain_text("namespace")
+
+
 def test_playwright_smoke_surfaces_load_errors(page: Page, live_server: Any) -> None:
     page.route(
         "**/petscan/api/structure**",
