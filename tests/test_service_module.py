@@ -304,5 +304,7 @@ class ServiceModuleTests(ServiceTestCase):
         }
         store_class_mock.read_only.side_effect = OSError("LOCK: No locks available")
 
-        with self.assertRaisesMessage(service.PetscanServiceError, "Failed to open Oxigraph store:"):
+        with self.assertRaisesMessage(service.PetscanServiceError, "Failed to open Oxigraph store:") as captured:
             service.execute_query(psid, query, refresh=False)
+
+        self.assertEqual(captured.exception.public_message, "Local data store is unavailable.")

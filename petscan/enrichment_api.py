@@ -7,6 +7,8 @@ from urllib.request import Request, urlopen
 from .normalization import normalize_page_title, normalize_qid
 from .service_errors import GilLinkEnrichmentError
 
+_UPSTREAM_ENRICHMENT_PUBLIC_MESSAGE = "Failed to enrich linked pages from an upstream service."
+
 
 def _resolve_title_alias(title: str, alias_map: Mapping[str, str]) -> str:
     current = title
@@ -81,7 +83,8 @@ def fetch_wikibase_items_for_site_api(
             lookup_stats["api_calls"] = float(lookup_stats.get("api_calls", 0.0)) + 1.0
             lookup_stats["api_ms_total"] = float(lookup_stats.get("api_ms_total", 0.0)) + elapsed_ms
         raise GilLinkEnrichmentError(
-            "Wikibase enrichment API request failed for {}: {}".format(api_url, exc)
+            "Wikibase enrichment API request failed for {}: {}".format(api_url, exc),
+            public_message=_UPSTREAM_ENRICHMENT_PUBLIC_MESSAGE,
         ) from exc
 
     elapsed_ms = (perf_counter() - started_at) * 1000.0

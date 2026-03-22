@@ -180,3 +180,15 @@ class ServiceSourceTests(ServiceTestCase):
             "Unexpected PetScan JSON format (expected object).",
         ):
             source.fetch_petscan_json(PRIMARY_EXAMPLE_PSID)
+
+    @patch("petscan.service_source.urlopen")
+    def test_fetch_petscan_json_sets_public_message_for_transport_errors(self, urlopen_mock):
+        urlopen_mock.side_effect = OSError("Temporary failure in name resolution")
+
+        with self.assertRaisesMessage(source.PetscanServiceError, "Failed to fetch PetScan data:") as captured:
+            source.fetch_petscan_json(PRIMARY_EXAMPLE_PSID)
+
+        self.assertEqual(
+            captured.exception.public_message,
+            "Failed to load PetScan data from the upstream service.",
+        )

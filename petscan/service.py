@@ -30,6 +30,7 @@ _CLIENT_QUERY_ERROR_HINTS = (
     "parse error",
     "syntax error",
 )
+_STORE_UNAVAILABLE_PUBLIC_MESSAGE = "Local data store is unavailable."
 
 
 def _ensure_oxigraph() -> None:
@@ -47,7 +48,10 @@ def _open_query_store(psid: int) -> Any:
     except AttributeError:
         return Store(path)
     except OSError as exc:
-        raise PetscanServiceError("Failed to open Oxigraph store: {}".format(exc)) from exc
+        raise PetscanServiceError(
+            "Failed to open Oxigraph store: {}".format(exc),
+            public_message=_STORE_UNAVAILABLE_PUBLIC_MESSAGE,
+        ) from exc
 
 
 def meta_has_matching_source_params(meta: Mapping[str, Any], petscan_params: Mapping[str, Any]) -> bool:

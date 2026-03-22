@@ -29,13 +29,18 @@ class EnrichmentApiTests(SimpleTestCase):
         with self.assertRaisesMessage(
             GilLinkEnrichmentError,
             "Wikibase enrichment API request failed",
-        ):
+        ) as captured:
             enrichment_api.fetch_wikibase_items_for_site_api(
                 "https://fi.wikipedia.org/w/api.php",
                 ["Turku"],
                 user_agent="test-agent",
                 timeout_seconds=5,
             )
+
+        self.assertEqual(
+            captured.exception.public_message,
+            "Failed to enrich linked pages from an upstream service.",
+        )
 
     @patch("petscan.enrichment_api.urlopen")
     def test_fetch_wikibase_items_raises_on_api_error_payload(self, urlopen_mock):

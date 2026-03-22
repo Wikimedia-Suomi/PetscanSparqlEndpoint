@@ -67,6 +67,14 @@ def _text_error(message: str, status: int = 400) -> HttpResponse:
     return HttpResponse(message, status=status, content_type="text/plain; charset=utf-8")
 
 
+def _public_service_error_message(exc: Exception, path: str) -> str:
+    public_message = getattr(exc, "public_message", None)
+    if isinstance(public_message, str) and public_message.strip():
+        logger.exception("Returning sanitized backend error response for %s", path)
+        return public_message
+    return str(exc)
+
+
 def _extract_forwarded_petscan_params(request: HttpRequest) -> Dict[str, List[str]]:
     forwarded = {}  # type: Dict[str, List[str]]
     for key in request.GET.keys():
@@ -177,7 +185,7 @@ def structure_endpoint(request: HttpRequest) -> JsonResponse:
     except ValueError as exc:
         return _json_error(str(exc), status=400)
     except petscan_service.PetscanServiceError as exc:
-        return _json_error(str(exc), status=502)
+        return _json_error(_public_service_error_message(exc, request.path), status=502)
 
     return JsonResponse({"psid": request_context.psid, "meta": meta})
 
@@ -210,7 +218,7 @@ def sparql_endpoint(request: HttpRequest, service_params: str) -> HttpResponse:
     except ValueError as exc:
         return _add_cors_headers(_text_error(str(exc), status=400))
     except petscan_service.PetscanServiceError as exc:
-        return _add_cors_headers(_text_error(str(exc), status=502))
+        return _add_cors_headers(_text_error(_public_service_error_message(exc, request.path), status=502))
 
     if execution["result_format"] == "sparql-json":
         body = json.dumps(execution["sparql_json"])  # SPARQL Results JSON format

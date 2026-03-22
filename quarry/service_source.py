@@ -34,6 +34,7 @@ _NON_ASCII_HEADER_CHAR_RE = re.compile(r"[^A-Za-z0-9_]")
 _HEADER_UNDERSCORE_RUN_RE = re.compile(r"_+")
 _DEFAULT_QUARRY_BASE_URL = "https://quarry.wmcloud.org"
 _EXAMPLES_DIR = Path(settings.BASE_DIR) / "data" / "examples"
+_QUARRY_FETCH_PUBLIC_MESSAGE = "Failed to load Quarry data from the upstream service."
 
 
 class _BundledQuarryExample(TypedDict):
@@ -128,7 +129,10 @@ def fetch_quarry_query_html(quarry_id: int) -> Tuple[str, str]:
         with urlopen(request, timeout=timeout) as response:  # nosec B310
             raw = response.read()
     except Exception as exc:
-        raise PetscanServiceError("Failed to fetch Quarry query page: {}".format(exc)) from exc
+        raise PetscanServiceError(
+            "Failed to fetch Quarry query page: {}".format(exc),
+            public_message=_QUARRY_FETCH_PUBLIC_MESSAGE,
+        ) from exc
 
     try:
         return raw.decode("utf-8"), source_url
@@ -216,7 +220,10 @@ def fetch_quarry_json(qrun_id: int) -> Tuple[Dict[str, Any], str]:
         with urlopen(request, timeout=timeout) as response:  # nosec B310
             raw = response.read()
     except Exception as exc:
-        raise PetscanServiceError("Failed to fetch Quarry JSON data: {}".format(exc)) from exc
+        raise PetscanServiceError(
+            "Failed to fetch Quarry JSON data: {}".format(exc),
+            public_message=_QUARRY_FETCH_PUBLIC_MESSAGE,
+        ) from exc
 
     try:
         payload = json.loads(raw.decode("utf-8"))

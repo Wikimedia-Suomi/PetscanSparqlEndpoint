@@ -33,6 +33,7 @@ _CLIENT_QUERY_ERROR_HINTS = (
     "syntax error",
 )
 _QUARRY_STORE_ID_OFFSET = 2_000_000_000
+_STORE_UNAVAILABLE_PUBLIC_MESSAGE = "Local data store is unavailable."
 
 
 def internal_store_id(quarry_id: int) -> int:
@@ -71,7 +72,10 @@ def _open_query_store(store_id: int) -> Any:
     except AttributeError:
         return Store(path)
     except OSError as exc:
-        raise PetscanServiceError("Failed to open Oxigraph store: {}".format(exc)) from exc
+        raise PetscanServiceError(
+            "Failed to open Oxigraph store: {}".format(exc),
+            public_message=_STORE_UNAVAILABLE_PUBLIC_MESSAGE,
+        ) from exc
 
 
 def _normalize_source_params(source_params: Mapping[str, Any]) -> Dict[str, Any]:

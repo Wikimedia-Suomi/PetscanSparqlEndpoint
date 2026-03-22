@@ -7,6 +7,7 @@ from typing import Any, Dict, List, MutableMapping, Optional, Sequence, Tuple, c
 from .normalization import normalize_page_title, normalize_qid
 from .service_errors import GilLinkEnrichmentError
 
+_REPLICA_ENRICHMENT_PUBLIC_MESSAGE = "Failed to enrich linked pages from the replica database."
 _pymysql_module: Optional[ModuleType]
 try:
     import pymysql as _pymysql_module
@@ -121,7 +122,8 @@ def fetch_wikibase_items_for_site_sql(
             lookup_stats["sql_calls"] = float(lookup_stats.get("sql_calls", 0.0)) + 1.0
             lookup_stats["sql_ms_total"] = float(lookup_stats.get("sql_ms_total", 0.0)) + elapsed_ms
         raise GilLinkEnrichmentError(
-            "Wikibase enrichment SQL query failed for site {}: {}".format(site, exc)
+            "Wikibase enrichment SQL query failed for site {}: {}".format(site, exc),
+            public_message=_REPLICA_ENRICHMENT_PUBLIC_MESSAGE,
         ) from exc
     finally:
         if connection is not None:

@@ -179,6 +179,21 @@ class QuarryServiceSourceTests(ServiceTestCase):
         self.assertEqual(dict(request.header_items())["User-agent"], service_source.HTTP_USER_AGENT)
 
     @patch("quarry.service_source.urlopen")
+    def test_fetch_quarry_json_sets_public_message_for_transport_errors(self, urlopen_mock: Any) -> None:
+        urlopen_mock.side_effect = OSError("Connection refused")
+
+        with self.assertRaisesMessage(
+            service_source.PetscanServiceError,
+            "Failed to fetch Quarry JSON data:",
+        ) as captured:
+            service_source.fetch_quarry_json(1084251)
+
+        self.assertEqual(
+            captured.exception.public_message,
+            "Failed to load Quarry data from the upstream service.",
+        )
+
+    @patch("quarry.service_source.urlopen")
     @patch("quarry.service_source._load_bundled_quarry_example_payload")
     @patch("quarry.service_source._bundled_quarry_example_for_qrun_id")
     def test_fetch_quarry_json_prefers_bundled_example_when_available(

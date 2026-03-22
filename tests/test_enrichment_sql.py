@@ -15,12 +15,17 @@ class EnrichmentSqlTests(SimpleTestCase):
         with self.assertRaisesMessage(
             GilLinkEnrichmentError,
             "Wikibase enrichment SQL query failed for site enwiki",
-        ):
+        ) as captured:
             enrichment_sql.fetch_wikibase_items_for_site_sql(
                 "enwiki",
                 [(0, "Albert_Einstein", "Albert_Einstein")],
                 timeout_seconds=5,
             )
+
+        self.assertEqual(
+            captured.exception.public_message,
+            "Failed to enrich linked pages from the replica database.",
+        )
 
     @patch("petscan.enrichment_sql.pymysql")
     def test_fetch_wikibase_items_allows_successful_empty_sql_response(self, pymysql_mock):

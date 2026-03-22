@@ -29,6 +29,7 @@ __all__ = [
     "fetch_petscan_json",
     "normalize_petscan_params",
 ]
+_PETSCAN_FETCH_PUBLIC_MESSAGE = "Failed to load PetScan data from the upstream service."
 
 
 def normalize_petscan_params(params: Optional[Mapping[str, Any]]) -> Dict[str, List[str]]:
@@ -93,7 +94,10 @@ def fetch_petscan_json(
         with urlopen(request, timeout=timeout) as response:  # nosec B310
             raw = response.read()
     except Exception as exc:
-        raise PetscanServiceError("Failed to fetch PetScan data: {}".format(exc)) from exc
+        raise PetscanServiceError(
+            "Failed to fetch PetScan data: {}".format(exc),
+            public_message=_PETSCAN_FETCH_PUBLIC_MESSAGE,
+        ) from exc
 
     try:
         payload = json.loads(raw.decode("utf-8"))

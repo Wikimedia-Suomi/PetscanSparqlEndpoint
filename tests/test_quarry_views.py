@@ -5,6 +5,8 @@ from unittest.mock import patch
 from django.http import HttpResponse
 from django.test import SimpleTestCase
 
+from petscan.service_errors import PetscanServiceError
+
 QUARRY_API_STRUCTURE_PATH = "/quarry/api/structure"
 QUARRY_SPARQL_PATH = "/quarry/sparql/quarry_id=103479"
 
@@ -84,6 +86,22 @@ class QuarryApiViewTests(SimpleTestCase):
         self.assertEqual(response.status_code, 405)
         self.assertEqual(response.json()["error"], "Method not allowed. Use GET.")
 
+    @patch("quarry.views.quarry_service.ensure_loaded")
+    def test_structure_endpoint_sanitizes_service_errors_with_public_message(self, ensure_loaded: Any) -> None:
+        ensure_loaded.side_effect = PetscanServiceError(
+            "Failed to fetch Quarry JSON data: <urlopen error timed out>",
+            public_message="Failed to load Quarry data from the upstream service.",
+        )
+
+        with self.assertLogs("quarry.views", level="ERROR") as captured_logs:
+            response = self.client.get(QUARRY_API_STRUCTURE_PATH, data={"quarry_id": 103479})
+
+        self.assertEqual(response.status_code, 502)
+        self.assertEqual(response.json()["error"], "Failed to load Quarry data from the upstream service.")
+        self.assertNotIn("timed out", response.content.decode("utf-8"))
+        self.assertTrue(any("Returning sanitized backend error response" in entry for entry in captured_logs.output))
+        self.assertTrue(any("Failed to fetch Quarry JSON data" in entry for entry in captured_logs.output))
+
     @patch("quarry.views.quarry_service.execute_query")
     def test_sparql_endpoint_returns_sparql_json(self, execute_query: Any) -> None:
         execute_query.return_value = self._ask_execution_result()
@@ -127,3 +145,19 @@ class QuarryApiViewTests(SimpleTestCase):
             "POST /quarry/sparql requires Content-Type: application/sparql-query or application/x-www-form-urlencoded.",
         )
         self.assertTrue(any("[sparql-content-type-debug]" in message for message in captured_logs.output))
+
+    @patch("quarry.views.quarry_service.execute_query")
+    def test_sparql_endpoint_sanitizes_service_errors_with_public_message(self, execute_query: Any) -> None:
+        execute_query.side_effect = PetscanServiceError(
+            "Failed to open Oxigraph store: [Errno 2] No such file or directory: '/srv/quarry/2000103479'",
+            public_message="Local data store is unavailable.",
+        )
+
+        with self.assertLogs("quarry.views", level="ERROR") as captured_logs:
+            response = self.client.get(QUARRY_SPARQL_PATH, data={"query": ASK_QUERY})
+
+        self.assertEqual(response.status_code, 502)
+        self.assertEqual(response.content.decode("utf-8"), "Local data store is unavailable.")
+        self.assertNotIn("/srv/quarry/2000103479", response.content.decode("utf-8"))
+        self.assertTrue(any("Returning sanitized backend error response" in entry for entry in captured_logs.output))
+        self.assertTrue(any("Failed to open Oxigraph store" in entry for entry in captured_logs.output))
