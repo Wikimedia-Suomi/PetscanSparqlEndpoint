@@ -25,72 +25,75 @@
         <h1>Quarry SPARQL endpoint</h1>
       </header>
 
-      <div class="source-info-panel">
-        <p class="help">
-          <a href="https://quarry.wmcloud.org" target="_blank" rel="noopener noreferrer">Quarry</a>
-          is a public querying interface for Wiki Replicas and ToolsDBs. SPARQL Bridge uses the
-          results of previously executed queries from Quarry as they were at the time of
-          execution
-          - <a href="https://meta.wikimedia.org/wiki/Research:Quarry" target="_blank" rel="noopener noreferrer">Quarry on Meta-Wiki</a>.
-        </p>
+      <div class="source-layout">
+        <section class="card" aria-labelledby="query-heading">
+          <h2 id="query-heading">Data Loading</h2>
+
+          <form class="query-form">
+            <label for="quarry-id">Quarry ID</label>
+            <input
+              id="quarry-id"
+              type="number"
+              inputmode="numeric"
+              min="1"
+              required
+              v-model.trim="quarryId"
+              aria-describedby="quarry-id-help"
+            />
+            <p id="quarry-id-help" class="help">
+              Example: 103479
+            </p>
+
+            <label for="quarry-limit">Load data limit</label>
+            <input
+              id="quarry-limit"
+              type="text"
+              inputmode="numeric"
+              spellcheck="false"
+              placeholder="10"
+              v-model.trim="quarryLimit"
+              aria-describedby="quarry-limit-help"
+            />
+            <p id="quarry-limit-help" class="help">
+              Default is <code>10</code>. Clear this field to load all rows from the Quarry JSON output into Oxigraph.
+            </p>
+
+            <div class="actions">
+              <button type="button" class="primary" :disabled="isBusy" @click="loadStructure">
+                Load data
+              </button>
+            </div>
+
+            <p class="help help-links" v-if="quarryId">
+              Source data:
+              <a :href="quarryQueryUrl" target="_blank" rel="noopener noreferrer">Open Quarry [[ quarryId ]]</a>
+              <template v-if="resolvedQrunId">
+                <span aria-hidden="true">|</span>
+                <a :href="quarryJsonUrl" target="_blank" rel="noopener noreferrer">Open Quarry [[ quarryId ]] JSON</a>
+              </template>
+            </p>
+            <p class="help" v-if="jsonResultCount !== null">
+              Loaded Quarry rows: <strong>[[ jsonResultCount ]]</strong>
+            </p>
+            <p class="help" v-else>
+              Quarry rows: not loaded for this query yet.
+            </p>
+          </form>
+
+          <p class="status" :class="'is-' + loadStatusLevel" role="status" aria-live="polite">[[ loadStatusMessage ]]</p>
+        </section>
+
+        <aside class="card source-info-card" aria-labelledby="quarry-info-heading">
+          <h2 id="quarry-info-heading">About Quarry</h2>
+          <p class="help">
+            <a href="https://quarry.wmcloud.org" target="_blank" rel="noopener noreferrer">Quarry</a>
+            is a public querying interface for Wiki Replicas and ToolsDBs. SPARQL Bridge uses the
+            results of previously executed queries from Quarry as they were at the time of
+            execution
+            - <a href="https://meta.wikimedia.org/wiki/Research:Quarry" target="_blank" rel="noopener noreferrer">Quarry on Meta-Wiki</a>.
+          </p>
+        </aside>
       </div>
-
-      <section class="card" aria-labelledby="query-heading">
-        <h2 id="query-heading">Data Loading</h2>
-
-        <form class="query-form">
-          <label for="quarry-id">Quarry ID</label>
-          <input
-            id="quarry-id"
-            type="number"
-            inputmode="numeric"
-            min="1"
-            required
-            v-model.trim="quarryId"
-            aria-describedby="quarry-id-help"
-          />
-          <p id="quarry-id-help" class="help">
-            Example: 103479
-          </p>
-
-          <label for="quarry-limit">Load data limit</label>
-          <input
-            id="quarry-limit"
-            type="text"
-            inputmode="numeric"
-            spellcheck="false"
-            placeholder="10"
-            v-model.trim="quarryLimit"
-            aria-describedby="quarry-limit-help"
-          />
-          <p id="quarry-limit-help" class="help">
-            Default is <code>10</code>. Clear this field to load all rows from the Quarry JSON output into Oxigraph.
-          </p>
-
-          <div class="actions">
-            <button type="button" class="primary" :disabled="isBusy" @click="loadStructure">
-              Load data
-            </button>
-          </div>
-
-          <p class="help help-links" v-if="quarryId">
-            Source data:
-            <a :href="quarryQueryUrl" target="_blank" rel="noopener noreferrer">Open Quarry [[ quarryId ]]</a>
-            <template v-if="resolvedQrunId">
-              <span aria-hidden="true">|</span>
-              <a :href="quarryJsonUrl" target="_blank" rel="noopener noreferrer">Open Quarry [[ quarryId ]] JSON</a>
-            </template>
-          </p>
-          <p class="help" v-if="jsonResultCount !== null">
-            Loaded Quarry rows: <strong>[[ jsonResultCount ]]</strong>
-          </p>
-          <p class="help" v-else>
-            Quarry rows: not loaded for this query yet.
-          </p>
-        </form>
-
-        <p class="status" :class="'is-' + loadStatusLevel" role="status" aria-live="polite">[[ loadStatusMessage ]]</p>
-      </section>
 
       <section class="card" aria-labelledby="sparql-heading" v-if="querySectionReady">
         <h2 id="sparql-heading">SPARQL Query</h2>

@@ -25,84 +25,87 @@
         <h1>PetScan SPARQL endpoint</h1>
       </header>
 
-      <div class="source-info-panel">
-        <p class="help">
-          <a href="https://petscan.wmcloud.org" target="_blank" rel="noopener noreferrer">PetScan</a>
-          is a tool that allows users to extract data, generate lists of Wikipedia (and related
-          projects) pages or Wikidata items that match certain criteria, such as all pages in a
-          certain category, or all items with a certain property
-          - <a href="https://meta.wikimedia.org/wiki/PetScan" target="_blank" rel="noopener noreferrer">PetScan on Meta-Wiki</a>.
-        </p>
+      <div class="source-layout">
+        <section class="card" aria-labelledby="query-heading">
+          <h2 id="query-heading">Data Loading</h2>
+
+          <form class="query-form">
+            <label for="psid">PetScan ID (psid)</label>
+            <input
+              id="psid"
+              type="number"
+              inputmode="numeric"
+              min="1"
+              required
+              v-model.trim="psid"
+              aria-describedby="psid-help"
+            />
+            <p id="psid-help" class="help">
+              Example: 43641756
+            </p>
+
+            <label for="petscan-extra-params">PetScan extra GET params</label>
+            <input
+              id="petscan-extra-params"
+              type="text"
+              inputmode="url"
+              spellcheck="false"
+              placeholder="categories=Turku&language=fi"
+              v-model.trim="petscanGetParams"
+              aria-describedby="petscan-extra-help"
+            />
+            <p id="petscan-extra-help" class="help">
+              Optional query-string pairs forwarded to PetScan (except reserved keys:
+              <code>psid</code>, <code>format</code>, <code>query</code>, <code>refresh</code>, <code>output_limit</code>).
+            </p>
+            <label for="petscan-limit">Load data limit</label>
+            <input
+              id="petscan-limit"
+              type="text"
+              inputmode="numeric"
+              spellcheck="false"
+              placeholder="10"
+              v-model.trim="petscanLimit"
+              aria-describedby="petscan-limit-help"
+            />
+            <p id="petscan-limit-help" class="help">
+              Default is <code>10</code>. Clear this field to omit <code>output_limit</code> from PetScan requests.
+            </p>
+            <div class="actions">
+              <button type="button" class="primary" :disabled="isBusy" @click="loadStructure">
+                Load data
+              </button>
+            </div>
+
+            <p class="help help-links" v-if="psid">
+              Source data:
+              <a :href="petscanQueryUrl" target="_blank" rel="noopener noreferrer">Open PetScan query</a>
+              <span aria-hidden="true">|</span>
+              <a :href="petscanJsonUrl" target="_blank" rel="noopener noreferrer">Open PetScan JSON</a>
+            </p>
+            <p class="help" v-if="jsonResultCount !== null">
+              PetScan JSON results: <strong>[[ jsonResultCount ]]</strong>
+            </p>
+            <p class="help" v-else>
+              PetScan JSON results: not loaded for this psid yet.
+            </p>
+
+          </form>
+
+          <p class="status" :class="'is-' + loadStatusLevel" role="status" aria-live="polite">[[ loadStatusMessage ]]</p>
+        </section>
+
+        <aside class="card source-info-card" aria-labelledby="petscan-info-heading">
+          <h2 id="petscan-info-heading">About PetScan</h2>
+          <p class="help">
+            <a href="https://petscan.wmcloud.org" target="_blank" rel="noopener noreferrer">PetScan</a>
+            is a tool that allows users to extract data, generate lists of Wikipedia (and related
+            projects) pages or Wikidata items that match certain criteria, such as all pages in a
+            certain category, or all items with a certain property
+            - <a href="https://meta.wikimedia.org/wiki/PetScan" target="_blank" rel="noopener noreferrer">PetScan on Meta-Wiki</a>.
+          </p>
+        </aside>
       </div>
-
-      <section class="card" aria-labelledby="query-heading">
-        <h2 id="query-heading">Data Loading</h2>
-
-        <form class="query-form">
-          <label for="psid">PetScan ID (psid)</label>
-          <input
-            id="psid"
-            type="number"
-            inputmode="numeric"
-            min="1"
-            required
-            v-model.trim="psid"
-            aria-describedby="psid-help"
-          />
-          <p id="psid-help" class="help">
-            Example: 43641756
-          </p>
-
-          <label for="petscan-extra-params">PetScan extra GET params</label>
-          <input
-            id="petscan-extra-params"
-            type="text"
-            inputmode="url"
-            spellcheck="false"
-            placeholder="categories=Turku&language=fi"
-            v-model.trim="petscanGetParams"
-            aria-describedby="petscan-extra-help"
-          />
-          <p id="petscan-extra-help" class="help">
-            Optional query-string pairs forwarded to PetScan (except reserved keys:
-            <code>psid</code>, <code>format</code>, <code>query</code>, <code>refresh</code>, <code>output_limit</code>).
-          </p>
-          <label for="petscan-limit">Load data limit</label>
-          <input
-            id="petscan-limit"
-            type="text"
-            inputmode="numeric"
-            spellcheck="false"
-            placeholder="10"
-            v-model.trim="petscanLimit"
-            aria-describedby="petscan-limit-help"
-          />
-          <p id="petscan-limit-help" class="help">
-            Default is <code>10</code>. Clear this field to omit <code>output_limit</code> from PetScan requests.
-          </p>
-          <div class="actions">
-            <button type="button" class="primary" :disabled="isBusy" @click="loadStructure">
-              Load data
-            </button>
-          </div>
-
-          <p class="help help-links" v-if="psid">
-            Source data:
-            <a :href="petscanQueryUrl" target="_blank" rel="noopener noreferrer">Open PetScan query</a>
-            <span aria-hidden="true">|</span>
-            <a :href="petscanJsonUrl" target="_blank" rel="noopener noreferrer">Open PetScan JSON</a>
-          </p>
-          <p class="help" v-if="jsonResultCount !== null">
-            PetScan JSON results: <strong>[[ jsonResultCount ]]</strong>
-          </p>
-          <p class="help" v-else>
-            PetScan JSON results: not loaded for this psid yet.
-          </p>
-
-        </form>
-
-        <p class="status" :class="'is-' + loadStatusLevel" role="status" aria-live="polite">[[ loadStatusMessage ]]</p>
-      </section>
 
       <section class="card" aria-labelledby="sparql-heading" v-if="querySectionReady">
         <h2 id="sparql-heading">SPARQL Query</h2>

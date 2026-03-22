@@ -62,7 +62,10 @@ class ApiViewTests(SimpleTestCase):
         self.assertContains(response, '<li><a href="/">All data sources</a></li>', html=True)
         self.assertContains(response, '<li aria-current="page">PetScan</li>', html=True)
         self.assertContains(response, "<h1>PetScan SPARQL endpoint</h1>", html=True)
-        self.assertContains(response, 'class="source-info-panel"', html=False)
+        self.assertContains(response, 'class="source-layout"', html=False)
+        self.assertContains(response, 'class="card source-info-card"', html=False)
+        self.assertContains(response, 'aria-labelledby="petscan-info-heading"', html=False)
+        self.assertContains(response, '<h2 id="petscan-info-heading">About PetScan</h2>', html=True)
         self.assertContains(
             response,
             "is a tool that allows users to extract data, generate lists of Wikipedia",

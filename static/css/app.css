@@ -116,13 +116,18 @@ body {
   margin-top: 0.15rem;
 }
 
-.source-info-panel {
-  padding: 0 1em;
-  margin-top: -0.35rem;
-  margin-bottom: -0.35rem;
+.source-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(16rem, 20em);
+  gap: 1rem;
+  align-items: start;
 }
 
-.source-info-panel p {
+.source-info-card {
+  min-width: 0;
+}
+
+.source-info-card p {
   margin: 0;
 }
 
@@ -712,5 +717,9 @@ th {
   .result-card-field {
     grid-template-columns: 1fr;
     gap: 0.2rem;
+  }
+
+  .source-layout {
+    grid-template-columns: 1fr;
   }
 }
