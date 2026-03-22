@@ -32,7 +32,7 @@ class QuarryApiViewTests(SimpleTestCase):
         response = self.client.get("/quarry/")
 
         self.assertEqual(response.status_code, 200)
-        self.assertContains(response, "Quarry SPARQL Endpoint")
+        self.assertContains(response, '<h1><a href="/">SPARQL Bridge</a> / Quarry</h1>', html=True)
         self.assertContains(response, "Open Quarry [[ quarryId ]]")
 
     @patch("quarry.views.quarry_service.ensure_loaded")

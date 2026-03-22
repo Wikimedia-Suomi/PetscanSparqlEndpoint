@@ -70,7 +70,7 @@ def _fulfill_json(route: Route, payload: Dict[str, Any], status: int = 200) -> N
 
 def _goto_quarry_app(page: Page, live_server: Any) -> None:
     page.goto("{}/quarry/".format(live_server.url), wait_until="domcontentloaded")
-    expect(page.get_by_role("heading", name="Quarry SPARQL Endpoint")).to_be_visible()
+    expect(page.get_by_role("heading", name="SPARQL Bridge / Quarry")).to_be_visible()
 
 
 def _stub_quarry_select_query_success(page: Page) -> None:

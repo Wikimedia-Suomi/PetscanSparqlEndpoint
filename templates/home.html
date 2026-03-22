@@ -10,8 +10,8 @@
   <body>
     <main class="page">
       <header class="hero" role="banner">
-        <h1>SPARQL Bridge</h1>
-        <p>Load data and query it using SPARQL.</p>
+        <h1><a href="/">SPARQL Bridge</a></h1>
+        <p>A SPARQL endpoint that bridges datasets into federated queries.</p>
       </header>
 
       <section class="card" aria-labelledby="sources-heading">
@@ -21,22 +21,26 @@
           <article class="source-card">
             <h3>PetScan</h3>
             <p class="help">
-              Load <a href="https://petscan.wmcloud.org" target="_blank" rel="noopener noreferrer">PetScan</a>
-              results into Oxigraph and query them using SPARQL.
+              <a href="https://petscan.wmcloud.org" target="_blank" rel="noopener noreferrer">PetScan</a>
+              is a tool that allows users to extract data, generate lists of Wikipedia (and related
+              projects) pages or Wikidata items that match certain criteria, such as all pages in a
+              certain category, or all items with a certain property.
             </p>
             <div class="actions">
-              <a class="button-link primary" href="/petscan/">Open PetScan SPARQL proxy</a>
+              <a class="button-link primary" href="/petscan/">Add PetScan query</a>
             </div>
           </article>
 
           <article class="source-card">
             <h3>Quarry</h3>
             <p class="help">
-              Load <a href="https://quarry.wmcloud.org" target="_blank" rel="noopener noreferrer">Quarry</a>
-              results into Oxigraph and query them using SPARQL.
+              <a href="https://quarry.wmcloud.org" target="_blank" rel="noopener noreferrer">Quarry</a>
+              is a public querying interface for Wiki Replicas and ToolsDBs. SPARQL Bridge uses the
+              results of previously executed queries from Quarry as they were at the time of
+              execution.
             </p>
             <div class="actions">
-              <a class="button-link primary" href="/quarry/">Open Quarry SPARQL proxy</a>
+              <a class="button-link primary" href="/quarry/">Add Quarry query</a>
             </div>
           </article>
         </div>

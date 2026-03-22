@@ -78,4 +78,4 @@ def managed_page(default_timeout_ms: int = 15000, suite_label: str = "Playwright
 
 def goto_app(page: Page, live_server: Any) -> None:
     page.goto("{}/petscan/".format(live_server.url), wait_until="domcontentloaded")
-    expect(page.get_by_role("heading", name="PetScan SPARQL Endpoint")).to_be_visible()
+    expect(page.get_by_role("heading", name="SPARQL Bridge / PetScan")).to_be_visible()
