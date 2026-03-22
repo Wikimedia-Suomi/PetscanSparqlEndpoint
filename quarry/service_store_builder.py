@@ -26,6 +26,7 @@ _COMPACT_TIMESTAMP_RE = re.compile(r"^20\d{12}$")
 _WIKIDATA_QID_RE = re.compile(r"^Q\d+$")
 _COMMONS_MID_RE = re.compile(r"^M\d+$")
 _ABSOLUTE_URI_RE = re.compile(r"^[A-Za-z][A-Za-z0-9+.-]*://\S+$")
+_ALLOWED_EXTERNAL_URI_SCHEMES = frozenset({"http", "https"})
 
 try:
     from pyoxigraph import Literal, NamedNode, Quad, Store
@@ -119,7 +120,7 @@ def _normalize_quarry_scalar_value_and_type(key: str, value: Any) -> Tuple[Any, 
 
     if _ABSOLUTE_URI_RE.fullmatch(stripped):
         parsed_uri = urlsplit(stripped)
-        if parsed_uri.scheme and parsed_uri.netloc:
+        if parsed_uri.scheme.lower() in _ALLOWED_EXTERNAL_URI_SCHEMES and parsed_uri.netloc:
             return stripped, rdf.SPARQL_IRI_TYPE
 
     if key.endswith("_uri") and (stripped.startswith("http://") or stripped.startswith("https://")):

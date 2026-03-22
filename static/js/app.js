@@ -17,6 +17,7 @@ import {
   normalizeSelectedQueryFieldKeys as normalizeSelectedQueryFieldKeysHelper,
   normalizeFieldVariableName as normalizeFieldVariableNameHelper,
   parseForwardedPetscanParams as parseForwardedPetscanParamsHelper,
+  safeExternalHref as safeExternalHrefHelper,
   splitSparqlPrologue as splitSparqlPrologueHelper,
   buildWdqsFederatedQueryViaSophox as buildWdqsFederatedQueryViaSophoxHelper,
 } from "./app_logic.js";
@@ -503,7 +504,7 @@ import {
         if (!binding || binding.type !== "uri") {
           return "";
         }
-        return String(binding.value || "").trim();
+        return safeExternalHrefHelper(binding.value);
       },
       decodeUriComponentSafe: function (value) {
         return decodeUriComponentSafeHelper(value);

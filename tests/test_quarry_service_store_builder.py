@@ -53,6 +53,7 @@ class QuarryServiceStoreBuilderTests(ServiceTestCase):
                 "timestamp_col": "20260219191017",
                 "wikidata_item": "Q1258081",
                 "commons_media": "M215253",
+                "https_link": "https://example.org/resource",
                 "legacy_timestamp": "19991231235959",
                 "external_link": "gopher://gopher.example/1/world",
             }
@@ -73,7 +74,8 @@ class QuarryServiceStoreBuilderTests(ServiceTestCase):
           ?row quarrycol:timestamp_col "2026-02-19T19:10:17Z"^^xsd:dateTime .
           ?row quarrycol:wikidata_item <http://www.wikidata.org/entity/Q1258081> .
           ?row quarrycol:commons_media <https://commons.wikimedia.org/entity/M215253> .
-          ?row quarrycol:external_link <gopher://gopher.example/1/world> .
+          ?row quarrycol:https_link <https://example.org/resource> .
+          ?row quarrycol:external_link "gopher://gopher.example/1/world" .
           ?row quarrycol:legacy_timestamp "19991231235959" .
         }
         """
@@ -83,7 +85,8 @@ class QuarryServiceStoreBuilderTests(ServiceTestCase):
         self.assertEqual(field_map["timestamp_col"]["primary_type"], "xsd:dateTime")
         self.assertEqual(field_map["wikidata_item"]["primary_type"], "iri")
         self.assertEqual(field_map["commons_media"]["primary_type"], "iri")
-        self.assertEqual(field_map["external_link"]["primary_type"], "iri")
+        self.assertEqual(field_map["https_link"]["primary_type"], "iri")
+        self.assertEqual(field_map["external_link"]["primary_type"], "xsd:string")
         self.assertEqual(field_map["legacy_timestamp"]["primary_type"], "xsd:string")
 
     @patch("quarry.service_uri_derivation._siteinfo_for_query_db")

@@ -327,6 +327,25 @@ export function decodeUriComponentSafe(value) {
   }
 }
 
+export function safeExternalHref(value) {
+  var raw = String(value || "").trim();
+  if (!raw) {
+    return "";
+  }
+
+  try {
+    var parsed = new URL(raw);
+    var protocol = String(parsed.protocol || "").toLowerCase();
+    if (protocol === "http:" || protocol === "https:") {
+      return parsed.href;
+    }
+  } catch (_err) {
+    return "";
+  }
+
+  return "";
+}
+
 export function formatUriText(uriValue) {
   var value = String(uriValue || "").trim();
   if (!value) {

@@ -159,6 +159,19 @@ def test_js_helper_build_quarry_urls(page: Page, live_server: Any) -> None:
     assert json_url == "https://quarry.wmcloud.org/run/1084251/output/0/json"
 
 
+def test_js_helper_safe_external_href_only_allows_http_and_https(page: Page, live_server: Any) -> None:
+    assert (
+        _call_js_helper(page, live_server, "safeExternalHref", ["https://example.org/resource"])
+        == "https://example.org/resource"
+    )
+    assert (
+        _call_js_helper(page, live_server, "safeExternalHref", ["http://example.org/resource"])
+        == "http://example.org/resource"
+    )
+    assert _call_js_helper(page, live_server, "safeExternalHref", ["gopher://example.org/resource"]) == ""
+    assert _call_js_helper(page, live_server, "safeExternalHref", ["javascript://alert(1)"]) == ""
+
+
 def test_js_helper_build_wizard_query_with_custom_subject_variable(page: Page, live_server: Any) -> None:
     result = _call_js_helper(
         page,
