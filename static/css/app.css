@@ -722,4 +722,12 @@ th {
   .source-layout {
     grid-template-columns: 1fr;
   }
+
+  .source-layout > :first-child {
+    order: 2;
+  }
+
+  .source-info-card {
+    order: 1;
+  }
 }
