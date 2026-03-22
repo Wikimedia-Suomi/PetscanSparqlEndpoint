@@ -35,7 +35,12 @@ class QuarryServiceSourceTests(ServiceTestCase):
             service_source.extract_qrun_id("<html><body>No vars block here.</body></html>")
 
     @patch("quarry.service_source.fetch_quarry_query_html")
-    def test_resolve_quarry_run_includes_query_db_name(self, fetch_quarry_query_html_mock: Any) -> None:
+    @patch("quarry.service_source._bundled_quarry_example_for_query_id", return_value=None)
+    def test_resolve_quarry_run_includes_query_db_name(
+        self,
+        _bundled_example_mock: Any,
+        fetch_quarry_query_html_mock: Any,
+    ) -> None:
         fetch_quarry_query_html_mock.return_value = (
             """
             <html>
@@ -54,6 +59,28 @@ class QuarryServiceSourceTests(ServiceTestCase):
 
         self.assertEqual(resolved["qrun_id"], 1084251)
         self.assertEqual(resolved["query_db"], "fiwiki_p")
+
+    @patch("quarry.service_source.fetch_quarry_query_html")
+    @patch("quarry.service_source._bundled_quarry_example_for_query_id")
+    def test_resolve_quarry_run_prefers_bundled_example_when_available(
+        self,
+        bundled_example_mock: Any,
+        fetch_quarry_query_html_mock: Any,
+    ) -> None:
+        bundled_example_mock.return_value = {
+            "quarry_id": 103479,
+            "qrun_id": 1084300,
+            "query_db": "fiwiki_p",
+            "file_name": "quarry-103479-run-1084300.json.gz",
+        }
+
+        resolved = service_source.resolve_quarry_run(103479)
+
+        self.assertEqual(resolved["qrun_id"], 1084300)
+        self.assertEqual(resolved["query_db"], "fiwiki_p")
+        self.assertEqual(resolved["query_url"], "https://quarry.wmcloud.org/query/103479")
+        self.assertEqual(resolved["json_url"], "https://quarry.wmcloud.org/run/1084300/output/0/json")
+        fetch_quarry_query_html_mock.assert_not_called()
 
     def test_extract_records_maps_headers_and_applies_limit(self) -> None:
         payload = {
@@ -150,3 +177,30 @@ class QuarryServiceSourceTests(ServiceTestCase):
         self.assertEqual(request.full_url, source_url)
         self.assertEqual(dict(request.header_items())["Accept"], "application/json")
         self.assertEqual(dict(request.header_items())["User-agent"], service_source.HTTP_USER_AGENT)
+
+    @patch("quarry.service_source.urlopen")
+    @patch("quarry.service_source._load_bundled_quarry_example_payload")
+    @patch("quarry.service_source._bundled_quarry_example_for_qrun_id")
+    def test_fetch_quarry_json_prefers_bundled_example_when_available(
+        self,
+        bundled_example_mock: Any,
+        load_payload_mock: Any,
+        urlopen_mock: Any,
+    ) -> None:
+        bundled_example_mock.return_value = {
+            "quarry_id": 103479,
+            "qrun_id": 1084300,
+            "query_db": "fiwiki_p",
+            "file_name": "quarry-103479-run-1084300.json.gz",
+        }
+        load_payload_mock.return_value = {
+            "meta": {"run_id": 1084300, "query_id": 103479},
+            "headers": ["rc_title"],
+            "rows": [["Example_title"]],
+        }
+
+        payload, source_url = service_source.fetch_quarry_json(1084300)
+
+        self.assertEqual(payload["meta"]["query_id"], 103479)
+        self.assertEqual(source_url, "https://quarry.wmcloud.org/run/1084300/output/0/json")
+        urlopen_mock.assert_not_called()

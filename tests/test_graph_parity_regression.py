@@ -123,7 +123,7 @@ def _legacy_iter_scalar_fields(
         qid = links.extract_qid(record)
         if qid is not None:
             yield "qid", qid
-            yield "wikidata_entity", "https://www.wikidata.org/entity/{}".format(qid)
+            yield "wikidata_entity", "http://www.wikidata.org/entity/{}".format(qid)
 
     image_name = metadata_map.get("image")
     if isinstance(image_name, str) and image_name.strip():

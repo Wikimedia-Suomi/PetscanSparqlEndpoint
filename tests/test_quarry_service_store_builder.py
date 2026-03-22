@@ -89,6 +89,76 @@ class QuarryServiceStoreBuilderTests(ServiceTestCase):
         self.assertEqual(field_map["external_link"]["primary_type"], "xsd:string")
         self.assertEqual(field_map["legacy_timestamp"]["primary_type"], "xsd:string")
 
+    def test_store_fast_path_normalizer_falls_back_when_later_rows_change_shape(self) -> None:
+        if quarry_store_builder.Store is None:
+            self.skipTest("pyoxigraph is not installed")
+
+        store_id = QUARRY_TEST_STORE_ID + 2
+        self._cleanup_store(store_id)
+
+        records = [
+            {"mixed_value": "Q1258081"},
+            {"mixed_value": "plain text"},
+            {"mixed_value": "https://example.org/resource"},
+        ]
+
+        meta = quarry_store_builder.build_store(
+            store_id=store_id,
+            quarry_id=QUARRY_TEST_QUERY_ID,
+            records=records,
+            source_url="https://example.invalid/quarry.json",
+        )
+        store_instance = quarry_store_builder.Store(str(store.store_path(store_id)))
+
+        ask_query = """
+        PREFIX quarrycol: <https://quarry.wmcloud.org/ontology/>
+        ASK {
+          <https://quarry.wmcloud.org/query/103479#1> quarrycol:mixed_value <http://www.wikidata.org/entity/Q1258081> .
+          <https://quarry.wmcloud.org/query/103479#2> quarrycol:mixed_value "plain text" .
+          <https://quarry.wmcloud.org/query/103479#3> quarrycol:mixed_value <https://example.org/resource> .
+        }
+        """
+        self.assertTrue(store_instance.query(ask_query))
+
+        field_map = {field["source_key"]: field for field in meta["structure"]["fields"]}
+        self.assertEqual(field_map["mixed_value"]["observed_types"], ["iri", "xsd:string"])
+
+    def test_store_fast_path_preserves_generic_string_special_cases_in_later_rows(self) -> None:
+        if quarry_store_builder.Store is None:
+            self.skipTest("pyoxigraph is not installed")
+
+        store_id = QUARRY_TEST_STORE_ID + 3
+        self._cleanup_store(store_id)
+
+        records = [
+            {"mixed_value": "plain text"},
+            {"mixed_value": "M51"},
+            {"mixed_value": "Q1258081"},
+            {"mixed_value": "https://example.org/resource"},
+        ]
+
+        meta = quarry_store_builder.build_store(
+            store_id=store_id,
+            quarry_id=QUARRY_TEST_QUERY_ID,
+            records=records,
+            source_url="https://example.invalid/quarry.json",
+        )
+        store_instance = quarry_store_builder.Store(str(store.store_path(store_id)))
+
+        ask_query = """
+        PREFIX quarrycol: <https://quarry.wmcloud.org/ontology/>
+        ASK {
+          <https://quarry.wmcloud.org/query/103479#1> quarrycol:mixed_value "plain text" .
+          <https://quarry.wmcloud.org/query/103479#2> quarrycol:mixed_value <https://commons.wikimedia.org/entity/M51> .
+          <https://quarry.wmcloud.org/query/103479#3> quarrycol:mixed_value <http://www.wikidata.org/entity/Q1258081> .
+          <https://quarry.wmcloud.org/query/103479#4> quarrycol:mixed_value <https://example.org/resource> .
+        }
+        """
+        self.assertTrue(store_instance.query(ask_query))
+
+        field_map = {field["source_key"]: field for field in meta["structure"]["fields"]}
+        self.assertEqual(field_map["mixed_value"]["observed_types"], ["iri", "xsd:string"])
+
     @patch("quarry.service_uri_derivation._siteinfo_for_query_db")
     def test_store_derives_mediawiki_and_interwiki_uri_columns(self, siteinfo_mock: Any) -> None:
         if quarry_store_builder.Store is None:

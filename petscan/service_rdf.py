@@ -88,6 +88,7 @@ _ROW_FIELD_KIND_BIT_BY_NAME = {
     "xsd:dateTime": 1 << 5,
 }
 _ROW_FIELD_KIND_ITEMS = tuple(_ROW_FIELD_KIND_BIT_BY_NAME.items())
+_ROW_FIELD_KIND_IRI_BIT = _ROW_FIELD_KIND_BIT_BY_NAME[SPARQL_IRI_TYPE]
 _ROW_FIELD_KIND_STRING_BIT = _ROW_FIELD_KIND_BIT_BY_NAME["xsd:string"]
 _ROW_FIELD_KIND_INTEGER_BIT = _ROW_FIELD_KIND_BIT_BY_NAME["xsd:integer"]
 _ROW_FIELD_KIND_DOUBLE_BIT = _ROW_FIELD_KIND_BIT_BY_NAME["xsd:double"]
@@ -100,32 +101,60 @@ class _StructureFieldState:
     source_key: str
     predicate: str
     present_in_rows: int
-    type_counts: Dict[str, int]
+    iri_rows: int
+    string_rows: int
+    integer_rows: int
+    double_rows: int
+    boolean_rows: int
+    datetime_rows: int
 
 
 class StructureAccumulator:
     def __init__(self) -> None:
         self._field_info: Dict[str, _StructureFieldState] = {}
 
+    def _field_info_for(self, key: str) -> _StructureFieldState:
+        info = self._field_info.get(key)
+        if info is None:
+            info = _StructureFieldState(
+                source_key=key,
+                predicate=PREDICATE_BASE + _field_name(key),
+                present_in_rows=0,
+                iri_rows=0,
+                string_rows=0,
+                integer_rows=0,
+                double_rows=0,
+                boolean_rows=0,
+                datetime_rows=0,
+            )
+            self._field_info[key] = info
+        return info
+
+    def add_row_field_kind(self, key: str, kinds: int | Collection[str] | str) -> None:
+        self.add_row_field_kind_bits(key, _row_field_kind_bits(kinds))
+
+    def add_row_field_kind_bits(self, key: str, kind_bits: int) -> None:
+        if not kind_bits:
+            return
+        info = self._field_info_for(key)
+        info.present_in_rows += 1
+
+        if kind_bits & _ROW_FIELD_KIND_IRI_BIT:
+            info.iri_rows += 1
+        if kind_bits & _ROW_FIELD_KIND_STRING_BIT:
+            info.string_rows += 1
+        if kind_bits & _ROW_FIELD_KIND_INTEGER_BIT:
+            info.integer_rows += 1
+        if kind_bits & _ROW_FIELD_KIND_DOUBLE_BIT:
+            info.double_rows += 1
+        if kind_bits & _ROW_FIELD_KIND_BOOLEAN_BIT:
+            info.boolean_rows += 1
+        if kind_bits & _ROW_FIELD_KIND_DATETIME_BIT:
+            info.datetime_rows += 1
+
     def add_row_field_kinds(self, row_field_kinds: Mapping[str, int | Collection[str] | str]) -> None:
         for key, kinds in row_field_kinds.items():
-            kind_bits = _row_field_kind_bits(kinds)
-            if not kind_bits:
-                continue
-            info = self._field_info.get(key)
-            if info is None:
-                info = _StructureFieldState(
-                    source_key=key,
-                    predicate=PREDICATE_BASE + _field_name(key),
-                    present_in_rows=0,
-                    type_counts={},
-                )
-                self._field_info[key] = info
-            info.present_in_rows += 1
-
-            type_counts = info.type_counts
-            for kind in _iter_row_field_kind_names(kind_bits):
-                type_counts[kind] = int(type_counts.get(kind, 0)) + 1
+            self.add_row_field_kind(key, kinds)
 
     def add_row_fields(self, row_fields: Mapping[str, Sequence[Any]]) -> None:
         row_field_kinds: Dict[str, int] = {}
@@ -140,8 +169,15 @@ class StructureAccumulator:
         fields: List[StructureField] = []
         for key in sorted(self._field_info.keys()):
             info = self._field_info[key]
-            type_counts = info.type_counts
-            observed_types = sorted(type_counts.keys())
+            type_counts = {
+                SPARQL_IRI_TYPE: info.iri_rows,
+                "xsd:string": info.string_rows,
+                "xsd:integer": info.integer_rows,
+                "xsd:double": info.double_rows,
+                "xsd:boolean": info.boolean_rows,
+                "xsd:dateTime": info.datetime_rows,
+            }
+            observed_types = sorted(kind for kind, count in type_counts.items() if count)
             primary_type = max(
                 observed_types,
                 key=lambda kind: (int(type_counts.get(kind, 0)), kind),
@@ -334,7 +370,7 @@ def iter_scalar_fields(
         qid = links.extract_qid(record)
         if qid is not None:
             yield "qid", qid
-            yield "wikidata_entity", "https://www.wikidata.org/entity/{}".format(qid)
+            yield "wikidata_entity", "http://www.wikidata.org/entity/{}".format(qid)
 
     image_name = metadata_map.get("image")
     if isinstance(image_name, str) and image_name.strip():

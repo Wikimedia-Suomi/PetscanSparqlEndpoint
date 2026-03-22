@@ -174,6 +174,7 @@ for intentional local experiments.
 - `data/examples/petscan-43641756.json.gz`
 - `data/examples/petscan-43642782.json.gz`
 - `data/examples/petscan-43706364.json.gz`
+- `data/examples/quarry-103479-run-1084300.json.gz`
 
 ## SPARQL Endpoint
 

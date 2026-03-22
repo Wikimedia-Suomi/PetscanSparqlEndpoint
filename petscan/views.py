@@ -120,7 +120,10 @@ def _parse_sparql_query(request: HttpRequest) -> str:
     content_type = (request.content_type or "").split(";", 1)[0].strip().lower()
     if content_type == "application/sparql-query":
         body = bytes(request.body)
-        return body.decode("utf-8").strip()
+        try:
+            return body.decode("utf-8").strip()
+        except UnicodeDecodeError as exc:
+            raise ValueError("SPARQL query body must be valid UTF-8.") from exc
 
     if content_type == "application/x-www-form-urlencoded":
         query = request.POST.get("query")

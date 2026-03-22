@@ -134,6 +134,21 @@ class ApiViewTests(SimpleTestCase):
         execute_query.assert_called_once_with(123, ASK_QUERY, refresh=True, petscan_params={})
 
     @patch("petscan.views.petscan_service.execute_query")
+    def test_sparql_endpoint_rejects_invalid_utf8_protocol_post(self, execute_query):
+        response = self.client.post(
+            SPARQL_PATH,
+            data=b"\xff\xfeSELECT ?item WHERE { ?item ?p ?o }",
+            content_type="application/sparql-query",
+        )
+
+        self.assertEqual(response.status_code, 400)
+        self.assertEqual(
+            response.content.decode("utf-8"),
+            "SPARQL query body must be valid UTF-8.",
+        )
+        execute_query.assert_not_called()
+
+    @patch("petscan.views.petscan_service.execute_query")
     def test_sparql_endpoint_accepts_form_urlencoded_post(self, execute_query):
         execute_query.return_value = self._ask_execution_result()
 

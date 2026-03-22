@@ -279,6 +279,22 @@ class ServiceRdfTests(ServiceTestCase):
         self.assertEqual(field_map["title"]["observed_types"], ["xsd:string"])
         self.assertEqual(field_map["mixed"]["observed_types"], ["xsd:integer", "xsd:string"])
 
+    def test_structure_accumulator_accepts_direct_single_field_updates(self) -> None:
+        accumulator = rdf.StructureAccumulator()
+        accumulator.add_row_field_kind("title", "xsd:string")
+        accumulator.add_row_field_kind("entity", "iri")
+        accumulator.add_row_field_kind_bits(
+            "mixed",
+            rdf._ROW_FIELD_KIND_BIT_BY_NAME["xsd:string"] | rdf._ROW_FIELD_KIND_BIT_BY_NAME["xsd:integer"],
+        )
+
+        summary = accumulator.build_summary(row_count=1)
+        field_map = self._field_map(summary)
+
+        self.assertEqual(field_map["title"]["observed_types"], ["xsd:string"])
+        self.assertEqual(field_map["entity"]["observed_types"], ["iri"])
+        self.assertEqual(field_map["mixed"]["observed_types"], ["xsd:integer", "xsd:string"])
+
     def test_second_example_parses_qid_thumbnail_and_coordinates(self) -> None:
         payload = self._load_payload(SECONDARY_EXAMPLE_FILE)
         records = source.extract_records(payload)
@@ -292,7 +308,7 @@ class ServiceRdfTests(ServiceTestCase):
         self.assertIn("Q38511", fields_by_key["qid"])
         self.assertIn("wikidata_entity", fields_by_key)
         self.assertIn(
-            "https://www.wikidata.org/entity/Q38511",
+            "http://www.wikidata.org/entity/Q38511",
             fields_by_key["wikidata_entity"],
         )
 

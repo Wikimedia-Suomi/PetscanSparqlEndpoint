@@ -1,0 +1,63 @@
+{
+  "psid": 2000103479,
+  "records": 100000,
+  "source_url": "https://quarry.wmcloud.org/run/1084300/output/0/json",
+  "source_params": {
+    "quarry_id": [
+      "103479"
+    ],
+    "qrun_id": [
+      "1084300"
+    ],
+    "limit": [
+      "100000"
+    ],
+    "query_db": [
+      "fiwiki_p"
+    ]
+  },
+  "loaded_at": "2026-03-22T13:59:37+00:00",
+  "structure": {
+    "row_count": 100000,
+    "field_count": 4,
+    "fields": [
+      {
+        "source_key": "rc_namespace",
+        "predicate": "https://quarry.wmcloud.org/ontology/rc_namespace",
+        "present_in_rows": 100000,
+        "primary_type": "xsd:integer",
+        "observed_types": [
+          "xsd:integer"
+        ]
+      },
+      {
+        "source_key": "rc_timestamp",
+        "predicate": "https://quarry.wmcloud.org/ontology/rc_timestamp",
+        "present_in_rows": 100000,
+        "primary_type": "xsd:dateTime",
+        "observed_types": [
+          "xsd:dateTime"
+        ]
+      },
+      {
+        "source_key": "rc_title",
+        "predicate": "https://quarry.wmcloud.org/ontology/rc_title",
+        "present_in_rows": 100000,
+        "primary_type": "xsd:string",
+        "observed_types": [
+          "iri",
+          "xsd:string"
+        ]
+      },
+      {
+        "source_key": "wikibase_item",
+        "predicate": "https://quarry.wmcloud.org/ontology/wikibase_item",
+        "present_in_rows": 100000,
+        "primary_type": "iri",
+        "observed_types": [
+          "iri"
+        ]
+      }
+    ]
+  }
+}

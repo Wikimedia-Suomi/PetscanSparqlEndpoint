@@ -1,8 +1,10 @@
 """Quarry source URL handling, qrun_id resolution, and JSON row extraction."""
 
+import gzip
 import html as html_lib
 import json
 import re
+from pathlib import Path
 from typing import Any, Dict, List, Mapping, Optional, Sequence, Tuple
 from urllib.request import Request, urlopen
 
@@ -31,11 +33,67 @@ _INPUT_VALUE_RE = re.compile(r"""\bvalue\s*=\s*(["'])(.*?)\1""", re.IGNORECASE |
 _NON_ASCII_HEADER_CHAR_RE = re.compile(r"[^A-Za-z0-9_]")
 _HEADER_UNDERSCORE_RUN_RE = re.compile(r"_+")
 _DEFAULT_QUARRY_BASE_URL = "https://quarry.wmcloud.org"
+_EXAMPLES_DIR = Path(settings.BASE_DIR) / "data" / "examples"
+_BUNDLED_QUARRY_EXAMPLES = (
+    {
+        "quarry_id": 103479,
+        "qrun_id": 1084300,
+        "query_db": "fiwiki_p",
+        "file_name": "quarry-103479-run-1084300.json.gz",
+    },
+)
+_BUNDLED_QUARRY_EXAMPLES_BY_QUERY_ID = {
+    int(entry["quarry_id"]): dict(entry) for entry in _BUNDLED_QUARRY_EXAMPLES
+}
+_BUNDLED_QUARRY_EXAMPLES_BY_QRUN_ID = {
+    int(entry["qrun_id"]): dict(entry) for entry in _BUNDLED_QUARRY_EXAMPLES
+}
 
 
 def _quarry_base_url() -> str:
     endpoint = str(getattr(settings, "QUARRY_ENDPOINT", _DEFAULT_QUARRY_BASE_URL)).strip()
     return endpoint.rstrip("/") if endpoint else _DEFAULT_QUARRY_BASE_URL
+
+
+def _bundled_quarry_example_path(file_name: str) -> Path:
+    return _EXAMPLES_DIR / str(file_name).strip()
+
+
+def _load_bundled_quarry_example_payload(file_name: str) -> Optional[Dict[str, Any]]:
+    payload_path = _bundled_quarry_example_path(file_name)
+    if not payload_path.exists():
+        return None
+
+    try:
+        if payload_path.suffix == ".gz":
+            with gzip.open(payload_path, mode="rt", encoding="utf-8") as payload_file:
+                payload = json.load(payload_file)
+        else:
+            payload = json.loads(payload_path.read_text(encoding="utf-8"))
+    except Exception:
+        return None
+
+    return payload if isinstance(payload, dict) else None
+
+
+def _bundled_quarry_example_for_query_id(quarry_id: int) -> Optional[Dict[str, Any]]:
+    bundled = _BUNDLED_QUARRY_EXAMPLES_BY_QUERY_ID.get(int(quarry_id))
+    if bundled is None:
+        return None
+    payload = _load_bundled_quarry_example_payload(str(bundled.get("file_name", "")))
+    if payload is None:
+        return None
+    return dict(bundled)
+
+
+def _bundled_quarry_example_for_qrun_id(qrun_id: int) -> Optional[Dict[str, Any]]:
+    bundled = _BUNDLED_QUARRY_EXAMPLES_BY_QRUN_ID.get(int(qrun_id))
+    if bundled is None:
+        return None
+    payload = _load_bundled_quarry_example_payload(str(bundled.get("file_name", "")))
+    if payload is None:
+        return None
+    return dict(bundled)
 
 
 def build_quarry_query_url(quarry_id: int) -> str:
@@ -104,6 +162,18 @@ def extract_query_db_name(html: str) -> Optional[str]:
 
 
 def resolve_quarry_run(quarry_id: int) -> Dict[str, Any]:
+    bundled = _bundled_quarry_example_for_query_id(quarry_id)
+    if bundled is not None:
+        qrun_id = int(bundled["qrun_id"])
+        query_db = str(bundled.get("query_db", "")).strip() or None
+        return {
+            "quarry_id": quarry_id,
+            "qrun_id": qrun_id,
+            "query_db": query_db,
+            "query_url": build_quarry_query_url(quarry_id),
+            "json_url": build_quarry_json_url(qrun_id),
+        }
+
     html, query_url = fetch_quarry_query_html(quarry_id)
     qrun_id = extract_qrun_id(html)
     query_db = extract_query_db_name(html)
@@ -118,6 +188,12 @@ def resolve_quarry_run(quarry_id: int) -> Dict[str, Any]:
 
 def fetch_quarry_json(qrun_id: int) -> Tuple[Dict[str, Any], str]:
     source_url = build_quarry_json_url(qrun_id)
+    bundled = _bundled_quarry_example_for_qrun_id(qrun_id)
+    if bundled is not None:
+        payload = _load_bundled_quarry_example_payload(str(bundled.get("file_name", "")))
+        if payload is not None:
+            return payload, source_url
+
     request = Request(
         source_url,
         headers={

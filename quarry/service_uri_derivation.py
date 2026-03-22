@@ -1,14 +1,14 @@
 """Derived MediaWiki page URI columns for Quarry rows."""
 
 import json
+from dataclasses import dataclass
 from functools import lru_cache
-from typing import Any, Dict, Mapping, Optional
+from typing import Any, Callable, Dict, Iterable, Mapping, Optional
 from urllib.parse import quote, urlsplit
 from urllib.request import Request, urlopen
 
 from django.conf import settings
 
-from petscan import normalization
 from petscan import service_links as links
 from petscan.service_source import HTTP_USER_AGENT
 
@@ -32,6 +32,23 @@ _FILE_TITLE_COLUMNS = {
 _CATEGORY_TITLE_COLUMNS = {
     "cl_to": "cl_uri",
 }
+
+
+@dataclass(frozen=True)
+class _CompiledSiteInfo:
+    origin: str
+    article_path_prefix: str
+    article_path_suffix: str
+    namespace_prefixes: Dict[int, str]
+    interwiki_urls: Dict[str, str]
+
+
+@dataclass(frozen=True)
+class _PageUriSpec:
+    title_key: str
+    uri_key: str
+    namespace_key: Optional[str] = None
+    fixed_namespace: Optional[int] = None
 
 
 def _query_db_site_token(query_db: str) -> str:
@@ -121,48 +138,99 @@ def _siteinfo_for_query_db(query_db: str) -> Optional[Dict[str, Any]]:
     }
 
 
-def _page_uri(siteinfo: Mapping[str, Any], namespace: Any, title: Any) -> Optional[str]:
-    normalized_title = normalization.normalize_page_title(title)
-    if not normalized_title:
-        return None
+def _normalize_title(value: Any) -> str:
+    if isinstance(value, str):
+        text = value.strip()
+    else:
+        text = str(value or "").strip()
+    if not text:
+        return ""
+    return text.lstrip(":").replace(" ", "_")
 
+
+def _namespace_id(value: Any, default: int = 0) -> int:
+    if value is None:
+        return default
+    if isinstance(value, int) and not isinstance(value, bool):
+        return value
+    if isinstance(value, str):
+        text = value.strip()
+        if not text:
+            return default
+        try:
+            return int(text)
+        except (TypeError, ValueError):
+            return default
     try:
-        namespace_id = int(str(namespace).strip()) if namespace is not None else 0
+        return int(str(value).strip())
     except (TypeError, ValueError):
-        namespace_id = 0
+        return default
 
-    namespace_names = siteinfo.get("namespace_names")
-    namespace_name = ""
-    if isinstance(namespace_names, Mapping):
-        namespace_name = str(namespace_names.get(namespace_id, "") or "").strip()
 
-    page_title = normalized_title if not namespace_name else "{}:{}".format(namespace_name, normalized_title)
-    encoded_title = quote(page_title, safe=":_/()-.,")
-    article_path = str(siteinfo.get("article_path", "/wiki/$1") or "/wiki/$1")
-    domain = str(siteinfo.get("domain", "")).strip().lower()
+def _compile_siteinfo(siteinfo: Mapping[str, Any]) -> Optional[_CompiledSiteInfo]:
+    domain = str(siteinfo.get("domain", "") or "").strip().lower()
     if not domain:
         return None
 
+    article_path = str(siteinfo.get("article_path", "/wiki/$1") or "/wiki/$1")
     if "$1" in article_path:
-        path = article_path.replace("$1", encoded_title)
+        article_path_prefix, article_path_suffix = article_path.split("$1", 1)
     else:
-        path = "{}/{}".format(article_path.rstrip("/"), encoded_title)
-    if not path.startswith("/"):
-        path = "/{}".format(path)
-    return "https://{}{}".format(domain, path)
+        article_path_prefix, article_path_suffix = "{}/".format(article_path.rstrip("/")), ""
+
+    if not article_path_prefix.startswith("/"):
+        article_path_prefix = "/{}".format(article_path_prefix)
+
+    namespace_prefixes = {}  # type: Dict[int, str]
+    namespace_names = siteinfo.get("namespace_names")
+    if isinstance(namespace_names, Mapping):
+        for raw_namespace, raw_name in namespace_names.items():
+            namespace_name = str(raw_name or "").strip()
+            namespace_prefixes[_namespace_id(raw_namespace)] = (
+                "{}:".format(namespace_name) if namespace_name else ""
+            )
+
+    interwiki_urls = {}  # type: Dict[str, str]
+    raw_interwiki_urls = siteinfo.get("interwiki_urls")
+    if isinstance(raw_interwiki_urls, Mapping):
+        for raw_prefix, raw_url in raw_interwiki_urls.items():
+            prefix = str(raw_prefix or "").strip()
+            url = str(raw_url or "").strip()
+            if prefix and url:
+                interwiki_urls[prefix] = url
+
+    return _CompiledSiteInfo(
+        origin="https://{}".format(domain),
+        article_path_prefix=article_path_prefix,
+        article_path_suffix=article_path_suffix,
+        namespace_prefixes=namespace_prefixes,
+        interwiki_urls=interwiki_urls,
+    )
 
 
-def _interwiki_uri(siteinfo: Mapping[str, Any], prefix: Any, title: Any) -> Optional[str]:
+def _page_uri(siteinfo: _CompiledSiteInfo, namespace: Any, title: Any) -> Optional[str]:
+    normalized_title = _normalize_title(title)
+    if not normalized_title:
+        return None
+
+    namespace_id = _namespace_id(namespace)
+    namespace_prefix = siteinfo.namespace_prefixes.get(namespace_id, "")
+    page_title = "{}{}".format(namespace_prefix, normalized_title)
+    encoded_title = quote(page_title, safe=":_/()-.,")
+    return "{}{}{}".format(
+        siteinfo.origin,
+        siteinfo.article_path_prefix,
+        encoded_title,
+    ) + siteinfo.article_path_suffix
+
+
+def _interwiki_uri(siteinfo: _CompiledSiteInfo, prefix: Any, title: Any) -> Optional[str]:
     normalized_prefix = str(prefix or "").strip()
-    normalized_title = normalization.normalize_page_title(title)
+    normalized_title = _normalize_title(title)
     if not normalized_prefix or not normalized_title:
         return None
 
-    interwiki_urls = siteinfo.get("interwiki_urls")
-    if not isinstance(interwiki_urls, Mapping):
-        return None
-
-    raw_url = str(interwiki_urls.get(normalized_prefix, "") or "").strip()
+    raw_url = siteinfo.interwiki_urls.get(normalized_prefix, "")
     if not raw_url:
         return None
 
@@ -170,33 +238,91 @@ def _interwiki_uri(siteinfo: Mapping[str, Any], prefix: Any, title: Any) -> Opti
     return raw_url.replace("$1", encoded_title) if "$1" in raw_url else raw_url
 
 
-def derive_uri_fields(record: Mapping[str, Any], query_db: Optional[str]) -> Dict[str, str]:
-    if query_db is None or not str(query_db).strip():
-        return {}
+def build_uri_field_deriver(
+    query_db: Optional[str],
+    row_keys: Iterable[str],
+) -> Optional[Callable[[Mapping[str, Any]], Dict[str, str]]]:
+    query_db_text = str(query_db or "").strip()
+    if not query_db_text:
+        return None
 
-    siteinfo = _siteinfo_for_query_db(str(query_db).strip())
+    raw_siteinfo = _siteinfo_for_query_db(query_db_text)
+    if raw_siteinfo is None:
+        return None
+
+    siteinfo = _compile_siteinfo(raw_siteinfo)
     if siteinfo is None:
-        return {}
+        return None
 
-    derived = {}  # type: Dict[str, str]
+    key_set = {str(key).strip() for key in row_keys if str(key).strip()}
+    page_specs: list[_PageUriSpec] = []
 
     for prefix in _NAMESPACE_TITLE_PREFIXES:
-        uri = _page_uri(siteinfo, record.get("{}_namespace".format(prefix)), record.get("{}_title".format(prefix)))
-        if uri is not None:
-            derived["{}_uri".format(prefix)] = uri
+        title_key = "{}_title".format(prefix)
+        if title_key not in key_set:
+            continue
+        namespace_key = "{}_namespace".format(prefix)
+        page_specs.append(
+            _PageUriSpec(
+                title_key=title_key,
+                uri_key="{}_uri".format(prefix),
+                namespace_key=namespace_key if namespace_key in key_set else None,
+            )
+        )
 
     for column_name, uri_column in _FILE_TITLE_COLUMNS.items():
-        uri = _page_uri(siteinfo, 6, record.get(column_name))
-        if uri is not None:
-            derived[uri_column] = uri
+        if column_name in key_set:
+            page_specs.append(
+                _PageUriSpec(
+                    title_key=column_name,
+                    uri_key=uri_column,
+                    fixed_namespace=6,
+                )
+            )
 
     for column_name, uri_column in _CATEGORY_TITLE_COLUMNS.items():
-        uri = _page_uri(siteinfo, 14, record.get(column_name))
-        if uri is not None:
-            derived[uri_column] = uri
+        if column_name in key_set:
+            page_specs.append(
+                _PageUriSpec(
+                    title_key=column_name,
+                    uri_key=uri_column,
+                    fixed_namespace=14,
+                )
+            )
 
-    interwiki_uri = _interwiki_uri(siteinfo, record.get("iwl_prefix"), record.get("iwl_title"))
-    if interwiki_uri is not None:
-        derived["iwl_uri"] = interwiki_uri
+    include_interwiki = "iwl_prefix" in key_set and "iwl_title" in key_set
 
-    return derived
+    if not page_specs and not include_interwiki:
+        return None
+
+    page_specs_tuple = tuple(page_specs)
+
+    def _derive(record: Mapping[str, Any]) -> Dict[str, str]:
+        derived = {}  # type: Dict[str, str]
+        record_get = record.get
+
+        for spec in page_specs_tuple:
+            namespace = (
+                spec.fixed_namespace
+                if spec.fixed_namespace is not None
+                else record_get(spec.namespace_key) if spec.namespace_key is not None else 0
+            )
+            uri = _page_uri(siteinfo, namespace, record_get(spec.title_key))
+            if uri is not None:
+                derived[spec.uri_key] = uri
+
+        if include_interwiki:
+            interwiki_uri = _interwiki_uri(siteinfo, record_get("iwl_prefix"), record_get("iwl_title"))
+            if interwiki_uri is not None:
+                derived["iwl_uri"] = interwiki_uri
+
+        return derived
+
+    return _derive
+
+
+def derive_uri_fields(record: Mapping[str, Any], query_db: Optional[str]) -> Dict[str, str]:
+    deriver = build_uri_field_deriver(query_db, record.keys())
+    if deriver is None:
+        return {}
+    return deriver(record)
