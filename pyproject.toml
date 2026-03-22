@@ -12,7 +12,7 @@ extend-select = ["I"]
 
 [tool.mypy]
 python_version = "3.13"
-files = ["manage.py", "petscan", "petscan_endpoint", "tests"]
+files = ["manage.py", "petscan", "petscan_endpoint", "quarry", "tests"]
 ignore_missing_imports = true
 check_untyped_defs = true
 warn_unused_ignores = true

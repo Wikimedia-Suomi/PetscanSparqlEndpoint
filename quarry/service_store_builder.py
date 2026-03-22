@@ -314,7 +314,7 @@ def _write_record_quads(
     quad_buffer: List[Any],
     structure_accumulator: rdf.StructureAccumulator,
 ) -> None:
-    row_field_kinds: Optional[Dict[str, int]] = None
+    row_field_kinds: Dict[str, int] = {}
 
     predicates = context.predicates
     track_field_kind = rdf._track_row_field_kind
@@ -326,6 +326,7 @@ def _write_record_quads(
     xsd_date_time_type = rdf._XSD_DATE_TIME_NODE
     track_structure_field_kind_bits = structure_accumulator.add_row_field_kind_bits
     sparql_iri_type = rdf.SPARQL_IRI_TYPE
+    object_term: Any
     subject = named_node_ctor("{}{}".format(context.row_subject_base, index + 1))
     gil_link_uris = [link_uri for link_uri, _qid in resolved_gil_links] if row_plan.has_gil else None
     append_quad(quad_ctor(subject, predicates.rdf_type, predicates.page_class))
@@ -365,7 +366,6 @@ def _write_record_quads(
                 object_term = literal_for(value)
             append_quad(quad_ctor(subject, field.predicate, object_term))
     else:
-        row_field_kinds = {}
         for key, raw_value in rdf.iter_scalar_fields(row, gil_links=gil_link_uris):
             value, sparql_type = _normalize_quarry_scalar_value_and_type(key, raw_value)
             track_field_kind(row_field_kinds, key, sparql_type)
@@ -383,10 +383,6 @@ def _write_record_quads(
                 )
             )
 
-    if resolved_gil_links:
-        if row_field_kinds is None:
-            row_field_kinds = {}
-
     for link_uri, qid in resolved_gil_links:
         link_node = named_node_ctor(link_uri)
         for key, value, sparql_type in rdf.iter_typed_gil_link_fields(
@@ -396,6 +392,7 @@ def _write_record_quads(
         ):
             track_field_kind(row_field_kinds, key, sparql_type)
             quad_subject = subject if key == "gil_link" else link_node
+            quad_object: Any
             if key == "gil_link":
                 quad_object = link_node
                 predicate = predicates.gil_link

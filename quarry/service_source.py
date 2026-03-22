@@ -5,7 +5,7 @@ import html as html_lib
 import json
 import re
 from pathlib import Path
-from typing import Any, Dict, List, Mapping, Optional, Sequence, Tuple
+from typing import Any, Dict, List, Mapping, Optional, Sequence, Tuple, TypedDict
 from urllib.request import Request, urlopen
 
 from django.conf import settings
@@ -34,7 +34,16 @@ _NON_ASCII_HEADER_CHAR_RE = re.compile(r"[^A-Za-z0-9_]")
 _HEADER_UNDERSCORE_RUN_RE = re.compile(r"_+")
 _DEFAULT_QUARRY_BASE_URL = "https://quarry.wmcloud.org"
 _EXAMPLES_DIR = Path(settings.BASE_DIR) / "data" / "examples"
-_BUNDLED_QUARRY_EXAMPLES = (
+
+
+class _BundledQuarryExample(TypedDict):
+    quarry_id: int
+    qrun_id: int
+    query_db: str
+    file_name: str
+
+
+_BUNDLED_QUARRY_EXAMPLES: Tuple[_BundledQuarryExample, ...] = (
     {
         "quarry_id": 103479,
         "qrun_id": 1084300,
@@ -42,11 +51,11 @@ _BUNDLED_QUARRY_EXAMPLES = (
         "file_name": "quarry-103479-run-1084300.json.gz",
     },
 )
-_BUNDLED_QUARRY_EXAMPLES_BY_QUERY_ID = {
-    int(entry["quarry_id"]): dict(entry) for entry in _BUNDLED_QUARRY_EXAMPLES
+_BUNDLED_QUARRY_EXAMPLES_BY_QUERY_ID: Dict[int, _BundledQuarryExample] = {
+    entry["quarry_id"]: entry for entry in _BUNDLED_QUARRY_EXAMPLES
 }
-_BUNDLED_QUARRY_EXAMPLES_BY_QRUN_ID = {
-    int(entry["qrun_id"]): dict(entry) for entry in _BUNDLED_QUARRY_EXAMPLES
+_BUNDLED_QUARRY_EXAMPLES_BY_QRUN_ID: Dict[int, _BundledQuarryExample] = {
+    entry["qrun_id"]: entry for entry in _BUNDLED_QUARRY_EXAMPLES
 }
 
 
@@ -76,24 +85,24 @@ def _load_bundled_quarry_example_payload(file_name: str) -> Optional[Dict[str, A
     return payload if isinstance(payload, dict) else None
 
 
-def _bundled_quarry_example_for_query_id(quarry_id: int) -> Optional[Dict[str, Any]]:
+def _bundled_quarry_example_for_query_id(quarry_id: int) -> Optional[_BundledQuarryExample]:
     bundled = _BUNDLED_QUARRY_EXAMPLES_BY_QUERY_ID.get(int(quarry_id))
     if bundled is None:
         return None
     payload = _load_bundled_quarry_example_payload(str(bundled.get("file_name", "")))
     if payload is None:
         return None
-    return dict(bundled)
+    return bundled.copy()
 
 
-def _bundled_quarry_example_for_qrun_id(qrun_id: int) -> Optional[Dict[str, Any]]:
+def _bundled_quarry_example_for_qrun_id(qrun_id: int) -> Optional[_BundledQuarryExample]:
     bundled = _BUNDLED_QUARRY_EXAMPLES_BY_QRUN_ID.get(int(qrun_id))
     if bundled is None:
         return None
     payload = _load_bundled_quarry_example_payload(str(bundled.get("file_name", "")))
     if payload is None:
         return None
-    return dict(bundled)
+    return bundled.copy()
 
 
 def build_quarry_query_url(quarry_id: int) -> str:

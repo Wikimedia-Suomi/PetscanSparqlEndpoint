@@ -1,7 +1,7 @@
 import json
 import logging
 from dataclasses import dataclass
-from typing import Any, Callable, Dict, TypeVar, cast
+from typing import Any, Callable, Mapping, TypeVar, cast
 from urllib.parse import parse_qs
 
 from django.http import HttpRequest, HttpResponse, JsonResponse
@@ -148,9 +148,9 @@ def _parse_sparql_request(request: HttpRequest, service_params: str) -> SparqlRe
     )
 
 
-def _source_param_value_from_meta(meta: Dict[str, Any], key: str) -> str | None:
+def _source_param_value_from_meta(meta: Mapping[str, Any], key: str) -> str | None:
     source_params = meta.get("source_params")
-    if not isinstance(source_params, dict):
+    if not isinstance(source_params, Mapping):
         return None
     values = source_params.get(key)
     if not isinstance(values, list) or not values:
@@ -159,7 +159,7 @@ def _source_param_value_from_meta(meta: Dict[str, Any], key: str) -> str | None:
     return value or None
 
 
-def _qrun_id_from_meta(meta: Dict[str, Any]) -> int | None:
+def _qrun_id_from_meta(meta: Mapping[str, Any]) -> int | None:
     raw_value = _source_param_value_from_meta(meta, "qrun_id")
     if raw_value is None:
         return None

@@ -91,7 +91,12 @@ def _normalize_source_params(source_params: Mapping[str, Any]) -> Dict[str, Any]
 
 def meta_has_matching_source_params(meta: Mapping[str, Any], source_params: Mapping[str, Any]) -> bool:
     expected = _normalize_source_params(source_params)
-    actual = _normalize_source_params(meta.get("source_params") if isinstance(meta, Mapping) else {})
+    actual_source_params = meta.get("source_params")
+    actual = (
+        _normalize_source_params(actual_source_params)
+        if isinstance(actual_source_params, Mapping)
+        else {}
+    )
     return expected == actual
 
 
