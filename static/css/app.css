@@ -116,6 +116,16 @@ body {
   margin-top: 0.15rem;
 }
 
+.source-info-panel {
+  padding: 0 1em;
+  margin-top: -0.35rem;
+  margin-bottom: -0.35rem;
+}
+
+.source-info-panel p {
+  margin: 0;
+}
+
 .card {
   background: var(--surface);
   border: 1px solid var(--border);
