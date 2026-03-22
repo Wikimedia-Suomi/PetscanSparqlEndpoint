@@ -531,9 +531,16 @@ export function buildWizardQueryWithOntology(
   };
   pushSelectVar(subjectVariable);
 
+  var gilLinkRelationFields = [
+    "gil_link",
+    "gil_link_wikidata_id",
+    "gil_link_wikidata_entity",
+    "gil_link_page_len",
+    "gil_link_rev_timestamp",
+  ];
   var whereLines = ["  " + subjectVariable + " a " + normalizedPrefix + ":Page ."];
   orderedKeys.forEach(function (key) {
-    if (key === "gil_link" || key.indexOf("gil_link_") === 0) {
+    if (gilLinkRelationFields.indexOf(key) !== -1) {
       return;
     }
     var variableName = "?" + normalizeFieldVariableName(key);
@@ -543,14 +550,7 @@ export function buildWizardQueryWithOntology(
     );
   });
 
-  var selectedGilLinkFields = [
-    "gil_link",
-    "gil_link_wikidata_id",
-    "gil_link_wikidata_entity",
-    "gil_link_page_len",
-    "gil_link_rev_timestamp",
-  ];
-  var includeGilLinkBlock = selectedGilLinkFields.some(function (key) {
+  var includeGilLinkBlock = gilLinkRelationFields.some(function (key) {
     return Boolean(selected[key]);
   });
   if (includeGilLinkBlock) {

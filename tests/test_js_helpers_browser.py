@@ -123,6 +123,26 @@ def test_js_helper_build_wizard_query_includes_gil_link_enrichment_block(page: P
     assert "?gil_link petscan:gil_link_wikidata_id ?gil_link_wikidata_id ." in result
 
 
+def test_js_helper_build_wizard_query_treats_gil_link_count_as_scalar_field(page: Page, live_server: Any) -> None:
+    result = _call_js_helper(
+        page,
+        live_server,
+        "buildWizardQuery",
+        [
+            [
+                {"source_key": "title"},
+                {"source_key": "gil_link_count"},
+                {"source_key": "gil_link"},
+            ],
+            ["title", "gil_link_count"],
+        ],
+    )
+
+    assert "SELECT ?item ?title ?gil_link_count" in result
+    assert "?item petscan:gil_link_count ?gil_link_count ." in result
+    assert "?item petscan:gil_link ?gil_link ." not in result
+
+
 def test_js_helper_normalize_selected_query_field_keys_falls_back_to_first_five_fields(
     page: Page, live_server: Any
 ) -> None:
