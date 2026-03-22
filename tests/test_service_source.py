@@ -190,5 +190,5 @@ class ServiceSourceTests(ServiceTestCase):
 
         self.assertEqual(
             captured.exception.public_message,
-            "Failed to load PetScan data from the upstream service.",
+            "Failed to fetch PetScan data: Temporary failure in name resolution",
         )

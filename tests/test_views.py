@@ -123,6 +123,24 @@ class ApiViewTests(SimpleTestCase):
         self.assertTrue(any("Returning sanitized backend error response" in entry for entry in captured_logs.output))
         self.assertTrue(any("Failed to open Oxigraph store" in entry for entry in captured_logs.output))
 
+    @patch("petscan.views.petscan_service.ensure_loaded")
+    def test_structure_endpoint_returns_public_petscan_transport_error_detail(self, ensure_loaded):
+        ensure_loaded.side_effect = PetscanServiceError(
+            "Failed to fetch PetScan data: The read operation timed out",
+            public_message="Failed to fetch PetScan data: The read operation timed out",
+        )
+
+        with self.assertLogs("petscan.views", level="ERROR") as captured_logs:
+            response = self.client.get(API_STRUCTURE_PATH, data={"psid": 123})
+
+        self.assertEqual(response.status_code, 502)
+        self.assertEqual(
+            response.json()["error"],
+            "Failed to fetch PetScan data: The read operation timed out",
+        )
+        self.assertTrue(any("Returning sanitized backend error response" in entry for entry in captured_logs.output))
+        self.assertTrue(any("Failed to fetch PetScan data: The read operation timed out" in entry for entry in captured_logs.output))
+
     @patch("petscan.views.petscan_service.execute_query")
     def test_sparql_endpoint_returns_sparql_json(self, execute_query):
         execute_query.return_value = self._ask_execution_result()
