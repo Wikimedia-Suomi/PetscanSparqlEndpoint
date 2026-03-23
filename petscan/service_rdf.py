@@ -16,6 +16,7 @@ from typing import (
     Optional,
     Sequence,
     Tuple,
+    cast,
 )
 from urllib.parse import quote
 
@@ -94,6 +95,8 @@ _ROW_FIELD_KIND_INTEGER_BIT = _ROW_FIELD_KIND_BIT_BY_NAME["xsd:integer"]
 _ROW_FIELD_KIND_DOUBLE_BIT = _ROW_FIELD_KIND_BIT_BY_NAME["xsd:double"]
 _ROW_FIELD_KIND_BOOLEAN_BIT = _ROW_FIELD_KIND_BIT_BY_NAME["xsd:boolean"]
 _ROW_FIELD_KIND_DATETIME_BIT = _ROW_FIELD_KIND_BIT_BY_NAME["xsd:dateTime"]
+ROW_SIDE_CARDINALITY_ONE = "1"
+ROW_SIDE_CARDINALITY_MANY = "M"
 
 
 @dataclass(slots=True)
@@ -107,6 +110,7 @@ class _StructureFieldState:
     double_rows: int
     boolean_rows: int
     datetime_rows: int
+    multi_value_rows: int
 
 
 class StructureAccumulator:
@@ -126,18 +130,26 @@ class StructureAccumulator:
                 double_rows=0,
                 boolean_rows=0,
                 datetime_rows=0,
+                multi_value_rows=0,
             )
             self._field_info[key] = info
         return info
 
-    def add_row_field_kind(self, key: str, kinds: int | Collection[str] | str) -> None:
-        self.add_row_field_kind_bits(key, _row_field_kind_bits(kinds))
+    def add_row_field_kind(
+        self,
+        key: str,
+        kinds: int | Collection[str] | str,
+        row_value_count: int = 1,
+    ) -> None:
+        self.add_row_field_kind_bits(key, _row_field_kind_bits(kinds), row_value_count=row_value_count)
 
-    def add_row_field_kind_bits(self, key: str, kind_bits: int) -> None:
+    def add_row_field_kind_bits(self, key: str, kind_bits: int, row_value_count: int = 1) -> None:
         if not kind_bits:
             return
         info = self._field_info_for(key)
         info.present_in_rows += 1
+        if row_value_count > 1:
+            info.multi_value_rows += 1
 
         if kind_bits & _ROW_FIELD_KIND_IRI_BIT:
             info.iri_rows += 1
@@ -152,18 +164,27 @@ class StructureAccumulator:
         if kind_bits & _ROW_FIELD_KIND_DATETIME_BIT:
             info.datetime_rows += 1
 
-    def add_row_field_kinds(self, row_field_kinds: Mapping[str, int | Collection[str] | str]) -> None:
+    def add_row_field_kinds(
+        self,
+        row_field_kinds: Mapping[str, int | Collection[str] | str],
+        row_field_value_counts: Optional[Mapping[str, int]] = None,
+    ) -> None:
         for key, kinds in row_field_kinds.items():
-            self.add_row_field_kind(key, kinds)
+            row_value_count = 1
+            if row_field_value_counts is not None:
+                row_value_count = int(row_field_value_counts.get(key, 1))
+            self.add_row_field_kind(key, kinds, row_value_count=row_value_count)
 
     def add_row_fields(self, row_fields: Mapping[str, Sequence[Any]]) -> None:
         row_field_kinds: Dict[str, int] = {}
+        row_field_value_counts: Dict[str, int] = {}
 
         for key, values in row_fields.items():
             for value in values:
                 _normalized_value, sparql_type = _normalize_scalar_field_value_and_type(key, value)
                 _track_row_field_kind(row_field_kinds, key, sparql_type)
-        self.add_row_field_kinds(row_field_kinds)
+                _track_row_field_value_count(row_field_value_counts, key)
+        self.add_row_field_kinds(row_field_kinds, row_field_value_counts=row_field_value_counts)
 
     def build_summary(self, row_count: int) -> StructureSummary:
         fields: List[StructureField] = []
@@ -189,6 +210,10 @@ class StructureAccumulator:
                     "present_in_rows": info.present_in_rows,
                     "primary_type": primary_type,
                     "observed_types": observed_types,
+                    "row_side_cardinality": cast(
+                        Any,
+                        ROW_SIDE_CARDINALITY_MANY if info.multi_value_rows else ROW_SIDE_CARDINALITY_ONE,
+                    ),
                 }
             )
 
@@ -472,6 +497,13 @@ def _track_row_field_kind_bits(
     row_field_kinds[key] = int(row_field_kinds.get(key, 0)) | kind_bits
 
 
+def _track_row_field_value_count(
+    row_field_value_counts: MutableMapping[str, int],
+    key: str,
+) -> None:
+    row_field_value_counts[key] = int(row_field_value_counts.get(key, 0)) + 1
+
+
 def _normalize_scalar_field_value_and_type(key: str, value: Any) -> Tuple[Any, str]:
     if key in _XSD_DATETIME_SCALAR_FIELDS:
         normalized_datetime = normalize_datetime_xsd(value)
@@ -512,6 +544,7 @@ def append_scalar_field_quads(
     record: Mapping[str, Any],
     quad_buffer: List[Any],
     row_field_kinds: MutableMapping[str, int],
+    row_field_value_counts: Optional[MutableMapping[str, int]] = None,
     gil_links: Optional[Sequence[str]] = None,
 ) -> None:
     append_quad = quad_buffer.append
@@ -524,6 +557,8 @@ def append_scalar_field_quads(
     for key, raw_value in iter_scalar_fields(record, gil_links=gil_links):
         value, sparql_type = _normalize_scalar_field_value_and_type(key, raw_value)
         track_row_field_kind(row_field_kinds, key, sparql_type)
+        if row_field_value_counts is not None:
+            _track_row_field_value_count(row_field_value_counts, key)
         object_term: Any
         if sparql_type == sparql_iri_type:
             object_term = NamedNode(str(value))
@@ -609,6 +644,7 @@ def summarize_structure(
 
     for row in records:
         row_field_kinds: Dict[str, int] = {}
+        row_field_value_counts: Dict[str, int] = {}
 
         resolved_gil_links = links.resolve_gil_links(
             row,
@@ -617,6 +653,7 @@ def summarize_structure(
         gil_link_uris = [link_uri for link_uri, _qid in resolved_gil_links]
         for key, _value, sparql_type in iter_typed_scalar_fields(row, gil_links=gil_link_uris):
             _track_row_field_kind(row_field_kinds, key, sparql_type)
+            _track_row_field_value_count(row_field_value_counts, key)
 
         for link_uri, qid in resolved_gil_links:
             for key, _value, sparql_type in iter_typed_gil_link_fields(
@@ -625,7 +662,8 @@ def summarize_structure(
                 gil_link_enrichment_map=gil_link_enrichment_map,
             ):
                 _track_row_field_kind(row_field_kinds, key, sparql_type)
+                _track_row_field_value_count(row_field_value_counts, key)
 
-        accumulator.add_row_field_kinds(row_field_kinds)
+        accumulator.add_row_field_kinds(row_field_kinds, row_field_value_counts=row_field_value_counts)
 
     return accumulator.build_summary(row_count=len(records))

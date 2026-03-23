@@ -34,6 +34,7 @@ STRUCTURE_FIELD_SCHEMA: Dict[str, Any] = {
         "predicate": {"type": "string", "format": "uri"},
         "present_in_rows": {"type": "integer", "minimum": 0},
         "primary_type": {"type": "string", "minLength": 1},
+        "row_side_cardinality": {"type": "string", "enum": ["1", "M"]},
         "observed_types": {
             "type": "array",
             "items": {"type": "string", "minLength": 1},
@@ -205,6 +206,7 @@ def test_structure_endpoint_success_matches_json_schema(ensure_loaded: Any, clie
                     "predicate": "https://petscan.wmcloud.org/ontology/title",
                     "present_in_rows": 2,
                     "primary_type": "string",
+                    "row_side_cardinality": "1",
                     "observed_types": ["string"],
                 },
                 {
@@ -212,6 +214,7 @@ def test_structure_endpoint_success_matches_json_schema(ensure_loaded: Any, clie
                     "predicate": "https://petscan.wmcloud.org/ontology/namespace",
                     "present_in_rows": 2,
                     "primary_type": "integer",
+                    "row_side_cardinality": "1",
                     "observed_types": ["integer"],
                 },
             ],

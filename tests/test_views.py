@@ -68,6 +68,7 @@ class ApiViewTests(SimpleTestCase):
         self.assertContains(response, 'class="card source-info-card"', html=False)
         self.assertContains(response, 'aria-labelledby="petscan-info-heading"', html=False)
         self.assertContains(response, '<h2 id="petscan-info-heading">About PetScan</h2>', html=True)
+        self.assertContains(response, '<th scope="col">Cardinality</th>', html=True)
         self.assertContains(
             response,
             "is a tool that allows users to extract data, generate lists of Wikipedia",

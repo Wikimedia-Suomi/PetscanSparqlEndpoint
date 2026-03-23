@@ -155,6 +155,61 @@ class ServiceStoreBuilderTests(ServiceTestCase):
         self.assertEqual(field_map["img_timestamp"]["primary_type"], "xsd:dateTime")
         self.assertEqual(field_map["touched"]["primary_type"], "xsd:dateTime")
 
+    @patch("petscan.service_store_builder.links.build_gil_link_enrichment")
+    def test_build_store_persists_row_side_cardinality_metadata(self, gil_map_mock):
+        if store_builder.Store is None:
+            self.skipTest("pyoxigraph is not installed")
+
+        enrichment_map = {
+            "https://en.wikipedia.org/wiki/Alpha": {
+                "wikidata_id": "Q1",
+                "page_len": 100,
+                "rev_timestamp": "2026-03-15T10:00:00Z",
+            },
+            "https://en.wikipedia.org/wiki/Beta": {
+                "wikidata_id": "Q2",
+                "page_len": 200,
+                "rev_timestamp": "2026-03-15T11:00:00Z",
+            },
+            "https://en.wikipedia.org/wiki/Gamma": {
+                "wikidata_id": "Q3",
+                "page_len": 300,
+                "rev_timestamp": "2026-03-15T12:00:00Z",
+            },
+        }
+
+        def _mock_build_enrichment(records, backend=None):
+            resolved_links_by_row = [
+                store_builder.links.resolve_gil_links(row, gil_link_enrichment_map=enrichment_map)
+                for row in records
+            ]
+            return links.GilLinkEnrichmentBuildResult(
+                enrichment_by_link=enrichment_map,
+                resolved_links_by_row=resolved_links_by_row,
+                lookup_stats=links.GilLinkLookupStats(),
+            )
+
+        gil_map_mock.side_effect = _mock_build_enrichment
+
+        psid = STORE_GIL_TEST_PSID + 7
+        self._cleanup_store(psid)
+
+        meta = store_builder.build_store(
+            psid,
+            [
+                {"id": 1, "title": "Example 1", "gil": "enwiki:0:Alpha|enwiki:0:Beta"},
+                {"id": 2, "title": "Example 2", "gil": "enwiki:0:Gamma"},
+            ],
+            "https://example.invalid",
+        )
+
+        field_map = {field["source_key"]: field for field in meta["structure"]["fields"]}
+        self.assertEqual(field_map["title"]["row_side_cardinality"], "1")
+        self.assertEqual(field_map["gil_link_count"]["row_side_cardinality"], "1")
+        self.assertEqual(field_map["gil_link"]["row_side_cardinality"], "M")
+        self.assertEqual(field_map["gil_link_wikidata_id"]["row_side_cardinality"], "M")
+        self.assertEqual(field_map["gil_link_page_len"]["row_side_cardinality"], "M")
+
     @patch("petscan.service_links.wikidata_lookup_backend", return_value=store_builder.links.LOOKUP_BACKEND_API)
     @patch("petscan.service_links.fetch_wikibase_items_for_site_api")
     def test_build_store_raises_on_api_enrichment_failure_and_writes_no_meta(

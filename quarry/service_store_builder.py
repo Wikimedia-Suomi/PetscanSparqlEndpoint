@@ -128,6 +128,8 @@ def _quarry_structure_summary(summary: StructureSummary) -> StructureSummary:
             "primary_type": field["primary_type"],
             "observed_types": list(field["observed_types"]),
         }
+        if "row_side_cardinality" in field:
+            updated_field["row_side_cardinality"] = field["row_side_cardinality"]
         fields.append(updated_field)
     return {
         "row_count": summary["row_count"],
@@ -315,16 +317,18 @@ def _write_record_quads(
     structure_accumulator: rdf.StructureAccumulator,
 ) -> None:
     row_field_kinds: Dict[str, int] = {}
+    row_field_value_counts: Dict[str, int] = {}
 
     predicates = context.predicates
     track_field_kind = rdf._track_row_field_kind
+    track_field_kind_bits = rdf._track_row_field_kind_bits
+    track_field_value_count = rdf._track_row_field_value_count
     append_quad = quad_buffer.append
     literal_ctor = Literal
     literal_for = rdf.literal_for
     named_node_ctor = NamedNode
     quad_ctor = Quad
     xsd_date_time_type = rdf._XSD_DATE_TIME_NODE
-    track_structure_field_kind_bits = structure_accumulator.add_row_field_kind_bits
     sparql_iri_type = rdf.SPARQL_IRI_TYPE
     object_term: Any
     subject = named_node_ctor("{}{}".format(context.row_subject_base, index + 1))
@@ -357,7 +361,8 @@ def _write_record_quads(
                 continue
 
             value, kind_bits = _normalize_planned_quarry_scalar_value_and_kind(field, scalar_value)
-            track_structure_field_kind_bits(field.key, kind_bits)
+            track_field_kind_bits(row_field_kinds, field.key, kind_bits)
+            track_field_value_count(row_field_value_counts, field.key)
             if kind_bits == _ROW_FIELD_KIND_IRI_BIT:
                 object_term = named_node_ctor(str(value))
             elif kind_bits == _ROW_FIELD_KIND_DATETIME_BIT:
@@ -369,6 +374,7 @@ def _write_record_quads(
         for key, raw_value in rdf.iter_scalar_fields(row, gil_links=gil_link_uris):
             value, sparql_type = _normalize_quarry_scalar_value_and_type(key, raw_value)
             track_field_kind(row_field_kinds, key, sparql_type)
+            track_field_value_count(row_field_value_counts, key)
             if sparql_type == sparql_iri_type:
                 object_term = named_node_ctor(str(value))
             elif sparql_type == "xsd:dateTime":
@@ -391,6 +397,7 @@ def _write_record_quads(
             gil_link_enrichment_map=context.gil_link_enrichment_map,
         ):
             track_field_kind(row_field_kinds, key, sparql_type)
+            track_field_value_count(row_field_value_counts, key)
             quad_subject = subject if key == "gil_link" else link_node
             quad_object: Any
             if key == "gil_link":
@@ -412,7 +419,10 @@ def _write_record_quads(
                 )
             )
     if row_field_kinds:
-        structure_accumulator.add_row_field_kinds(row_field_kinds)
+        structure_accumulator.add_row_field_kinds(
+            row_field_kinds,
+            row_field_value_counts=row_field_value_counts,
+        )
 
 
 def _flush_quads(store_instance: Any, quad_buffer: List[Any]) -> None:

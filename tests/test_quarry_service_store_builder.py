@@ -1,6 +1,7 @@
 from typing import Any
 from unittest.mock import patch
 
+from petscan import service_links as links
 from petscan import service_store as store
 from quarry import service_store_builder as quarry_store_builder
 from tests.service_test_support import ServiceTestCase
@@ -158,6 +159,62 @@ class QuarryServiceStoreBuilderTests(ServiceTestCase):
 
         field_map = {field["source_key"]: field for field in meta["structure"]["fields"]}
         self.assertEqual(field_map["mixed_value"]["observed_types"], ["iri", "xsd:string"])
+
+    @patch("quarry.service_store_builder.links.build_gil_link_enrichment")
+    def test_store_persists_row_side_cardinality_metadata(self, gil_map_mock: Any) -> None:
+        if quarry_store_builder.Store is None:
+            self.skipTest("pyoxigraph is not installed")
+
+        enrichment_map = {
+            "https://en.wikipedia.org/wiki/Alpha": {
+                "wikidata_id": "Q1",
+                "page_len": 100,
+                "rev_timestamp": "2026-03-15T10:00:00Z",
+            },
+            "https://en.wikipedia.org/wiki/Beta": {
+                "wikidata_id": "Q2",
+                "page_len": 200,
+                "rev_timestamp": "2026-03-15T11:00:00Z",
+            },
+            "https://en.wikipedia.org/wiki/Gamma": {
+                "wikidata_id": "Q3",
+                "page_len": 300,
+                "rev_timestamp": "2026-03-15T12:00:00Z",
+            },
+        }
+
+        def _mock_build_enrichment(records, backend=None):
+            resolved_links_by_row = [
+                quarry_store_builder.links.resolve_gil_links(row, gil_link_enrichment_map=enrichment_map)
+                for row in records
+            ]
+            return links.GilLinkEnrichmentBuildResult(
+                enrichment_by_link=enrichment_map,
+                resolved_links_by_row=resolved_links_by_row,
+                lookup_stats=links.GilLinkLookupStats(),
+            )
+
+        gil_map_mock.side_effect = _mock_build_enrichment
+
+        store_id = QUARRY_TEST_STORE_ID + 4
+        self._cleanup_store(store_id)
+
+        meta = quarry_store_builder.build_store(
+            store_id=store_id,
+            quarry_id=QUARRY_TEST_QUERY_ID,
+            records=[
+                {"row_title": "Example 1", "gil": "enwiki:0:Alpha|enwiki:0:Beta"},
+                {"row_title": "Example 2", "gil": "enwiki:0:Gamma"},
+            ],
+            source_url="https://example.invalid/quarry.json",
+        )
+
+        field_map = {field["source_key"]: field for field in meta["structure"]["fields"]}
+        self.assertEqual(field_map["row_title"]["row_side_cardinality"], "1")
+        self.assertEqual(field_map["gil_link_count"]["row_side_cardinality"], "1")
+        self.assertEqual(field_map["gil_link"]["row_side_cardinality"], "M")
+        self.assertEqual(field_map["gil_link_wikidata_id"]["row_side_cardinality"], "M")
+        self.assertEqual(field_map["gil_link_page_len"]["row_side_cardinality"], "M")
 
     @patch("quarry.service_uri_derivation._siteinfo_for_query_db")
     def test_store_derives_mediawiki_and_interwiki_uri_columns(self, siteinfo_mock: Any) -> None:

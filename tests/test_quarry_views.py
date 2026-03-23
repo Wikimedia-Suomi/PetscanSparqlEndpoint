@@ -43,6 +43,7 @@ class QuarryApiViewTests(SimpleTestCase):
         self.assertContains(response, 'class="card source-info-card"', html=False)
         self.assertContains(response, 'aria-labelledby="quarry-info-heading"', html=False)
         self.assertContains(response, '<h2 id="quarry-info-heading">About Quarry</h2>', html=True)
+        self.assertContains(response, '<th scope="col">Cardinality</th>', html=True)
         self.assertContains(
             response,
             "is a public querying interface for Wiki Replicas and ToolsDBs. SPARQL Bridge uses the",

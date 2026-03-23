@@ -1,7 +1,7 @@
 """Typed payload models for service responses and metadata."""
 
 from dataclasses import dataclass
-from typing import Any, Dict, List, Optional, TypedDict
+from typing import Any, Dict, List, Literal, NotRequired, Optional, TypedDict
 
 
 class StructureField(TypedDict):
@@ -10,6 +10,7 @@ class StructureField(TypedDict):
     present_in_rows: int
     primary_type: str
     observed_types: List[str]
+    row_side_cardinality: NotRequired[Literal["1", "M"]]
 
 
 class StructureSummary(TypedDict):

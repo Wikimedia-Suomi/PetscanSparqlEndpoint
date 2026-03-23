@@ -77,11 +77,13 @@ def _write_record_quads(
     context: _RecordWriteContext,
     resolved_gil_links: Sequence[Tuple[str, Optional[str]]],
     quad_buffer: List[Any],
-) -> Dict[str, int]:
+) -> Tuple[Dict[str, int], Dict[str, int]]:
     row_field_kinds: Dict[str, int] = {}
+    row_field_value_counts: Dict[str, int] = {}
 
     def _track_field_kind(key: str, kind: str) -> None:
         rdf._track_row_field_kind(row_field_kinds, key, kind)
+        rdf._track_row_field_value_count(row_field_value_counts, key)
 
     predicates = context.predicates
     append_quad = quad_buffer.append
@@ -119,6 +121,7 @@ def _write_record_quads(
         record=row,
         quad_buffer=quad_buffer,
         row_field_kinds=row_field_kinds,
+        row_field_value_counts=row_field_value_counts,
         gil_links=gil_link_uris,
     )
 
@@ -143,7 +146,7 @@ def _write_record_quads(
                     quad_object,
                 )
             )
-    return row_field_kinds
+    return row_field_kinds, row_field_value_counts
 
 
 def _flush_quads(store_instance: Any, quad_buffer: List[Any]) -> None:
@@ -210,14 +213,17 @@ def build_store(
 
         for index, row in enumerate(records):
             resolved_gil_links = resolved_gil_links_by_row[index]
-            row_field_kinds = _write_record_quads(
+            row_field_kinds, row_field_value_counts = _write_record_quads(
                 index=index,
                 row=row,
                 context=write_context,
                 resolved_gil_links=resolved_gil_links,
                 quad_buffer=quad_buffer,
             )
-            structure_accumulator.add_row_field_kinds(row_field_kinds)
+            structure_accumulator.add_row_field_kinds(
+                row_field_kinds,
+                row_field_value_counts=row_field_value_counts,
+            )
             if len(quad_buffer) >= _QUAD_BUFFER_TARGET:
                 _flush_quads(store_instance, quad_buffer)
 

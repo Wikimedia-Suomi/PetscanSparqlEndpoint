@@ -161,6 +161,7 @@
                         <th scope="col">Field / relation</th>
                         <th scope="col">Predicate</th>
                         <th scope="col">Type</th>
+                        <th scope="col">Cardinality</th>
                         <th scope="col">Present in rows</th>
                       </tr>
                     </thead>
@@ -177,6 +178,7 @@
                         <td><label :for="'wizard-field-' + field.source_key"><code>[[ field.source_key ]]</code></label></td>
                         <td class="predicate-cell"><code>[[ field.predicate ]]</code></td>
                         <td>[[ formatFieldType(field) ]]</td>
+                        <td><code>[[ field.row_side_cardinality || "?" ]]</code></td>
                         <td>[[ field.present_in_rows ]] / [[ structureRowCount ]]</td>
                       </tr>
                     </tbody>
