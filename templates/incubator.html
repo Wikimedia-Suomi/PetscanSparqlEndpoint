@@ -52,12 +52,11 @@
               />
               Only pages edited during the last 30 days
             </label>
+            {% endverbatim %}
             <p class="help">
-              In database mode this uses the <code>recentchanges</code> table with
-              <code>rc_source="mw.edit"</code> plus move log events
-              <code>(rc_source="mw.log" AND rc_log_type="move")</code>. In API mode it uses category member
-              timestamps sorted from newest to oldest and stops when the 30-day window is exceeded.
+              {{ recentchanges_help_text }}
             </p>
+            {% verbatim %}
 
             <div class="actions">
               <button type="button" class="primary" :disabled="isBusy" @click="loadStructure">

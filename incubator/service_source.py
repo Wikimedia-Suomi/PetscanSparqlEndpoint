@@ -3,6 +3,7 @@
 import json
 import os
 from datetime import datetime, timedelta, timezone
+from functools import lru_cache
 from time import perf_counter
 from typing import Any, Dict, List, Mapping, Optional, Tuple, cast
 from urllib.parse import quote, urlencode
@@ -10,8 +11,7 @@ from urllib.request import Request, urlopen
 
 from django.conf import settings
 
-from petscan import enrichment_sql
-from petscan import service_links
+from petscan import enrichment_sql, service_links
 from petscan.normalization import normalize_page_title, normalize_qid
 from petscan.service_errors import PetscanServiceError
 from petscan.service_source import HTTP_USER_AGENT
@@ -35,16 +35,6 @@ _INCUBATOR_WIKIDATA_CATEGORY_DB_TITLE = "Maintenance:Wikidata_interwiki_links"
 _INCUBATOR_FETCH_PUBLIC_MESSAGE = "Failed to load Incubator data from the upstream service."
 _INCUBATOR_REPLICA_HOST = "incubatorwiki.web.db.svc.wikimedia.cloud"
 _INCUBATOR_REPLICA_DB = "incubatorwiki_p"
-_PROJECT_NAME_BY_CODE = {
-    "Wp": "Wikipedia",
-    "Wt": "Wiktionary",
-    "Wq": "Wikiquote",
-    "Wb": "Wikibooks",
-    "Wn": "Wikinews",
-    "Wy": "Wikivoyage",
-    "Ws": "Wikisource",
-    "Wv": "Wikiversity",
-}
 _WIKI_GROUP_BY_CODE = {
     "Wp": "wikipedia",
     "Wt": "wiktionary",
@@ -57,6 +47,7 @@ _WIKI_GROUP_BY_CODE = {
 }
 _SOURCE_PARAM_KEYS = frozenset({"limit", "recentchanges_only"})
 _MAX_INCUBATOR_API_BATCH_SIZE = 50
+_INCUBATOR_URL_SAFE_CHARS = "/:()-,._"
 pymysql = cast(Any, enrichment_sql.pymysql)
 
 
@@ -76,11 +67,13 @@ def _incubator_page_base_url() -> str:
     return endpoint or _DEFAULT_INCUBATOR_PAGE_BASE_URL
 
 
+@lru_cache(maxsize=256)
+def _quote_incubator_path(path: str) -> str:
+    return quote(path, safe=_INCUBATOR_URL_SAFE_CHARS)
+
+
 def build_incubator_category_url() -> str:
-    return "{}{}".format(
-        _incubator_page_base_url(),
-        quote(_INCUBATOR_WIKIDATA_CATEGORY_PAGE, safe="/:()-,._"),
-    )
+    return "{}{}".format(_incubator_page_base_url(), _quote_incubator_path(_INCUBATOR_WIKIDATA_CATEGORY_PAGE))
 
 
 def incubator_lookup_backend() -> str:
@@ -131,16 +124,11 @@ def _normalize_db_page_title(value: object) -> str:
 
 
 def _split_incubator_title(page_title: str) -> Tuple[str, str, str]:
-    normalized = normalize_page_title(page_title)
-    parts = normalized.split("/", 2)
+    parts = page_title.split("/", 2)
     wiki_project = parts[0] if len(parts) >= 1 else ""
     lang_code = parts[1] if len(parts) >= 2 else ""
     page_name = parts[2] if len(parts) >= 3 else parts[-1] if parts else ""
     return wiki_project, lang_code, page_name
-
-
-def _project_name_for_code(wiki_project: str) -> str:
-    return _PROJECT_NAME_BY_CODE.get(wiki_project, wiki_project)
 
 
 def _wiki_group_for_code(wiki_project: str) -> str:
@@ -148,42 +136,49 @@ def _wiki_group_for_code(wiki_project: str) -> str:
     return _WIKI_GROUP_BY_CODE.get(wiki_project, fallback)
 
 
-def _incubator_url_for_title(page_title: str) -> str:
-    normalized = normalize_page_title(page_title)
+def _incubator_url_for_title(page_title: str, page_base_url: Optional[str] = None) -> str:
     return "{}{}".format(
-        _incubator_page_base_url(),
-        quote(normalized, safe="/:()-,._"),
+        page_base_url or _incubator_page_base_url(),
+        _quote_incubator_path(page_title),
     )
 
 
-def _site_url_for_parts(wiki_project: str, lang_code: str) -> Optional[str]:
+def _site_url_for_parts(
+    wiki_project: str,
+    lang_code: str,
+    page_base_url: Optional[str] = None,
+) -> Optional[str]:
     normalized_project = str(wiki_project or "").strip()
     normalized_lang = str(lang_code or "").strip()
     if not normalized_project or not normalized_lang:
         return None
     return "{}{}".format(
-        _incubator_page_base_url(),
-        quote("{}/{}/".format(normalized_project, normalized_lang), safe="/:()-,._"),
+        page_base_url or _incubator_page_base_url(),
+        _quote_incubator_path("{}/{}/".format(normalized_project, normalized_lang)),
     )
 
 
 def _build_incubator_record(
     page_title: str,
     wikidata_id: Optional[str],
+    page_base_url: Optional[str] = None,
 ) -> Dict[str, Any]:
     normalized_title = normalize_page_title(page_title)
     wiki_project, lang_code, page_name = _split_incubator_title(normalized_title)
     page_label = page_name.replace("_", " ")
-    site_url = _site_url_for_parts(wiki_project, lang_code)
+    normalized_page_base_url = page_base_url or _incubator_page_base_url()
+    site_url = _site_url_for_parts(wiki_project, lang_code, page_base_url=normalized_page_base_url)
     record: Dict[str, Any] = {
         "page_title": normalized_title,
         "wiki_project": wiki_project,
-        "project_name": _project_name_for_code(wiki_project),
         "wiki_group": _wiki_group_for_code(wiki_project),
         "lang_code": lang_code,
         "page_name": page_name,
         "page_label": page_label,
-        "incubator_url": _incubator_url_for_title(normalized_title),
+        "incubator_url": _incubator_url_for_title(
+            normalized_title,
+            page_base_url=normalized_page_base_url,
+        ),
     }
     if site_url is not None:
         record["site_url"] = site_url
@@ -327,6 +322,7 @@ def _fetch_incubator_records_api(
     records: List[Dict[str, Any]] = []
     continuation: Optional[str] = None
     cutoff = _recentchanges_cutoff() if recentchanges_only else None
+    page_base_url = _incubator_page_base_url()
 
     while True:
         categorymembers, continuation = _fetch_page_batch_api(
@@ -355,6 +351,7 @@ def _fetch_incubator_records_api(
                 _build_incubator_record(
                     page_title=page_title,
                     wikidata_id=wikidata_id,
+                    page_base_url=page_base_url,
                 )
             )
             accepted_in_batch += 1
@@ -450,6 +447,7 @@ def _fetch_incubator_records_sql(
             connection.close()
 
     records: List[Dict[str, Any]] = []
+    page_base_url = _incubator_page_base_url()
     for row in rows:
         if not isinstance(row, (tuple, list)) or len(row) < 2:
             continue
@@ -460,6 +458,7 @@ def _fetch_incubator_records_sql(
             _build_incubator_record(
                 page_title=page_title,
                 wikidata_id=normalize_qid(row[1]),
+                page_base_url=page_base_url,
             )
         )
 

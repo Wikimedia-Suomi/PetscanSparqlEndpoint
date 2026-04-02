@@ -6,6 +6,7 @@ from urllib.parse import parse_qs
 
 from django.http import HttpRequest, HttpResponse, JsonResponse
 from django.shortcuts import render
+from django.utils.html import format_html
 from django.views.decorators.csrf import csrf_exempt
 
 from . import service as incubator_service
@@ -32,7 +33,29 @@ class SparqlRequest(RequestContext):
 
 
 def index(request: HttpRequest) -> HttpResponse:
-    return render(request, "incubator.html")
+    return render(
+        request,
+        "incubator.html",
+        {
+            "recentchanges_help_text": _recentchanges_help_text(),
+        },
+    )
+
+
+def _recentchanges_help_text() -> str:
+    if service_source.incubator_lookup_backend() == service_source.LOOKUP_BACKEND_TOOLFORGE_SQL:
+        return cast(
+            str,
+            format_html(
+                'This fetches pages from the <code>recentchanges</code> table using '
+                '<code>rc_source="mw.edit"</code> plus move log events '
+                '<code>(rc_source="mw.log" AND rc_log_type="move")</code> as the filter.'
+            ),
+        )
+    return (
+        "In API mode, it uses category member timestamps sorted from newest to oldest "
+        "and stops when the 30-day window is exceeded."
+    )
 
 
 def _parse_bool(value: Any, default: bool = False) -> bool:

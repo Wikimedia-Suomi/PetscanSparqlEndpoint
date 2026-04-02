@@ -93,6 +93,7 @@ class IncubatorServiceSourceTests(SimpleTestCase):
                 self.assertEqual(records[0]["lang_code"], "sms")
                 self.assertEqual(records[0]["page_name"], "Katja_Gauriloff")
                 self.assertEqual(records[0]["page_label"], "Katja Gauriloff")
+                self.assertNotIn("project_name", records[0])
                 self.assertEqual(
                     records[0]["incubator_url"],
                     "https://incubator.wikimedia.org/wiki/Wp/sms/Katja_Gauriloff",

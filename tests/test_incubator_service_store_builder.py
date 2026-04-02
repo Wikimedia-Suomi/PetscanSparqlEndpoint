@@ -53,22 +53,63 @@ class IncubatorServiceStoreBuilderTests(ServiceTestCase):
                 """
                 ASK {
                   <https://incubator.wikimedia.org/wiki/Wp/sms/Katja_Gauriloff>
+                    <https://incubator.wikimedia.org/ontology/incubator_url> ?incubatorUrl .
+                }
+                """
+            )
+        )
+        self.assertFalse(
+            store_instance.query(
+                """
+                ASK {
+                  <https://incubator.wikimedia.org/wiki/Wp/sms/Katja_Gauriloff>
+                    <https://incubator.wikimedia.org/ontology/position> ?position .
+                }
+                """
+            )
+        )
+        self.assertFalse(
+            store_instance.query(
+                """
+                ASK {
+                  <https://incubator.wikimedia.org/wiki/Wp/sms/Katja_Gauriloff>
+                    <https://incubator.wikimedia.org/ontology/loadedAt> ?loadedAt .
+                }
+                """
+            )
+        )
+        self.assertFalse(
+            store_instance.query(
+                """
+                ASK {
+                  <https://incubator.wikimedia.org/wiki/Wp/sms/Katja_Gauriloff>
                     <https://incubator.wikimedia.org/ontology/page_name> ?pageName .
+                }
+                """
+            )
+        )
+        self.assertFalse(
+            store_instance.query(
+                """
+                ASK {
+                  <https://incubator.wikimedia.org/wiki/Wp/sms/Katja_Gauriloff>
+                    <https://incubator.wikimedia.org/ontology/project_name> ?projectName .
                 }
                 """
             )
         )
 
         field_map = {field["source_key"]: field for field in meta["structure"]["fields"]}
-        self.assertEqual(field_map["incubator_url"]["primary_type"], "iri")
         self.assertEqual(field_map["site_url"]["primary_type"], "iri")
         self.assertEqual(field_map["wikidata_entity"]["primary_type"], "iri")
         self.assertEqual(field_map["wikidata_entity"]["predicate"], "http://schema.org/about")
         self.assertEqual(field_map["lang_code"]["predicate"], "http://schema.org/inLanguage")
         self.assertEqual(field_map["page_label"]["predicate"], "http://schema.org/name")
         self.assertEqual(field_map["site_url"]["predicate"], "http://schema.org/isPartOf")
+        self.assertNotIn("incubator_url", field_map)
         self.assertNotIn("namespace", field_map)
         self.assertNotIn("page_name", field_map)
+        self.assertNotIn("project_name", field_map)
         self.assertEqual(
             field_map["wiki_group"]["predicate"],
             "http://wikiba.se/ontology#wikiGroup",

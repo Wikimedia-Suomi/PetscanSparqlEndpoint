@@ -45,6 +45,28 @@ class IncubatorApiViewTests(SimpleTestCase):
         self.assertContains(response, "hosts test wikis for new language editions", html=False)
         self.assertContains(response, "Open Incubator category", html=False)
         self.assertContains(response, "Only pages edited during the last 30 days", html=False)
+        self.assertContains(
+            response,
+            "In API mode, it uses category member timestamps sorted from newest to oldest",
+            html=False,
+        )
+        self.assertNotContains(response, 'rc_source="mw.edit"', html=False)
+
+    def test_incubator_index_renders_replica_recentchanges_help_text_when_sql_backend_is_active(self) -> None:
+        with self.settings(WIKIDATA_LOOKUP_BACKEND="toolforge_sql"):
+            response = self.client.get("/incubator/")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(
+            response,
+            'This fetches pages from the <code>recentchanges</code> table using <code>rc_source="mw.edit"</code> plus move log events <code>(rc_source="mw.log" AND rc_log_type="move")</code> as the filter.',
+            html=True,
+        )
+        self.assertNotContains(
+            response,
+            "In API mode, it uses category member timestamps sorted from newest to oldest",
+            html=False,
+        )
 
     @patch("incubator.views.incubator_service.ensure_loaded")
     def test_structure_endpoint_returns_meta(

@@ -5,9 +5,8 @@ import re
 import shutil
 from dataclasses import dataclass
 from datetime import datetime, timezone
-from functools import lru_cache
 from pathlib import Path
-from typing import Any, Dict, List, Mapping, Optional, Sequence, Tuple
+from typing import Any, List, Mapping, Optional, Sequence, cast
 
 from petscan import service_rdf as rdf
 from petscan import service_store as store
@@ -26,7 +25,6 @@ _SCHEMA_NAME_IRI = "http://schema.org/name"
 _SCHEMA_IS_PART_OF_IRI = "http://schema.org/isPartOf"
 _WIKIBASE_WIKI_GROUP_IRI = "http://wikiba.se/ontology#wikiGroup"
 _QUAD_BUFFER_TARGET = 4_000_000
-_IRI_FIELD_KEYS = frozenset({"incubator_url", "site_url", "wikidata_entity"})
 _LANGUAGE_TAG_RE = re.compile(r"^[A-Za-z]{2,8}(?:-[A-Za-z0-9]{1,8})*$")
 _STANDARD_PREDICATE_BY_SOURCE_KEY = {
     "wikidata_entity": _SCHEMA_ABOUT_IRI,
@@ -35,8 +33,27 @@ _STANDARD_PREDICATE_BY_SOURCE_KEY = {
     "site_url": _SCHEMA_IS_PART_OF_IRI,
     "wiki_group": _WIKIBASE_WIKI_GROUP_IRI,
 }
-_STANDARD_ONLY_FIELD_KEYS = frozenset(_STANDARD_PREDICATE_BY_SOURCE_KEY.keys())
-_NON_RDF_FIELD_KEYS = frozenset({"page_name"})
+_INCUBATOR_FIELD_ORDER = (
+    "lang_code",
+    "page_label",
+    "page_title",
+    "site_url",
+    "wiki_group",
+    "wiki_project",
+    "wikidata_entity",
+    "wikidata_id",
+)
+_INCUBATOR_FIELD_TYPE_BY_KEY = {
+    "lang_code": "xsd:string",
+    "page_label": "xsd:string",
+    "page_title": "xsd:string",
+    "site_url": rdf.SPARQL_IRI_TYPE,
+    "wiki_group": "xsd:string",
+    "wiki_project": "xsd:string",
+    "wikidata_entity": rdf.SPARQL_IRI_TYPE,
+    "wikidata_id": "xsd:string",
+}
+_OPTIONAL_INCUBATOR_FIELD_KEYS = frozenset({"site_url", "wikidata_entity", "wikidata_id"})
 
 try:
     from pyoxigraph import Literal, NamedNode, Quad, Store
@@ -50,21 +67,20 @@ except ImportError:  # pragma: no cover - dependency check at runtime
 @dataclass(frozen=True)
 class _StorePredicates:
     rdf_type: Any
-    position: Any
-    loaded_at: Any
     schema_article: Any
     schema_about: Any
     schema_in_language: Any
     schema_name: Any
     schema_is_part_of: Any
     wikibase_wiki_group: Any
+    page_title: Any
+    wiki_project: Any
+    wikidata_id: Any
 
 
 @dataclass(frozen=True)
 class _RecordWriteContext:
     predicates: _StorePredicates
-    loaded_at_literal: Any
-    xsd_integer_type: Any
 
 
 def _reset_store_directory(store_id: int) -> Path:
@@ -86,72 +102,52 @@ def _require_store_class() -> Any:
 def _build_store_predicates() -> _StorePredicates:
     return _StorePredicates(
         rdf_type=NamedNode(rdf.RDF_TYPE_IRI),
-        position=NamedNode(INCUBATOR_PREDICATE_BASE + "position"),
-        loaded_at=NamedNode(INCUBATOR_PREDICATE_BASE + "loadedAt"),
         schema_article=NamedNode(_SCHEMA_ARTICLE_IRI),
         schema_about=NamedNode(_SCHEMA_ABOUT_IRI),
         schema_in_language=NamedNode(_SCHEMA_IN_LANGUAGE_IRI),
         schema_name=NamedNode(_SCHEMA_NAME_IRI),
         schema_is_part_of=NamedNode(_SCHEMA_IS_PART_OF_IRI),
         wikibase_wiki_group=NamedNode(_WIKIBASE_WIKI_GROUP_IRI),
+        page_title=NamedNode(INCUBATOR_PREDICATE_BASE + rdf._field_name("page_title")),
+        wiki_project=NamedNode(INCUBATOR_PREDICATE_BASE + rdf._field_name("wiki_project")),
+        wikidata_id=NamedNode(INCUBATOR_PREDICATE_BASE + rdf._field_name("wikidata_id")),
     )
 
 
-@lru_cache(maxsize=256)
-def _incubator_predicate_for(key: str) -> Any:
-    return NamedNode(INCUBATOR_PREDICATE_BASE + rdf._field_name(key))
+def _build_incubator_structure_summary(records: Sequence[Mapping[str, Any]]) -> StructureSummary:
+    row_count = len(records)
+    optional_counts = {key: 0 for key in _OPTIONAL_INCUBATOR_FIELD_KEYS}
 
+    for row in records:
+        for key in _OPTIONAL_INCUBATOR_FIELD_KEYS:
+            if key in row:
+                optional_counts[key] += 1
 
-def _incubator_structure_summary(summary: StructureSummary) -> StructureSummary:
     fields: List[StructureField] = []
-    for field in summary["fields"]:
-        source_key = field["source_key"]
-        if source_key in _NON_RDF_FIELD_KEYS:
+    for source_key in _INCUBATOR_FIELD_ORDER:
+        present_in_rows = optional_counts[source_key] if source_key in optional_counts else row_count
+        if present_in_rows <= 0:
             continue
-        updated_field: StructureField = {
-            "source_key": source_key,
-            "predicate": _STANDARD_PREDICATE_BY_SOURCE_KEY.get(
-                source_key,
-                INCUBATOR_PREDICATE_BASE + rdf._field_name(source_key),
-            ),
-            "present_in_rows": field["present_in_rows"],
-            "primary_type": field["primary_type"],
-            "observed_types": list(field["observed_types"]),
-        }
-        if "row_side_cardinality" in field:
-            updated_field["row_side_cardinality"] = field["row_side_cardinality"]
-        fields.append(updated_field)
+        sparql_type = _INCUBATOR_FIELD_TYPE_BY_KEY[source_key]
+        fields.append(
+            {
+                "source_key": source_key,
+                "predicate": _STANDARD_PREDICATE_BY_SOURCE_KEY.get(
+                    source_key,
+                    INCUBATOR_PREDICATE_BASE + rdf._field_name(source_key),
+                ),
+                "present_in_rows": present_in_rows,
+                "primary_type": sparql_type,
+                "observed_types": [sparql_type],
+                "row_side_cardinality": cast(Any, rdf.ROW_SIDE_CARDINALITY_ONE),
+            }
+        )
+
     return {
-        "row_count": summary["row_count"],
+        "row_count": row_count,
         "field_count": len(fields),
         "fields": fields,
     }
-
-
-def _normalize_scalar_value_and_type(key: str, value: Any) -> Tuple[Any, str]:
-    if isinstance(value, bool):
-        return value, "xsd:boolean"
-    if isinstance(value, int) and not isinstance(value, bool):
-        return value, "xsd:integer"
-    if isinstance(value, float):
-        return value, "xsd:double"
-
-    if key in rdf._XSD_DATETIME_SCALAR_FIELDS:
-        normalized_datetime = rdf.normalize_datetime_xsd(value)
-        if normalized_datetime is not None:
-            return normalized_datetime, "xsd:dateTime"
-
-    if not isinstance(value, str):
-        return value, "xsd:string"
-
-    stripped = value.strip()
-    if not stripped:
-        return value, "xsd:string"
-
-    if key in _IRI_FIELD_KEYS and (stripped.startswith("http://") or stripped.startswith("https://")):
-        return stripped, rdf.SPARQL_IRI_TYPE
-
-    return value, "xsd:string"
 
 
 def _schema_name_literal(page_label: Any, lang_code: Any) -> Any:
@@ -175,60 +171,25 @@ def _optimize_store(store_instance: Any) -> None:
     store_instance.optimize()
 
 
-def _write_scalar_record_quads(
+def _write_incubator_record_quads(
     subject: Any,
     row: Mapping[str, Any],
+    predicates: _StorePredicates,
     quad_buffer: List[Any],
-) -> Tuple[Dict[str, int], Dict[str, int]]:
-    row_field_kinds: Dict[str, int] = {}
-    row_field_value_counts: Dict[str, int] = {}
+) -> None:
     append_quad = quad_buffer.append
 
-    for key, raw_value in row.items():
-        normalized_key = str(key)
-        if normalized_key in _NON_RDF_FIELD_KEYS:
-            continue
-        normalized_value, sparql_type = _normalize_scalar_value_and_type(normalized_key, raw_value)
-        rdf._track_row_field_kind(row_field_kinds, normalized_key, sparql_type)
-        rdf._track_row_field_value_count(row_field_value_counts, str(key))
-        if normalized_key in _STANDARD_ONLY_FIELD_KEYS:
-            continue
-        append_quad(
-            Quad(
-                subject,
-                _incubator_predicate_for(normalized_key),
-                rdf.object_term_for_typed_value(normalized_value, sparql_type),
-            )
-        )
+    page_title = str(row.get("page_title", "") or "").strip()
+    if page_title:
+        append_quad(Quad(subject, predicates.page_title, Literal(page_title)))
 
-    return row_field_kinds, row_field_value_counts
+    wiki_project = str(row.get("wiki_project", "") or "").strip()
+    if wiki_project:
+        append_quad(Quad(subject, predicates.wiki_project, Literal(wiki_project)))
 
-
-def _write_record_quads(
-    index: int,
-    row: Mapping[str, Any],
-    context: _RecordWriteContext,
-    quad_buffer: List[Any],
-) -> Tuple[Dict[str, int], Dict[str, int]]:
-    incubator_url = str(row.get("incubator_url", "") or "").strip()
-    if not incubator_url:
-        raise PetscanServiceError("Incubator record is missing incubator_url.")
-
-    subject = NamedNode(incubator_url)
-    predicates = context.predicates
-    append_quad = quad_buffer.append
-
-    append_quad(Quad(subject, predicates.rdf_type, predicates.schema_article))
-    append_quad(
-        Quad(
-            subject,
-            predicates.position,
-            Literal(str(index + 1), datatype=context.xsd_integer_type),
-        )
-    )
-    append_quad(Quad(subject, predicates.loaded_at, context.loaded_at_literal))
-
-    row_field_kinds, row_field_value_counts = _write_scalar_record_quads(subject, row, quad_buffer)
+    wikidata_id = str(row.get("wikidata_id", "") or "").strip()
+    if wikidata_id:
+        append_quad(Quad(subject, predicates.wikidata_id, Literal(wikidata_id)))
 
     wikidata_entity = str(row.get("wikidata_entity", "") or "").strip()
     if wikidata_entity:
@@ -251,7 +212,23 @@ def _write_record_quads(
         if wiki_group:
             append_quad(Quad(site_node, predicates.wikibase_wiki_group, Literal(wiki_group)))
 
-    return row_field_kinds, row_field_value_counts
+
+def _write_record_quads(
+    index: int,
+    row: Mapping[str, Any],
+    context: _RecordWriteContext,
+    quad_buffer: List[Any],
+) -> None:
+    incubator_url = str(row.get("incubator_url", "") or "").strip()
+    if not incubator_url:
+        raise PetscanServiceError("Incubator record is missing incubator_url.")
+
+    subject = NamedNode(incubator_url)
+    predicates = context.predicates
+    append_quad = quad_buffer.append
+
+    append_quad(Quad(subject, predicates.rdf_type, predicates.schema_article))
+    _write_incubator_record_quads(subject, row, predicates, quad_buffer)
 
 
 def _build_store_meta(
@@ -290,24 +267,17 @@ def build_store(
     try:
         loaded_at = datetime.now(timezone.utc).replace(microsecond=0).isoformat()
         predicates = _build_store_predicates()
-        structure_accumulator = rdf.StructureAccumulator()
         write_context = _RecordWriteContext(
             predicates=predicates,
-            loaded_at_literal=Literal(loaded_at, datatype=NamedNode(rdf.XSD_DATE_TIME_IRI)),
-            xsd_integer_type=NamedNode(rdf.XSD_INTEGER_IRI),
         )
         quad_buffer: List[Any] = []
 
         for index, row in enumerate(records):
-            row_field_kinds, row_field_value_counts = _write_record_quads(
+            _write_record_quads(
                 index=index,
                 row=row,
                 context=write_context,
                 quad_buffer=quad_buffer,
-            )
-            structure_accumulator.add_row_field_kinds(
-                row_field_kinds,
-                row_field_value_counts=row_field_value_counts,
             )
             if len(quad_buffer) >= _QUAD_BUFFER_TARGET:
                 _flush_quads(store_instance, quad_buffer)
@@ -322,9 +292,7 @@ def build_store(
             source_url=source_url,
             source_params=source_params,
             loaded_at=loaded_at,
-            structure=_incubator_structure_summary(
-                structure_accumulator.build_summary(row_count=len(records))
-            ),
+            structure=_build_incubator_structure_summary(records),
         )
         _persist_store_meta(store_id, meta)
         return meta
