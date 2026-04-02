@@ -68,20 +68,6 @@
               {{ namespace_help_text }}
             </p>
             {% endif %}
-            {% verbatim %}
-
-            <label class="checkbox-row" for="incubator-recentchanges-only">
-              <input
-                id="incubator-recentchanges-only"
-                type="checkbox"
-                v-model="incubatorRecentChangesOnly"
-              />
-              Only pages edited during the last 30 days
-            </label>
-            {% endverbatim %}
-            <p class="help">
-              {{ recentchanges_help_text }}
-            </p>
             {% if replica_only_filters_enabled %}
             <label for="incubator-page-latest">Minimum <code>page_latest</code></label>
             <input
@@ -97,6 +83,20 @@
               This shows only pages with newer revision than the given <code>rev_id</code>.
             </p>
             {% endif %}
+            {% verbatim %}
+
+            <label class="checkbox-row" for="incubator-recentchanges-only">
+              <input
+                id="incubator-recentchanges-only"
+                type="checkbox"
+                v-model="incubatorRecentChangesOnly"
+              />
+              Only pages edited during the last 30 days
+            </label>
+            {% endverbatim %}
+            <p class="help">
+              {{ recentchanges_help_text }}
+            </p>
             {% verbatim %}
 
             <label for="incubator-limit">Load data limit</label>
