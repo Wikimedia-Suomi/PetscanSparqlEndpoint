@@ -51,6 +51,12 @@ _BUNDLED_QUARRY_EXAMPLES: Tuple[_BundledQuarryExample, ...] = (
         "query_db": "fiwiki_p",
         "file_name": "quarry-103479-run-1084300.json.gz",
     },
+    {
+        "quarry_id": 103514,
+        "qrun_id": 1084648,
+        "query_db": "fiwiki_p",
+        "file_name": "quarry-103514-run-1084648.json.gz",
+    },
 )
 _BUNDLED_QUARRY_EXAMPLES_BY_QUERY_ID: Dict[int, _BundledQuarryExample] = {
     entry["quarry_id"]: entry for entry in _BUNDLED_QUARRY_EXAMPLES

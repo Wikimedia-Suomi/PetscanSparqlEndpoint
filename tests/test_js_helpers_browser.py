@@ -143,6 +143,28 @@ def test_js_helper_build_wizard_query_treats_gil_link_count_as_scalar_field(page
     assert "?item petscan:gil_link ?gil_link ." not in result
 
 
+def test_js_helper_build_incubator_wizard_query_does_not_duplicate_subject_as_incubator_url(
+    page: Page, live_server: Any
+) -> None:
+    result = _call_js_helper(
+        page,
+        live_server,
+        "buildIncubatorWizardQuery",
+        [
+            [
+                {"source_key": "incubator_url", "predicate": "https://incubator.wikimedia.org/ontology/incubator_url"},
+                {"source_key": "wikidata_entity", "predicate": "http://schema.org/about"},
+            ],
+            ["incubator_url", "wikidata_entity"],
+            "incubator_page",
+        ],
+    )
+
+    assert "SELECT ?incubator_page ?wikidata_entity" in result
+    assert "?incubator_url" not in result
+    assert "BIND(?incubator_page AS ?incubator_url)" not in result
+
+
 def test_js_helper_normalize_selected_query_field_keys_falls_back_to_first_five_fields(
     page: Page, live_server: Any
 ) -> None:

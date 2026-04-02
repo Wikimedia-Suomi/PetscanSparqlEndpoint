@@ -45,10 +45,13 @@ class ApiViewTests(SimpleTestCase):
         self.assertContains(response, "SPARQL Bridge")
         self.assertContains(response, "<h1>SPARQL Bridge</h1>", html=True)
         self.assertContains(response, "PetScan")
+        self.assertContains(response, "Incubator")
         self.assertContains(response, "Quarry")
         self.assertContains(response, 'href="/petscan/"', html=False)
+        self.assertContains(response, 'href="/incubator/"', html=False)
         self.assertContains(response, 'href="/quarry/"', html=False)
         self.assertContains(response, 'href="https://meta.wikimedia.org/wiki/PetScan"', html=False)
+        self.assertContains(response, 'href="https://incubator.wikimedia.org"', html=False)
         self.assertContains(
             response,
             'href="https://meta.wikimedia.org/wiki/Research:Quarry"',

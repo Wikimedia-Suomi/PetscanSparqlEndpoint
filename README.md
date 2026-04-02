@@ -175,6 +175,31 @@ for intentional local experiments.
 - `data/examples/petscan-43642782.json.gz`
 - `data/examples/petscan-43706364.json.gz`
 - `data/examples/quarry-103479-run-1084300.json.gz`
+- `data/examples/quarry-103514-run-1084648.json.gz`
+
+## Endpoint Output Regression Snapshots
+
+The repository can also store full offline endpoint-output baselines generated
+from the bundled source snapshots. The command below rebuilds each dataset from
+local JSON, runs one `CONSTRUCT { ?s ?p ?o } WHERE { ?s ?p ?o }` query through
+the service layer, canonicalizes the N-Triples result, and compares it against
+the committed snapshot files in `data/endpoint_snapshots/`.
+
+```bash
+source .venv/bin/activate
+export DJANGO_SECRET_KEY='dev-only-change-me'
+export OXIGRAPH_BASE_DIR="$PWD/data/oxigraph"
+python manage.py check_endpoint_snapshot_regression
+```
+
+To update the stored baselines after an intentional graph change:
+
+```bash
+source .venv/bin/activate
+export DJANGO_SECRET_KEY='dev-only-change-me'
+export OXIGRAPH_BASE_DIR="$PWD/data/oxigraph"
+python manage.py check_endpoint_snapshot_regression --write
+```
 
 ## SPARQL Endpoint
 

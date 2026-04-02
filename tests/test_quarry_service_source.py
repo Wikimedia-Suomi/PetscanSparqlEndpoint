@@ -82,6 +82,14 @@ class QuarryServiceSourceTests(ServiceTestCase):
         self.assertEqual(resolved["json_url"], "https://quarry.wmcloud.org/run/1084300/output/0/json")
         fetch_quarry_query_html_mock.assert_not_called()
 
+    def test_resolve_quarry_run_uses_bundled_103514_example(self) -> None:
+        resolved = service_source.resolve_quarry_run(103514)
+
+        self.assertEqual(resolved["qrun_id"], 1084648)
+        self.assertEqual(resolved["query_db"], "fiwiki_p")
+        self.assertEqual(resolved["query_url"], "https://quarry.wmcloud.org/query/103514")
+        self.assertEqual(resolved["json_url"], "https://quarry.wmcloud.org/run/1084648/output/0/json")
+
     def test_extract_records_maps_headers_and_applies_limit(self) -> None:
         payload = {
             "meta": {"run_id": 1084251, "query_id": 103479},

@@ -1,10 +1,18 @@
 export const DEFAULT_SELECTED_QUERY_FIELDS = ["title", "namespace"];
 export const PETSCAN_ONTOLOGY_PREFIX = "petscan";
 export const PETSCAN_ONTOLOGY_BASE = "https://petscan.wmcloud.org/ontology/";
+export const INCUBATOR_ONTOLOGY_PREFIX = "incubator";
+export const INCUBATOR_ONTOLOGY_BASE = "https://incubator.wikimedia.org/ontology/";
 export const QUARRY_ONTOLOGY_PREFIX = "quarrycol";
 export const QUARRY_ONTOLOGY_BASE = "https://quarry.wmcloud.org/ontology/";
 export const QUARRY_QUERY_PREFIX = "quarry";
 export const QUARRY_QUERY_BASE = "https://quarry.wmcloud.org/query/";
+export const RDF_PREFIX = "rdf";
+export const RDF_BASE = "http://www.w3.org/1999/02/22-rdf-syntax-ns#";
+export const SCHEMA_PREFIX = "schema";
+export const SCHEMA_BASE = "http://schema.org/";
+export const WIKIBASE_PREFIX = "wikibase";
+export const WIKIBASE_BASE = "http://wikiba.se/ontology#";
 
 export const OPEN_QUERY_TARGETS = [
   { value: "wdqs", label: "Wikidata Query Service (via Sophox)" },
@@ -40,6 +48,26 @@ export function buildDefaultQueryText(prefixName, ontologyBase, subjectVariableN
     "}",
     "LIMIT 50",
   ]).join("\n");
+}
+
+export function buildIncubatorDefaultQueryText(subjectVariableName) {
+  var normalizedSubjectVariableName = String(subjectVariableName || "").trim() || "sitelink";
+  var subjectVariable = "?" + normalizedSubjectVariableName;
+  return [
+    "PREFIX " + RDF_PREFIX + ": <" + RDF_BASE + ">",
+    "PREFIX " + SCHEMA_PREFIX + ": <" + SCHEMA_BASE + ">",
+    "PREFIX " + WIKIBASE_PREFIX + ": <" + WIKIBASE_BASE + ">",
+    "SELECT " + subjectVariable + " ?wikidata_entity ?lang_code ?type ?page_label ?site_url ?wiki_group",
+    "WHERE {",
+    "  " + subjectVariable + " " + SCHEMA_PREFIX + ":about ?wikidata_entity .",
+    "  " + subjectVariable + " " + SCHEMA_PREFIX + ":inLanguage ?lang_code .",
+    "  " + subjectVariable + " " + RDF_PREFIX + ":type ?type .",
+    "  " + subjectVariable + " " + SCHEMA_PREFIX + ":name ?page_label .",
+    "  " + subjectVariable + " " + SCHEMA_PREFIX + ":isPartOf ?site_url .",
+    "  ?site_url " + WIKIBASE_PREFIX + ":wikiGroup ?wiki_group .",
+    "}",
+    "LIMIT 50",
+  ].join("\n");
 }
 
 export function defaultQueryText() {
@@ -181,6 +209,10 @@ export function buildQuarryJsonUrl(qrunIdValue) {
     return "";
   }
   return "https://quarry.wmcloud.org/run/" + encodeURIComponent(qrunId) + "/output/0/json";
+}
+
+export function buildIncubatorCategoryUrl() {
+  return "https://incubator.wikimedia.org/wiki/Category:Maintenance:Wikidata_interwiki_links";
 }
 
 export function inferQueryType(query) {
@@ -623,4 +655,85 @@ export function buildWizardQuery(structureFields, selectedQueryFieldKeys) {
     PETSCAN_ONTOLOGY_PREFIX,
     PETSCAN_ONTOLOGY_BASE
   );
+}
+
+function fieldPredicateTerm(field, fallbackPrefix) {
+  var predicate = String((field && field.predicate) || "").trim();
+  if (predicate && /^https?:\/\//i.test(predicate)) {
+    return "<" + predicate + ">";
+  }
+  var sourceKey = String((field && field.source_key) || "").trim();
+  var normalizedPrefix = String(fallbackPrefix || "").trim() || INCUBATOR_ONTOLOGY_PREFIX;
+  if (!sourceKey) {
+    return normalizedPrefix + ":value";
+  }
+  return normalizedPrefix + ":" + sourceKey;
+}
+
+export function buildIncubatorWizardQuery(structureFields, selectedQueryFieldKeys, subjectVariableName) {
+  var normalizedStructureFields = Array.isArray(structureFields) ? structureFields : [];
+  var normalizedSubjectVariableName = String(subjectVariableName || "").trim() || "sitelink";
+  var subjectVariable = "?" + normalizedSubjectVariableName;
+  var selected = {};
+  (Array.isArray(selectedQueryFieldKeys) ? selectedQueryFieldKeys : []).forEach(function (key) {
+    selected[String(key || "").trim()] = true;
+  });
+
+  var orderedFields = normalizedStructureFields.filter(function (field) {
+    var key = String((field && field.source_key) || "").trim();
+    return Boolean(key && selected[key]);
+  });
+
+  var selectVars = [];
+  var selectSeen = {};
+  var whereLines = ["  " + subjectVariable + " a " + SCHEMA_PREFIX + ":Article ."];
+  var pushSelectVar = function (varName) {
+    if (!selectSeen[varName]) {
+      selectSeen[varName] = true;
+      selectVars.push(varName);
+    }
+  };
+  pushSelectVar(subjectVariable);
+
+  orderedFields.forEach(function (field) {
+    var key = String((field && field.source_key) || "").trim();
+    if (!key) {
+      return;
+    }
+
+    if (key === "incubator_url") {
+      return;
+    }
+
+    if (key === "wiki_group") {
+      pushSelectVar("?wiki_group");
+      whereLines.push(
+        "  OPTIONAL { " + subjectVariable + " " + SCHEMA_PREFIX + ":isPartOf ?site_for_wiki_group ."
+        + " ?site_for_wiki_group " + WIKIBASE_PREFIX + ":wikiGroup ?wiki_group . }"
+      );
+      return;
+    }
+
+    var variableName = "?" + normalizeFieldVariableName(key);
+    pushSelectVar(variableName);
+
+    whereLines.push(
+      "  OPTIONAL { " + subjectVariable + " " + fieldPredicateTerm(field, INCUBATOR_ONTOLOGY_PREFIX)
+      + " " + variableName + " . }"
+    );
+  });
+
+  var lines = [
+    "PREFIX " + SCHEMA_PREFIX + ": <" + SCHEMA_BASE + ">",
+    "PREFIX " + WIKIBASE_PREFIX + ": <" + WIKIBASE_BASE + ">",
+    "PREFIX " + INCUBATOR_ONTOLOGY_PREFIX + ": <" + INCUBATOR_ONTOLOGY_BASE + ">",
+    "SELECT " + selectVars.join(" "),
+    "WHERE {",
+  ];
+  whereLines.forEach(function (line) {
+    lines.push(line);
+  });
+  lines.push("}");
+  lines.push("LIMIT 50");
+  return lines.join("\n");
 }
