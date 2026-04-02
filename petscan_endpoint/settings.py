@@ -91,7 +91,7 @@ WIKIDATA_LOOKUP_BACKEND = os.getenv("WIKIDATA_LOOKUP_BACKEND", "api")
 INCUBATOR_API_ENDPOINT = os.getenv("INCUBATOR_API_ENDPOINT", "https://incubator.wikimedia.org/w/api.php")
 INCUBATOR_NAMESPACE_OPTIONS = (
     {"id": 0, "label": "Main"},
-    {"id": 4, "label": "Project"},
+    {"id": 4, "label": "Project", "url_prefix": "Incubator"},
     {"id": 6, "label": "File"},
     {"id": 8, "label": "MediaWiki"},
     {"id": 10, "label": "Template"},

@@ -196,3 +196,48 @@ class IncubatorServiceModuleTests(SimpleTestCase):
                 "page_prefix": ["Wp/sms/"],
             },
         )
+
+    def test_ensure_loaded_builds_empty_store_when_source_returns_zero_rows(self) -> None:
+        store_id = incubator_service.internal_store_id(limit=25, namespaces=[12])
+        empty_meta = {
+            "psid": store_id,
+            "records": 0,
+            "source_url": "https://incubator.wikimedia.org/wiki/Category:Maintenance:Wikidata_interwiki_links",
+            "source_params": {
+                "limit": ["25"],
+                "namespace": ["12"],
+            },
+            "loaded_at": "2026-04-02T09:00:00+00:00",
+            "structure": {"row_count": 0, "field_count": 0, "fields": []},
+        }
+
+        with patch("incubator.service._ensure_oxigraph"):
+            with patch("incubator.service.store.prune_expired_stores"):
+                with patch("incubator.service.store.get_psid_lock") as get_psid_lock_mock:
+                    with patch("incubator.service.store.has_existing_store") as has_existing_store_mock:
+                        with patch("incubator.service.source.fetch_incubator_records") as fetch_mock:
+                            with patch("incubator.service.store_builder.build_store") as build_store_mock:
+                                get_psid_lock_mock.return_value = Lock()
+                                has_existing_store_mock.return_value = False
+                                fetch_mock.return_value = (
+                                    [],
+                                    "https://incubator.wikimedia.org/wiki/Category:Maintenance:Wikidata_interwiki_links",
+                                )
+                                build_store_mock.return_value = empty_meta
+
+                                result = incubator_service.ensure_loaded(
+                                    refresh=False,
+                                    limit=25,
+                                    namespaces=[12],
+                                )
+
+        self.assertEqual(result, empty_meta)
+        build_store_mock.assert_called_once_with(
+            store_id=store_id,
+            records=[],
+            source_url="https://incubator.wikimedia.org/wiki/Category:Maintenance:Wikidata_interwiki_links",
+            source_params={
+                "limit": ["25"],
+                "namespace": ["12"],
+            },
+        )

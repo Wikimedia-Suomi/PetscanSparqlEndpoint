@@ -107,6 +107,56 @@ def available_incubator_namespace_options() -> List[Dict[str, Any]]:
     return options
 
 
+def _namespace_url_prefix(namespace_id: int) -> str:
+    if namespace_id <= 0:
+        return ""
+
+    configured = getattr(settings, "INCUBATOR_NAMESPACE_OPTIONS", _DEFAULT_INCUBATOR_NAMESPACE_OPTIONS)
+    if not isinstance(configured, (list, tuple)):
+        configured = _DEFAULT_INCUBATOR_NAMESPACE_OPTIONS
+
+    for item in configured:
+        if not isinstance(item, Mapping):
+            continue
+        try:
+            item_namespace_id = int(str(item.get("id", "")).strip())
+        except (TypeError, ValueError):
+            continue
+        if item_namespace_id != namespace_id:
+            continue
+        raw_prefix = str(item.get("url_prefix", "") or item.get("label", "")).strip()
+        return raw_prefix.lower()
+    return ""
+
+
+def _normalize_namespace_id(value: Any) -> int:
+    try:
+        namespace_id = int(str(value).strip())
+    except (TypeError, ValueError):
+        return 0
+    return namespace_id if namespace_id >= 0 else 0
+
+
+def _normalize_page_title_for_namespace(value: object, namespace_id: int) -> str:
+    normalized_title = _normalize_db_page_title(value)
+    if namespace_id <= 0 or ":" not in normalized_title:
+        return normalized_title
+
+    raw_prefix, remainder = normalized_title.split(":", 1)
+    stripped_prefix = raw_prefix.strip().lower()
+    expected_prefixes = {
+        _namespace_url_prefix(namespace_id),
+    }
+    for item in available_incubator_namespace_options():
+        if int(item["id"]) == namespace_id:
+            expected_prefixes.add(str(item["label"]).strip().lower())
+            break
+
+    if stripped_prefix in expected_prefixes and remainder.strip():
+        return normalize_page_title(remainder)
+    return normalized_title
+
+
 def _incubator_api_url() -> str:
     endpoint = str(getattr(settings, "INCUBATOR_API_ENDPOINT", _DEFAULT_INCUBATOR_API_URL)).strip()
     return endpoint or _DEFAULT_INCUBATOR_API_URL
@@ -297,10 +347,18 @@ def _wiki_group_for_code(wiki_project: str) -> str:
     return _WIKI_GROUP_BY_CODE.get(wiki_project, fallback)
 
 
-def _incubator_url_for_title(page_title: str, page_base_url: Optional[str] = None) -> str:
+def _incubator_url_for_title(
+    page_title: str,
+    namespace_id: int = 0,
+    page_base_url: Optional[str] = None,
+) -> str:
+    prefixed_title = page_title
+    namespace_prefix = _namespace_url_prefix(namespace_id)
+    if namespace_prefix:
+        prefixed_title = "{}:{}".format(namespace_prefix, page_title)
     return "{}{}".format(
         page_base_url or _incubator_page_base_url(),
-        _quote_incubator_path(page_title),
+        _quote_incubator_path(prefixed_title),
     )
 
 
@@ -322,6 +380,7 @@ def _site_url_for_parts(
 def _build_incubator_record(
     page_title: str,
     wikidata_id: Optional[str],
+    namespace_id: int = 0,
     page_base_url: Optional[str] = None,
 ) -> Dict[str, Any]:
     normalized_title = normalize_page_title(page_title)
@@ -338,6 +397,7 @@ def _build_incubator_record(
         "page_label": page_label,
         "incubator_url": _incubator_url_for_title(
             normalized_title,
+            namespace_id=namespace_id,
             page_base_url=normalized_page_base_url,
         ),
     }
@@ -518,6 +578,8 @@ def _fetch_incubator_records_api(
                     break
 
             page_title = normalize_page_title(entry.get("title"))
+            namespace_id = _normalize_namespace_id(entry.get("ns"))
+            page_title = _normalize_page_title_for_namespace(page_title, namespace_id)
             if not page_title:
                 continue
             wikidata_id = normalize_qid(entry.get("sortkeyprefix"))
@@ -525,6 +587,7 @@ def _fetch_incubator_records_api(
             records.append(
                 _build_incubator_record(
                     page_title=page_title,
+                    namespace_id=namespace_id,
                     wikidata_id=wikidata_id,
                     page_base_url=page_base_url,
                 )
@@ -590,7 +653,7 @@ def _fetch_incubator_records_sql(
     params: List[object]
     if recentchanges_only:
         sql = (
-            "SELECT latest_rc.rc_title, cl.cl_sortkey_prefix "
+            "SELECT latest_rc.rc_title, cl.cl_sortkey_prefix, latest_rc.rc_namespace "
             "FROM ("
             "SELECT rc.rc_cur_id, MAX(rc.rc_id) AS latest_rc_id "
             "FROM recentchanges AS rc "
@@ -626,7 +689,7 @@ def _fetch_incubator_records_sql(
         )
     else:
         sql = (
-            "SELECT p.page_title, cl.cl_sortkey_prefix "
+            "SELECT p.page_title, cl.cl_sortkey_prefix, p.page_namespace "
             "FROM page AS p "
             "JOIN categorylinks AS cl ON cl.cl_from = p.page_id "
             "JOIN linktarget AS lt ON lt.lt_id = cl.cl_target_id "
@@ -671,12 +734,14 @@ def _fetch_incubator_records_sql(
     for row in rows:
         if not isinstance(row, (tuple, list)) or len(row) < 2:
             continue
-        page_title = _normalize_db_page_title(row[0])
+        namespace_id = _normalize_namespace_id(row[2] if len(row) >= 3 else 0)
+        page_title = _normalize_page_title_for_namespace(row[0], namespace_id)
         if not page_title:
             continue
         records.append(
             _build_incubator_record(
                 page_title=page_title,
+                namespace_id=namespace_id,
                 wikidata_id=normalize_qid(row[1]),
                 page_base_url=page_base_url,
             )

@@ -120,11 +120,13 @@ class IncubatorServiceSourceTests(SimpleTestCase):
                                 "categorymembers": [
                                     {
                                         "pageid": 11,
+                                        "ns": 0,
                                         "title": "Wp/sms/Katja_Gauriloff",
                                         "sortkeyprefix": "Q138849357",
                                     },
                                     {
                                         "pageid": 12,
+                                        "ns": 0,
                                         "title": "Wp/sms/Vanha_sivu",
                                         "sortkeyprefix": "Q2",
                                     },
@@ -181,11 +183,13 @@ class IncubatorServiceSourceTests(SimpleTestCase):
                                 "categorymembers": [
                                     {
                                         "pageid": 11,
+                                        "ns": 0,
                                         "title": "Wp/sms/Katja_Gauriloff",
                                         "sortkeyprefix": "Q138849357",
                                     },
                                     {
                                         "pageid": 13,
+                                        "ns": 0,
                                         "title": "Wp/sms/Uusi_sivu",
                                         "sortkeyprefix": "Q3",
                                     },
@@ -222,17 +226,19 @@ class IncubatorServiceSourceTests(SimpleTestCase):
                             {
                                 "query": {
                                     "categorymembers": [
-                                        {
-                                            "pageid": 11,
-                                            "title": "Wp/sms/Katja_Gauriloff",
-                                            "sortkeyprefix": "Q138849357",
-                                            "timestamp": "2026-03-25T12:00:00Z",
-                                        },
-                                        {
-                                            "pageid": 13,
-                                            "title": "Wp/sms/Uusi_sivu",
-                                            "sortkeyprefix": "Q3",
-                                            "timestamp": "2026-03-20T09:30:00Z",
+                                            {
+                                                "pageid": 11,
+                                                "ns": 0,
+                                                "title": "Wp/sms/Katja_Gauriloff",
+                                                "sortkeyprefix": "Q138849357",
+                                                "timestamp": "2026-03-25T12:00:00Z",
+                                            },
+                                            {
+                                                "pageid": 13,
+                                                "ns": 0,
+                                                "title": "Wp/sms/Uusi_sivu",
+                                                "sortkeyprefix": "Q3",
+                                                "timestamp": "2026-03-20T09:30:00Z",
                                         },
                                     ]
                                 },
@@ -271,12 +277,14 @@ class IncubatorServiceSourceTests(SimpleTestCase):
                                         "categorymembers": [
                                             {
                                                 "pageid": 11,
+                                                "ns": 0,
                                                 "title": "Wp/sms/Katja_Gauriloff",
                                                 "sortkeyprefix": "Q138849357",
                                                 "timestamp": "2026-03-25T12:00:00Z",
                                             },
                                             {
                                                 "pageid": 13,
+                                                "ns": 0,
                                                 "title": "Wp/sms/Uusi_sivu",
                                                 "sortkeyprefix": "Q3",
                                                 "timestamp": "2026-03-15T09:30:00Z",
@@ -294,6 +302,7 @@ class IncubatorServiceSourceTests(SimpleTestCase):
                                         "categorymembers": [
                                             {
                                                 "pageid": 15,
+                                                "ns": 0,
                                                 "title": "Wp/sms/Liian_vanha",
                                                 "sortkeyprefix": "Q5",
                                                 "timestamp": "2026-02-01T00:00:00Z",
@@ -349,6 +358,7 @@ class IncubatorServiceSourceTests(SimpleTestCase):
                                         "categorymembers": [
                                             {
                                                 "pageid": 11,
+                                                "ns": 0,
                                                 "title": "Wp/sms/Katja_Gauriloff",
                                                 "sortkeyprefix": "Q138849357",
                                             }
@@ -420,8 +430,8 @@ class IncubatorServiceSourceTests(SimpleTestCase):
             with patch("incubator.service_source.pymysql") as pymysql_mock:
                 cursor = MagicMock()
                 cursor.fetchall.return_value = [
-                    (b"Wp/sms/Uusi_sivu", "Q3"),
-                    (b"Wp/sms/Katja_Gauriloff", "Q138849357"),
+                    (b"Wp/sms/Uusi_sivu", "Q3", 0),
+                    (b"Wp/sms/Katja_Gauriloff", "Q138849357", 0),
                 ]
 
                 connection = MagicMock()
@@ -485,8 +495,8 @@ class IncubatorServiceSourceTests(SimpleTestCase):
             with patch("incubator.service_source.pymysql") as pymysql_mock:
                 cursor = MagicMock()
                 cursor.fetchall.return_value = [
-                    (b"Wp/sms/Uusi_sivu", "Q3"),
-                    (b"Wp/sms/Katja_Gauriloff", "Q138849357"),
+                    (b"Wp/sms/Uusi_sivu", "Q3", 0),
+                    (b"Wp/sms/Katja_Gauriloff", "Q138849357", 0),
                 ]
 
                 connection = MagicMock()
@@ -511,7 +521,7 @@ class IncubatorServiceSourceTests(SimpleTestCase):
                 )
 
                 sql, params = cursor.execute.call_args.args
-                self.assertIn("SELECT latest_rc.rc_title, cl.cl_sortkey_prefix", sql)
+                self.assertIn("SELECT latest_rc.rc_title, cl.cl_sortkey_prefix, latest_rc.rc_namespace", sql)
                 self.assertIn("FROM (SELECT rc.rc_cur_id, MAX(rc.rc_id) AS latest_rc_id", sql)
                 self.assertIn("GROUP BY rc.rc_cur_id", sql)
                 self.assertIn("JOIN recentchanges AS latest_rc", sql)
@@ -541,4 +551,57 @@ class IncubatorServiceSourceTests(SimpleTestCase):
                         "Wt/fi\\_%",
                         2,
                     ],
+                )
+
+    def test_build_incubator_record_uses_namespace_prefix_in_url_for_template(self) -> None:
+        record = service_source._build_incubator_record(
+            page_title="Wb/bgn/NUMBEROFARTICLES",
+            namespace_id=10,
+            wikidata_id="Q1",
+        )
+
+        self.assertEqual(
+            record["incubator_url"],
+            "https://incubator.wikimedia.org/wiki/template:Wb/bgn/NUMBEROFARTICLES",
+        )
+
+    def test_build_incubator_record_uses_namespace_prefix_in_url_for_category(self) -> None:
+        record = service_source._build_incubator_record(
+            page_title="Wb/bgn/Turku",
+            namespace_id=14,
+            wikidata_id="Q1",
+        )
+
+        self.assertEqual(
+            record["incubator_url"],
+            "https://incubator.wikimedia.org/wiki/category:Wb/bgn/Turku",
+        )
+
+    def test_fetch_incubator_records_via_api_strips_namespace_prefix_from_page_title(self) -> None:
+        with self.settings(WIKIDATA_LOOKUP_BACKEND="api"):
+            with patch("incubator.service_source.urlopen") as urlopen_mock:
+                urlopen_mock.return_value = _FakeHttpResponse(
+                    json.dumps(
+                        {
+                            "query": {
+                                "categorymembers": [
+                                    {
+                                        "pageid": 11,
+                                        "ns": 14,
+                                        "title": "Category:Wp/fax/Campus da geometria",
+                                        "sortkeyprefix": "Q138849357",
+                                    }
+                                ]
+                            }
+                        }
+                    ).encode("utf-8")
+                )
+
+                records, _source_url = service_source.fetch_incubator_records(limit=1, namespaces=[14])
+
+                self.assertEqual(records[0]["page_title"], "Wp/fax/Campus_da_geometria")
+                self.assertEqual(records[0]["wiki_project"], "Wp")
+                self.assertEqual(
+                    records[0]["incubator_url"],
+                    "https://incubator.wikimedia.org/wiki/category:Wp/fax/Campus_da_geometria",
                 )

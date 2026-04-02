@@ -227,9 +227,6 @@ def ensure_loaded(
             page_latest=page_latest,
             page_prefixes=page_prefixes,
         )
-        if not records:
-            raise PetscanServiceError("Incubator returned zero rows for the requested filters.")
-
         return store_builder.build_store(
             store_id=store_id,
             records=records,
