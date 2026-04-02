@@ -38,6 +38,7 @@ import {
         query: buildIncubatorDefaultQueryTextHelper(incubatorRowIdVariableName),
         refreshBeforeQuery: false,
         incubatorLimit: "10",
+        incubatorPageLatest: "",
         incubatorRecentChangesOnly: false,
         isBusy: false,
         statusMessage: "Ready.",
@@ -95,10 +96,16 @@ import {
       incubatorLimitValue: function () {
         return String(this.incubatorLimit || "").trim();
       },
+      incubatorPageLatestValue: function () {
+        return String(this.incubatorPageLatest || "").trim();
+      },
       effectiveIncubatorParams: function () {
         var entries = [];
         if (this.incubatorLimitValue) {
           entries.push(["limit", this.incubatorLimitValue]);
+        }
+        if (this.incubatorPageLatestValue) {
+          entries.push(["page_latest", this.incubatorPageLatestValue]);
         }
         if (this.incubatorRecentChangesOnly) {
           entries.push(["recentchanges_only", "1"]);
@@ -175,6 +182,10 @@ import {
     },
     watch: {
       incubatorLimit: function () {
+        this.hasLoadedData = false;
+        this.loadExecutionMs = null;
+      },
+      incubatorPageLatest: function () {
         this.hasLoadedData = false;
         this.loadExecutionMs = null;
       },

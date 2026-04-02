@@ -56,6 +56,13 @@ class IncubatorServiceSourceTests(SimpleTestCase):
         with self.assertRaisesMessage(ValueError, "limit must be greater than zero."):
             service_source.normalize_load_limit("0")
 
+    def test_normalize_page_latest_supports_blank_and_positive_values(self) -> None:
+        self.assertIsNone(service_source.normalize_page_latest(""))
+        self.assertEqual(service_source.normalize_page_latest("123456789"), 123456789)
+
+        with self.assertRaisesMessage(ValueError, "page_latest must be greater than zero."):
+            service_source.normalize_page_latest("0")
+
     def test_fetch_incubator_records_via_api_stops_at_limit_and_normalizes_fields(self) -> None:
         with self.settings(WIKIDATA_LOOKUP_BACKEND="api"):
             with patch("incubator.service_source.urlopen") as urlopen_mock:
@@ -261,6 +268,14 @@ class IncubatorServiceSourceTests(SimpleTestCase):
                     )
                     self.assertEqual(urlopen_mock.call_count, 2)
 
+    def test_fetch_incubator_records_rejects_page_latest_filter_in_api_mode(self) -> None:
+        with self.settings(WIKIDATA_LOOKUP_BACKEND="api"):
+            with self.assertRaisesMessage(
+                ValueError,
+                "page_latest filter is only available when using the Toolforge replica backend.",
+            ):
+                service_source.fetch_incubator_records(page_latest=123456789)
+
     def test_fetch_incubator_records_via_replica_uses_configured_cnf(self) -> None:
         with self.settings(
             WIKIDATA_LOOKUP_BACKEND="toolforge_sql",
@@ -280,7 +295,10 @@ class IncubatorServiceSourceTests(SimpleTestCase):
                 connection.cursor.return_value = cursor_cm
                 pymysql_mock.connect.return_value = connection
 
-                records, source_url = service_source.fetch_incubator_records(limit=2)
+                records, source_url = service_source.fetch_incubator_records(
+                    limit=2,
+                    page_latest=123456789,
+                )
 
                 self.assertEqual(source_url, service_source.build_incubator_category_url())
                 self.assertEqual(
@@ -302,10 +320,13 @@ class IncubatorServiceSourceTests(SimpleTestCase):
 
                 sql, params = cursor.execute.call_args.args
                 self.assertIn("FROM page AS p", sql)
-                self.assertNotIn("p.page_latest >= %s", sql)
+                self.assertIn("p.page_latest >= %s", sql)
                 self.assertIn("cl.cl_sortkey_prefix", sql)
                 self.assertIn("LIMIT %s", sql)
-                self.assertEqual(params, ["Maintenance:Wikidata_interwiki_links", 2])
+                self.assertEqual(
+                    params,
+                    ["Maintenance:Wikidata_interwiki_links", 123456789, 2],
+                )
 
     def test_fetch_incubator_records_via_recentchanges_replica_uses_recentchanges_table(self) -> None:
         with self.settings(
@@ -328,6 +349,7 @@ class IncubatorServiceSourceTests(SimpleTestCase):
 
                 records, source_url = service_source.fetch_incubator_records(
                     limit=2,
+                    page_latest=123456789,
                     recentchanges_only=True,
                 )
 
@@ -342,13 +364,16 @@ class IncubatorServiceSourceTests(SimpleTestCase):
                 self.assertIn("FROM (SELECT rc.rc_cur_id, MAX(rc.rc_id) AS latest_rc_id", sql)
                 self.assertIn("GROUP BY rc.rc_cur_id", sql)
                 self.assertIn("JOIN recentchanges AS latest_rc", sql)
+                self.assertIn("latest_rc.rc_id = latest_per_page.latest_rc_id", sql)
+                self.assertNotIn("JOIN page AS p", sql)
                 self.assertIn("rc.rc_source = %s", sql)
                 self.assertIn("rc.rc_log_type = %s", sql)
                 self.assertIn("OR (rc.rc_source = %s AND rc.rc_log_type = %s)", sql)
                 self.assertNotIn("rc.rc_namespace = 0", sql)
+                self.assertIn("AND latest_rc.rc_this_oldid >= %s", sql)
                 self.assertIn("ORDER BY latest_per_page.latest_rc_id DESC", sql)
                 self.assertIn("LIMIT %s", sql)
                 self.assertEqual(
                     params,
-                    ["mw.edit", "mw.log", "move", "Maintenance:Wikidata_interwiki_links", 2],
+                    ["mw.edit", "mw.log", "move", "Maintenance:Wikidata_interwiki_links", 123456789, 2],
                 )

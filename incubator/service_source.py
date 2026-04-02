@@ -23,6 +23,7 @@ __all__ = [
     "fetch_incubator_records",
     "incubator_lookup_backend",
     "normalize_load_limit",
+    "normalize_page_latest",
     "normalize_source_params",
 ]
 
@@ -45,7 +46,7 @@ _WIKI_GROUP_BY_CODE = {
     "Ws": "wikisource",
     "Wv": "wikiversity",
 }
-_SOURCE_PARAM_KEYS = frozenset({"limit", "recentchanges_only"})
+_SOURCE_PARAM_KEYS = frozenset({"limit", "page_latest", "recentchanges_only"})
 _MAX_INCUBATOR_API_BATCH_SIZE = 50
 _INCUBATOR_URL_SAFE_CHARS = "/:()-,._"
 pymysql = cast(Any, enrichment_sql.pymysql)
@@ -93,6 +94,21 @@ def normalize_load_limit(value: Any) -> Optional[int]:
     if limit <= 0:
         raise ValueError("limit must be greater than zero.")
     return limit
+
+
+def normalize_page_latest(value: Any) -> Optional[int]:
+    if value is None:
+        return None
+    text = str(value).strip()
+    if not text:
+        return None
+    try:
+        page_latest = int(text)
+    except (TypeError, ValueError) as exc:
+        raise ValueError("page_latest must be an integer.") from exc
+    if page_latest <= 0:
+        raise ValueError("page_latest must be greater than zero.")
+    return page_latest
 
 
 def normalize_source_params(params: Optional[Mapping[str, Any]]) -> Dict[str, List[str]]:
@@ -374,6 +390,7 @@ def _fetch_incubator_records_api(
 def _fetch_incubator_records_sql(
     limit: Optional[int],
     recentchanges_only: bool = False,
+    page_latest: Optional[int] = None,
 ) -> Tuple[List[Dict[str, Any]], str]:
     if pymysql is None:
         raise PetscanServiceError(
@@ -414,9 +431,14 @@ def _fetch_incubator_records_sql(
             "JOIN linktarget AS lt ON lt.lt_id = cl.cl_target_id "
             "WHERE lt.lt_namespace = 14 "
             "AND lt.lt_title = %s "
-            "ORDER BY latest_per_page.latest_rc_id DESC"
         )
         params = ["mw.edit", "mw.log", "move", _INCUBATOR_WIKIDATA_CATEGORY_DB_TITLE]
+        if page_latest is not None:
+            sql += "AND latest_rc.rc_this_oldid >= %s "
+            params.append(page_latest)
+        sql += (
+            "ORDER BY latest_per_page.latest_rc_id DESC"
+        )
     else:
         sql = (
             "SELECT p.page_title, cl.cl_sortkey_prefix "
@@ -427,6 +449,9 @@ def _fetch_incubator_records_sql(
             "AND lt.lt_title = %s"
         )
         params = [_INCUBATOR_WIKIDATA_CATEGORY_DB_TITLE]
+        if page_latest is not None:
+            sql += " AND p.page_latest >= %s"
+            params.append(page_latest)
     if limit is not None:
         sql += " LIMIT %s"
         params.append(limit)
@@ -468,15 +493,23 @@ def _fetch_incubator_records_sql(
 def fetch_incubator_records(
     limit: Optional[int] = None,
     recentchanges_only: bool = False,
+    page_latest: Optional[int] = None,
 ) -> Tuple[List[Dict[str, Any]], str]:
     backend = incubator_lookup_backend()
     _console_log(
-        "backend={} limit={} recentchanges_only={}".format(
+        "backend={} limit={} recentchanges_only={} page_latest={}".format(
             backend,
             limit if limit is not None else "all",
             "yes" if recentchanges_only else "no",
+            page_latest if page_latest is not None else "any",
         )
     )
     if backend == LOOKUP_BACKEND_TOOLFORGE_SQL:
-        return _fetch_incubator_records_sql(limit=limit, recentchanges_only=recentchanges_only)
+        return _fetch_incubator_records_sql(
+            limit=limit,
+            recentchanges_only=recentchanges_only,
+            page_latest=page_latest,
+        )
+    if page_latest is not None:
+        raise ValueError("page_latest filter is only available when using the Toolforge replica backend.")
     return _fetch_incubator_records_api(limit=limit, recentchanges_only=recentchanges_only)

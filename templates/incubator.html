@@ -44,6 +44,25 @@
               Default is <code>10</code>. Clear this field to load all matching Incubator pages.
             </p>
 
+            {% endverbatim %}
+            {% if page_latest_filter_enabled %}
+            <label for="incubator-page-latest">Minimum <code>page_latest</code></label>
+            <input
+              id="incubator-page-latest"
+              type="text"
+              inputmode="numeric"
+              spellcheck="false"
+              placeholder="123456789"
+              v-model.trim="incubatorPageLatest"
+              aria-describedby="incubator-page-latest-help"
+            />
+            <p id="incubator-page-latest-help" class="help">
+              Only available with the Toolforge replica backend. Filters replica results with
+              <code>page.page_latest &gt;= value</code>.
+            </p>
+            {% endif %}
+            {% verbatim %}
+
             <label class="checkbox-row" for="incubator-recentchanges-only">
               <input
                 id="incubator-recentchanges-only"

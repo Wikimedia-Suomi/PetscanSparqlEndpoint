@@ -23,14 +23,22 @@ class IncubatorServiceModuleTests(SimpleTestCase):
             base_store_id,
             incubator_service.internal_store_id(limit=None, recentchanges_only=True),
         )
+        self.assertNotEqual(
+            base_store_id,
+            incubator_service.internal_store_id(limit=None, recentchanges_only=False, page_latest=123456789),
+        )
 
     def test_ensure_loaded_reuses_fresh_meta_when_source_params_match(self) -> None:
-        store_id = incubator_service.internal_store_id(limit=25, recentchanges_only=True)
+        store_id = incubator_service.internal_store_id(
+            limit=25,
+            recentchanges_only=True,
+            page_latest=123456789,
+        )
         fresh_meta = {
             "psid": store_id,
             "records": 2,
             "source_url": "https://incubator.wikimedia.org/wiki/Category:Maintenance:Wikidata_interwiki_links",
-            "source_params": {"limit": ["25"], "recentchanges_only": ["1"]},
+            "source_params": {"limit": ["25"], "recentchanges_only": ["1"], "page_latest": ["123456789"]},
             "loaded_at": datetime.now(timezone.utc).replace(microsecond=0).isoformat(),
         }
 
@@ -52,6 +60,7 @@ class IncubatorServiceModuleTests(SimpleTestCase):
                                     result = incubator_service.ensure_loaded(
                                         refresh=False,
                                         limit=25,
+                                        page_latest=123456789,
                                         recentchanges_only=True,
                                     )
 
@@ -64,7 +73,11 @@ class IncubatorServiceModuleTests(SimpleTestCase):
         build_store_mock.assert_not_called()
 
     def test_ensure_loaded_rebuilds_when_cached_meta_source_params_do_not_match(self) -> None:
-        store_id = incubator_service.internal_store_id(limit=25, recentchanges_only=True)
+        store_id = incubator_service.internal_store_id(
+            limit=25,
+            recentchanges_only=True,
+            page_latest=123456789,
+        )
         cached_meta = {
             "psid": store_id,
             "records": 2,
@@ -91,7 +104,7 @@ class IncubatorServiceModuleTests(SimpleTestCase):
             "psid": store_id,
             "records": 1,
             "source_url": "https://incubator.wikimedia.org/wiki/Category:Maintenance:Wikidata_interwiki_links",
-            "source_params": {"limit": ["25"], "recentchanges_only": ["1"]},
+            "source_params": {"limit": ["25"], "recentchanges_only": ["1"], "page_latest": ["123456789"]},
             "loaded_at": "2026-04-02T09:00:00+00:00",
             "structure": {"row_count": 1, "field_count": 1, "fields": []},
         }
@@ -119,6 +132,7 @@ class IncubatorServiceModuleTests(SimpleTestCase):
                                     result = incubator_service.ensure_loaded(
                                         refresh=False,
                                         limit=25,
+                                        page_latest=123456789,
                                         recentchanges_only=True,
                                     )
 
@@ -127,10 +141,14 @@ class IncubatorServiceModuleTests(SimpleTestCase):
         get_psid_lock_mock.assert_called_once_with(store_id)
         has_existing_store_mock.assert_called_once_with(store_id)
         read_meta_mock.assert_called_once_with(store_id)
-        fetch_incubator_records_mock.assert_called_once_with(limit=25, recentchanges_only=True)
+        fetch_incubator_records_mock.assert_called_once_with(
+            limit=25,
+            recentchanges_only=True,
+            page_latest=123456789,
+        )
         build_store_mock.assert_called_once_with(
             store_id=store_id,
             records=records,
             source_url="https://incubator.wikimedia.org/wiki/Category:Maintenance:Wikidata_interwiki_links",
-            source_params={"limit": ["25"], "recentchanges_only": ["1"]},
+            source_params={"limit": ["25"], "recentchanges_only": ["1"], "page_latest": ["123456789"]},
         )

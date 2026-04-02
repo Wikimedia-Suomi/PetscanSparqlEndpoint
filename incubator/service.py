@@ -37,21 +37,32 @@ _INCUBATOR_STORE_ID_OFFSET = 3_000_000_000_000
 _STORE_UNAVAILABLE_PUBLIC_MESSAGE = "Local data store is unavailable."
 
 
-def internal_store_id(limit: Optional[int], recentchanges_only: bool = False) -> int:
-    token = "incubator|limit={}|recentchanges_only={}".format(
+def internal_store_id(
+    limit: Optional[int],
+    recentchanges_only: bool = False,
+    page_latest: Optional[int] = None,
+) -> int:
+    token = "incubator|limit={}|recentchanges_only={}|page_latest={}".format(
         limit if limit is not None else "",
         "1" if recentchanges_only else "0",
+        page_latest if page_latest is not None else "",
     )
     digest = hashlib.sha1(token.encode("utf-8")).hexdigest()[:12]
     return _INCUBATOR_STORE_ID_OFFSET + int(digest, 16)
 
 
-def _build_source_params(limit: Optional[int], recentchanges_only: bool = False) -> Dict[str, Any]:
+def _build_source_params(
+    limit: Optional[int],
+    recentchanges_only: bool = False,
+    page_latest: Optional[int] = None,
+) -> Dict[str, Any]:
     params: Dict[str, Any] = {}
     if limit is not None:
         params["limit"] = [str(limit)]
     if recentchanges_only:
         params["recentchanges_only"] = ["1"]
+    if page_latest is not None:
+        params["page_latest"] = [str(page_latest)]
     return params
 
 
@@ -163,12 +174,21 @@ def ensure_loaded(
     refresh: bool = False,
     limit: Optional[int] = None,
     recentchanges_only: bool = False,
+    page_latest: Optional[int] = None,
 ) -> StoreMeta:
     _ensure_oxigraph()
-    store_id = internal_store_id(limit, recentchanges_only=recentchanges_only)
+    store_id = internal_store_id(
+        limit,
+        recentchanges_only=recentchanges_only,
+        page_latest=page_latest,
+    )
     store.prune_expired_stores(exclude_psids=[store_id])
     lock = store.get_psid_lock(store_id)
-    expected_source_params = _build_source_params(limit, recentchanges_only=recentchanges_only)
+    expected_source_params = _build_source_params(
+        limit,
+        recentchanges_only=recentchanges_only,
+        page_latest=page_latest,
+    )
 
     with lock:
         if not refresh and store.has_existing_store(store_id):
@@ -183,6 +203,7 @@ def ensure_loaded(
         records, source_url = source.fetch_incubator_records(
             limit=limit,
             recentchanges_only=recentchanges_only,
+            page_latest=page_latest,
         )
         if not records:
             raise PetscanServiceError("Incubator returned zero rows for the requested filters.")
@@ -200,10 +221,20 @@ def execute_query(
     refresh: bool = False,
     limit: Optional[int] = None,
     recentchanges_only: bool = False,
+    page_latest: Optional[int] = None,
 ) -> QueryExecution:
     qtype = sparql.validate_query(query)
-    store_id = internal_store_id(limit, recentchanges_only=recentchanges_only)
-    meta = ensure_loaded(refresh=refresh, limit=limit, recentchanges_only=recentchanges_only)
+    store_id = internal_store_id(
+        limit,
+        recentchanges_only=recentchanges_only,
+        page_latest=page_latest,
+    )
+    meta = ensure_loaded(
+        refresh=refresh,
+        limit=limit,
+        recentchanges_only=recentchanges_only,
+        page_latest=page_latest,
+    )
 
     store_instance = _open_query_store(store_id)
     raw_result = None

@@ -10,6 +10,7 @@ from petscan.service_errors import PetscanServiceError
 INCUBATOR_API_STRUCTURE_PATH = "/incubator/api/structure"
 INCUBATOR_SPARQL_PATH = "/incubator/sparql"
 INCUBATOR_FILTERED_SPARQL_PATH = "/incubator/sparql/limit=25"
+INCUBATOR_FILTERED_WITH_PAGE_LATEST_SPARQL_PATH = "/incubator/sparql/limit=25&page_latest=123456789"
 INCUBATOR_RECENTCHANGES_SPARQL_PATH = "/incubator/sparql/limit=25&recentchanges_only=1"
 
 ASK_QUERY = "ASK { ?s ?p ?o }"
@@ -45,6 +46,7 @@ class IncubatorApiViewTests(SimpleTestCase):
         self.assertContains(response, "hosts test wikis for new language editions", html=False)
         self.assertContains(response, "Open Incubator category", html=False)
         self.assertContains(response, "Only pages edited during the last 30 days", html=False)
+        self.assertNotContains(response, 'id="incubator-page-latest"', html=False)
         self.assertContains(
             response,
             "In API mode, it uses category member timestamps sorted from newest to oldest",
@@ -62,6 +64,8 @@ class IncubatorApiViewTests(SimpleTestCase):
             'This fetches pages from the <code>recentchanges</code> table using <code>rc_source="mw.edit"</code> plus move log events <code>(rc_source="mw.log" AND rc_log_type="move")</code> as the filter.',
             html=True,
         )
+        self.assertContains(response, 'id="incubator-page-latest"', html=False)
+        self.assertContains(response, "Filters replica results with", html=False)
         self.assertNotContains(
             response,
             "In API mode, it uses category member timestamps sorted from newest to oldest",
@@ -78,22 +82,28 @@ class IncubatorApiViewTests(SimpleTestCase):
             "records": 2,
             "source_url": "https://incubator.wikimedia.org/wiki/Category:Maintenance:Wikidata_interwiki_links",
             "loaded_at": "2026-04-02T08:00:00+00:00",
-            "source_params": {"limit": ["10"], "recentchanges_only": ["1"]},
+            "source_params": {"limit": ["10"], "recentchanges_only": ["1"], "page_latest": ["123456789"]},
             "structure": {"row_count": 2, "field_count": 1, "fields": []},
         }
 
         response = self.client.get(
             INCUBATOR_API_STRUCTURE_PATH,
-            data={"limit": "10", "refresh": "1", "recentchanges_only": "1"},
+            data={"limit": "10", "page_latest": "123456789", "refresh": "1", "recentchanges_only": "1"},
         )
 
         self.assertEqual(response.status_code, 200)
         payload = response.json()
         self.assertEqual(payload["source"], "incubator")
         self.assertEqual(payload["limit"], 10)
+        self.assertEqual(payload["page_latest"], 123456789)
         self.assertEqual(payload["recentchanges_only"], True)
         self.assertEqual(payload["meta"]["records"], 2)
-        ensure_loaded.assert_called_once_with(refresh=True, limit=10, recentchanges_only=True)
+        ensure_loaded.assert_called_once_with(
+            refresh=True,
+            limit=10,
+            page_latest=123456789,
+            recentchanges_only=True,
+        )
 
     def test_structure_endpoint_rejects_non_get(self) -> None:
         response = self._post_json(INCUBATOR_API_STRUCTURE_PATH, {"limit": 10})
@@ -134,6 +144,26 @@ class IncubatorApiViewTests(SimpleTestCase):
             ASK_QUERY,
             refresh=False,
             limit=25,
+            page_latest=None,
+            recentchanges_only=False,
+        )
+
+    @patch("incubator.views.incubator_service.execute_query")
+    def test_sparql_endpoint_passes_page_latest_filter_from_path(self, execute_query: Any) -> None:
+        execute_query.return_value = self._ask_execution_result()
+
+        response = self.client.get(
+            INCUBATOR_FILTERED_WITH_PAGE_LATEST_SPARQL_PATH,
+            data={"query": ASK_QUERY},
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertIn("application/sparql-results+json", response["Content-Type"])
+        execute_query.assert_called_once_with(
+            ASK_QUERY,
+            refresh=False,
+            limit=25,
+            page_latest=123456789,
             recentchanges_only=False,
         )
 
@@ -152,6 +182,7 @@ class IncubatorApiViewTests(SimpleTestCase):
             ASK_QUERY,
             refresh=False,
             limit=25,
+            page_latest=None,
             recentchanges_only=True,
         )
 
@@ -171,6 +202,7 @@ class IncubatorApiViewTests(SimpleTestCase):
             ASK_QUERY,
             refresh=False,
             limit=None,
+            page_latest=None,
             recentchanges_only=False,
         )
 
