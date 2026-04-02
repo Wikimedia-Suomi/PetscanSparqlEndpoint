@@ -655,6 +655,22 @@ th {
   background: #f7fafc;
 }
 
+.namespace-filter-list {
+  align-items: start;
+}
+
+.namespace-filter-grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem 0.85rem;
+  align-items: center;
+}
+
+.namespace-filter-option {
+  margin-top: 0;
+  width: auto;
+}
+
 .query-target-option {
   display: flex;
   align-items: center;

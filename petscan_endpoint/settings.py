@@ -89,6 +89,16 @@ OXIGRAPH_BASE_DIR = _required_env("OXIGRAPH_BASE_DIR")
 
 WIKIDATA_LOOKUP_BACKEND = os.getenv("WIKIDATA_LOOKUP_BACKEND", "api")
 INCUBATOR_API_ENDPOINT = os.getenv("INCUBATOR_API_ENDPOINT", "https://incubator.wikimedia.org/w/api.php")
+INCUBATOR_NAMESPACE_OPTIONS = (
+    {"id": 0, "label": "Main"},
+    {"id": 4, "label": "Project"},
+    {"id": 6, "label": "File"},
+    {"id": 8, "label": "MediaWiki"},
+    {"id": 10, "label": "Template"},
+    {"id": 12, "label": "Help"},
+    {"id": 14, "label": "Category"},
+    {"id": 828, "label": "Module"},
+)
 TOOLFORGE_USE_REPLICA = _env_bool("TOOLFORGE_USE_REPLICA", default=False)
 TOOLFORGE_REPLICA_CNF = os.getenv("TOOLFORGE_REPLICA_CNF", "")
 TOOLFORGE_INTEGRATION_TESTS = _env_bool("TOOLFORGE_INTEGRATION_TESTS", default=False)

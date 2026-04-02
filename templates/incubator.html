@@ -45,7 +45,43 @@
             </p>
 
             {% endverbatim %}
-            {% if page_latest_filter_enabled %}
+            {% if namespace_options %}
+            <fieldset class="query-target-list namespace-filter-list">
+              <legend>Namespaces</legend>
+              <div class="namespace-filter-grid">
+              {% for namespace in namespace_options %}
+              <label class="checkbox-row namespace-filter-option" for="incubator-namespace-{{ namespace.id }}">
+                <input
+                  id="incubator-namespace-{{ namespace.id }}"
+                  type="checkbox"
+                  value="{{ namespace.id }}"
+                  v-model="incubatorNamespaces"
+                />
+                {{ namespace.label }} <code>({{ namespace.id }})</code>
+              </label>
+              {% endfor %}
+              </div>
+            </fieldset>
+            <p class="help">
+              {{ namespace_help_text }}
+            </p>
+            {% endif %}
+
+            {% if replica_only_filters_enabled %}
+            <label for="incubator-page-prefix">Page prefix filter</label>
+            <input
+              id="incubator-page-prefix"
+              type="text"
+              spellcheck="false"
+              placeholder="Wp/sms/, Wt/sms/"
+              v-model.trim="incubatorPagePrefix"
+              aria-describedby="incubator-page-prefix-help"
+            />
+            <p id="incubator-page-prefix-help" class="help">
+              Use comma-separated page title prefixes such as <code>Wp/sms/</code> or
+              <code>Wp/sms/...</code>. Maximum 10 prefixes, 10 characters each.
+            </p>
+
             <label for="incubator-page-latest">Minimum <code>page_latest</code></label>
             <input
               id="incubator-page-latest"

@@ -27,18 +27,42 @@ class IncubatorServiceModuleTests(SimpleTestCase):
             base_store_id,
             incubator_service.internal_store_id(limit=None, recentchanges_only=False, page_latest=123456789),
         )
+        self.assertNotEqual(
+            base_store_id,
+            incubator_service.internal_store_id(
+                limit=None,
+                recentchanges_only=False,
+                page_prefixes=["Wp/sms/"],
+            ),
+        )
+        self.assertNotEqual(
+            base_store_id,
+            incubator_service.internal_store_id(
+                limit=None,
+                namespaces=[14],
+                recentchanges_only=False,
+            ),
+        )
 
     def test_ensure_loaded_reuses_fresh_meta_when_source_params_match(self) -> None:
         store_id = incubator_service.internal_store_id(
             limit=25,
+            namespaces=[14],
             recentchanges_only=True,
             page_latest=123456789,
+            page_prefixes=["Wp/sms/"],
         )
         fresh_meta = {
             "psid": store_id,
             "records": 2,
             "source_url": "https://incubator.wikimedia.org/wiki/Category:Maintenance:Wikidata_interwiki_links",
-            "source_params": {"limit": ["25"], "recentchanges_only": ["1"], "page_latest": ["123456789"]},
+            "source_params": {
+                "limit": ["25"],
+                "namespace": ["14"],
+                "recentchanges_only": ["1"],
+                "page_latest": ["123456789"],
+                "page_prefix": ["Wp/sms/"],
+            },
             "loaded_at": datetime.now(timezone.utc).replace(microsecond=0).isoformat(),
         }
 
@@ -60,7 +84,9 @@ class IncubatorServiceModuleTests(SimpleTestCase):
                                     result = incubator_service.ensure_loaded(
                                         refresh=False,
                                         limit=25,
+                                        namespaces=[14],
                                         page_latest=123456789,
+                                        page_prefixes=["Wp/sms/"],
                                         recentchanges_only=True,
                                     )
 
@@ -75,8 +101,10 @@ class IncubatorServiceModuleTests(SimpleTestCase):
     def test_ensure_loaded_rebuilds_when_cached_meta_source_params_do_not_match(self) -> None:
         store_id = incubator_service.internal_store_id(
             limit=25,
+            namespaces=[14],
             recentchanges_only=True,
             page_latest=123456789,
+            page_prefixes=["Wp/sms/"],
         )
         cached_meta = {
             "psid": store_id,
@@ -104,7 +132,13 @@ class IncubatorServiceModuleTests(SimpleTestCase):
             "psid": store_id,
             "records": 1,
             "source_url": "https://incubator.wikimedia.org/wiki/Category:Maintenance:Wikidata_interwiki_links",
-            "source_params": {"limit": ["25"], "recentchanges_only": ["1"], "page_latest": ["123456789"]},
+            "source_params": {
+                "limit": ["25"],
+                "namespace": ["14"],
+                "recentchanges_only": ["1"],
+                "page_latest": ["123456789"],
+                "page_prefix": ["Wp/sms/"],
+            },
             "loaded_at": "2026-04-02T09:00:00+00:00",
             "structure": {"row_count": 1, "field_count": 1, "fields": []},
         }
@@ -132,7 +166,9 @@ class IncubatorServiceModuleTests(SimpleTestCase):
                                     result = incubator_service.ensure_loaded(
                                         refresh=False,
                                         limit=25,
+                                        namespaces=[14],
                                         page_latest=123456789,
+                                        page_prefixes=["Wp/sms/"],
                                         recentchanges_only=True,
                                     )
 
@@ -143,12 +179,20 @@ class IncubatorServiceModuleTests(SimpleTestCase):
         read_meta_mock.assert_called_once_with(store_id)
         fetch_incubator_records_mock.assert_called_once_with(
             limit=25,
+            namespaces=[14],
             recentchanges_only=True,
             page_latest=123456789,
+            page_prefixes=["Wp/sms/"],
         )
         build_store_mock.assert_called_once_with(
             store_id=store_id,
             records=records,
             source_url="https://incubator.wikimedia.org/wiki/Category:Maintenance:Wikidata_interwiki_links",
-            source_params={"limit": ["25"], "recentchanges_only": ["1"], "page_latest": ["123456789"]},
+            source_params={
+                "limit": ["25"],
+                "namespace": ["14"],
+                "recentchanges_only": ["1"],
+                "page_latest": ["123456789"],
+                "page_prefix": ["Wp/sms/"],
+            },
         )

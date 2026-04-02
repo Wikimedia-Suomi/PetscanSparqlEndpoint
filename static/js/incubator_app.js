@@ -38,6 +38,8 @@ import {
         query: buildIncubatorDefaultQueryTextHelper(incubatorRowIdVariableName),
         refreshBeforeQuery: false,
         incubatorLimit: "10",
+        incubatorNamespaces: [],
+        incubatorPagePrefix: "",
         incubatorPageLatest: "",
         incubatorRecentChangesOnly: false,
         isBusy: false,
@@ -99,10 +101,31 @@ import {
       incubatorPageLatestValue: function () {
         return String(this.incubatorPageLatest || "").trim();
       },
+      incubatorPagePrefixValue: function () {
+        return String(this.incubatorPagePrefix || "").trim();
+      },
+      incubatorNamespaceValues: function () {
+        return (Array.isArray(this.incubatorNamespaces) ? this.incubatorNamespaces : [])
+          .map(function (value) {
+            return String(value || "").trim();
+          })
+          .filter(function (value) {
+            return value !== "";
+          })
+          .sort(function (left, right) {
+            return Number(left) - Number(right);
+          });
+      },
       effectiveIncubatorParams: function () {
         var entries = [];
         if (this.incubatorLimitValue) {
           entries.push(["limit", this.incubatorLimitValue]);
+        }
+        this.incubatorNamespaceValues.forEach(function (value) {
+          entries.push(["namespace", value]);
+        });
+        if (this.incubatorPagePrefixValue) {
+          entries.push(["page_prefix", this.incubatorPagePrefixValue]);
         }
         if (this.incubatorPageLatestValue) {
           entries.push(["page_latest", this.incubatorPageLatestValue]);
@@ -182,6 +205,14 @@ import {
     },
     watch: {
       incubatorLimit: function () {
+        this.hasLoadedData = false;
+        this.loadExecutionMs = null;
+      },
+      incubatorNamespaces: function () {
+        this.hasLoadedData = false;
+        this.loadExecutionMs = null;
+      },
+      incubatorPagePrefix: function () {
         this.hasLoadedData = false;
         this.loadExecutionMs = null;
       },

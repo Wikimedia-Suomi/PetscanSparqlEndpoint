@@ -39,13 +39,19 @@ _STORE_UNAVAILABLE_PUBLIC_MESSAGE = "Local data store is unavailable."
 
 def internal_store_id(
     limit: Optional[int],
+    namespaces: Optional[list[int]] = None,
     recentchanges_only: bool = False,
     page_latest: Optional[int] = None,
+    page_prefixes: Optional[list[str]] = None,
 ) -> int:
-    token = "incubator|limit={}|recentchanges_only={}|page_latest={}".format(
+    normalized_namespaces = source.normalize_namespaces(namespaces)
+    normalized_page_prefixes = source.normalize_page_prefixes(page_prefixes)
+    token = "incubator|limit={}|namespace={}|recentchanges_only={}|page_latest={}|page_prefix={}".format(
         limit if limit is not None else "",
+        ",".join(str(namespace_id) for namespace_id in normalized_namespaces),
         "1" if recentchanges_only else "0",
         page_latest if page_latest is not None else "",
+        ",".join(normalized_page_prefixes),
     )
     digest = hashlib.sha1(token.encode("utf-8")).hexdigest()[:12]
     return _INCUBATOR_STORE_ID_OFFSET + int(digest, 16)
@@ -53,16 +59,24 @@ def internal_store_id(
 
 def _build_source_params(
     limit: Optional[int],
+    namespaces: Optional[list[int]] = None,
     recentchanges_only: bool = False,
     page_latest: Optional[int] = None,
+    page_prefixes: Optional[list[str]] = None,
 ) -> Dict[str, Any]:
     params: Dict[str, Any] = {}
     if limit is not None:
         params["limit"] = [str(limit)]
+    normalized_namespaces = source.normalize_namespaces(namespaces)
+    if normalized_namespaces:
+        params["namespace"] = [str(namespace_id) for namespace_id in normalized_namespaces]
     if recentchanges_only:
         params["recentchanges_only"] = ["1"]
     if page_latest is not None:
         params["page_latest"] = [str(page_latest)]
+    normalized_page_prefixes = source.normalize_page_prefixes(page_prefixes)
+    if normalized_page_prefixes:
+        params["page_prefix"] = normalized_page_prefixes
     return params
 
 
@@ -173,21 +187,27 @@ def _as_client_query_error(exc: Exception) -> Optional[str]:
 def ensure_loaded(
     refresh: bool = False,
     limit: Optional[int] = None,
+    namespaces: Optional[list[int]] = None,
     recentchanges_only: bool = False,
     page_latest: Optional[int] = None,
+    page_prefixes: Optional[list[str]] = None,
 ) -> StoreMeta:
     _ensure_oxigraph()
     store_id = internal_store_id(
         limit,
+        namespaces=namespaces,
         recentchanges_only=recentchanges_only,
         page_latest=page_latest,
+        page_prefixes=page_prefixes,
     )
     store.prune_expired_stores(exclude_psids=[store_id])
     lock = store.get_psid_lock(store_id)
     expected_source_params = _build_source_params(
         limit,
+        namespaces=namespaces,
         recentchanges_only=recentchanges_only,
         page_latest=page_latest,
+        page_prefixes=page_prefixes,
     )
 
     with lock:
@@ -202,8 +222,10 @@ def ensure_loaded(
 
         records, source_url = source.fetch_incubator_records(
             limit=limit,
+            namespaces=namespaces,
             recentchanges_only=recentchanges_only,
             page_latest=page_latest,
+            page_prefixes=page_prefixes,
         )
         if not records:
             raise PetscanServiceError("Incubator returned zero rows for the requested filters.")
@@ -220,20 +242,26 @@ def execute_query(
     query: str,
     refresh: bool = False,
     limit: Optional[int] = None,
+    namespaces: Optional[list[int]] = None,
     recentchanges_only: bool = False,
     page_latest: Optional[int] = None,
+    page_prefixes: Optional[list[str]] = None,
 ) -> QueryExecution:
     qtype = sparql.validate_query(query)
     store_id = internal_store_id(
         limit,
+        namespaces=namespaces,
         recentchanges_only=recentchanges_only,
         page_latest=page_latest,
+        page_prefixes=page_prefixes,
     )
     meta = ensure_loaded(
         refresh=refresh,
         limit=limit,
+        namespaces=namespaces,
         recentchanges_only=recentchanges_only,
         page_latest=page_latest,
+        page_prefixes=page_prefixes,
     )
 
     store_instance = _open_query_store(store_id)

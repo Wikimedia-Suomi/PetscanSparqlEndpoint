@@ -25,7 +25,9 @@ def _csrf_exempt(view_func: _ViewFunc) -> _ViewFunc:
 class RequestContext:
     refresh: bool
     limit: int | None
+    namespaces: list[int]
     page_latest: int | None
+    page_prefixes: list[str]
     recentchanges_only: bool
 
 
@@ -40,13 +42,15 @@ def index(request: HttpRequest) -> HttpResponse:
         "incubator.html",
         {
             "incubator_example_query_url": build_incubator_example_query_url(),
-            "page_latest_filter_enabled": _page_latest_filter_enabled(),
+            "namespace_options": service_source.available_incubator_namespace_options(),
+            "namespace_help_text": _namespace_help_text(),
+            "replica_only_filters_enabled": _replica_only_filters_enabled(),
             "recentchanges_help_text": _recentchanges_help_text(),
         },
     )
 
 
-def _page_latest_filter_enabled() -> bool:
+def _replica_only_filters_enabled() -> bool:
     return service_source.incubator_lookup_backend() == service_source.LOOKUP_BACKEND_TOOLFORGE_SQL
 
 
@@ -56,6 +60,15 @@ def _recentchanges_help_text() -> str:
     return (
         "In API mode, it uses category member timestamps sorted from newest to oldest "
         "and stops when the 30-day window is exceeded."
+    )
+
+
+def _namespace_help_text() -> str:
+    if service_source.incubator_lookup_backend() == service_source.LOOKUP_BACKEND_TOOLFORGE_SQL:
+        return "Choose one or more subject namespaces to include."
+    return (
+        "In API mode, namespace filtering is affected by MediaWiki miser mode, "
+        "so the filter may miss valid matches or appear not to work."
     )
 
 
@@ -92,7 +105,9 @@ def _parse_request_context(request: HttpRequest) -> RequestContext:
     return RequestContext(
         refresh=_parse_bool(request.GET.get("refresh"), default=False),
         limit=service_source.normalize_load_limit(request.GET.get("limit")),
+        namespaces=service_source.normalize_namespaces(request.GET.getlist("namespace")),
         page_latest=service_source.normalize_page_latest(request.GET.get("page_latest")),
+        page_prefixes=service_source.normalize_page_prefixes(request.GET.getlist("page_prefix")),
         recentchanges_only=_parse_bool(request.GET.get("recentchanges_only"), default=False),
     )
 
@@ -100,12 +115,21 @@ def _parse_request_context(request: HttpRequest) -> RequestContext:
 def _parse_path_request_context(service_params: str) -> RequestContext:
     raw = str(service_params or "").strip().lstrip("/")
     if not raw:
-        return RequestContext(refresh=False, limit=None, page_latest=None, recentchanges_only=False)
+        return RequestContext(
+            refresh=False,
+            limit=None,
+            namespaces=[],
+            page_latest=None,
+            page_prefixes=[],
+            recentchanges_only=False,
+        )
 
     parsed = parse_qs(raw, keep_blank_values=False)
     refresh_values = [str(value).strip() for value in parsed.get("refresh", []) if str(value).strip()]
     limit_values = [str(value).strip() for value in parsed.get("limit", []) if str(value).strip()]
+    namespace_values = [str(value).strip() for value in parsed.get("namespace", []) if str(value).strip()]
     page_latest_values = [str(value).strip() for value in parsed.get("page_latest", []) if str(value).strip()]
+    page_prefix_values = [str(value).strip() for value in parsed.get("page_prefix", []) if str(value).strip()]
     recentchanges_values = [
         str(value).strip()
         for value in parsed.get("recentchanges_only", [])
@@ -114,9 +138,11 @@ def _parse_path_request_context(service_params: str) -> RequestContext:
     return RequestContext(
         refresh=_parse_bool(refresh_values[-1] if refresh_values else None, default=False),
         limit=service_source.normalize_load_limit(limit_values[-1] if limit_values else None),
+        namespaces=service_source.normalize_namespaces(namespace_values),
         page_latest=service_source.normalize_page_latest(
             page_latest_values[-1] if page_latest_values else None
         ),
+        page_prefixes=service_source.normalize_page_prefixes(page_prefix_values),
         recentchanges_only=_parse_bool(
             recentchanges_values[-1] if recentchanges_values else None,
             default=False,
@@ -167,7 +193,9 @@ def _parse_sparql_request(request: HttpRequest, service_params: str = "") -> Spa
     return SparqlRequest(
         refresh=context.refresh,
         limit=context.limit,
+        namespaces=context.namespaces,
         page_latest=context.page_latest,
+        page_prefixes=context.page_prefixes,
         recentchanges_only=context.recentchanges_only,
         query=query,
     )
@@ -190,7 +218,9 @@ def structure_endpoint(request: HttpRequest) -> JsonResponse:
         meta = incubator_service.ensure_loaded(
             refresh=request_context.refresh,
             limit=request_context.limit,
+            namespaces=request_context.namespaces,
             page_latest=request_context.page_latest,
+            page_prefixes=request_context.page_prefixes,
             recentchanges_only=request_context.recentchanges_only,
         )
     except ValueError as exc:
@@ -202,7 +232,9 @@ def structure_endpoint(request: HttpRequest) -> JsonResponse:
         {
             "source": "incubator",
             "limit": request_context.limit,
+            "namespaces": request_context.namespaces,
             "page_latest": request_context.page_latest,
+            "page_prefixes": request_context.page_prefixes,
             "recentchanges_only": request_context.recentchanges_only,
             "meta": meta,
         }
@@ -225,7 +257,9 @@ def sparql_endpoint(request: HttpRequest, service_params: str = "") -> HttpRespo
             parsed_request.query,
             refresh=parsed_request.refresh,
             limit=parsed_request.limit,
+            namespaces=parsed_request.namespaces,
             page_latest=parsed_request.page_latest,
+            page_prefixes=parsed_request.page_prefixes,
             recentchanges_only=parsed_request.recentchanges_only,
         )
     except ValueError as exc:

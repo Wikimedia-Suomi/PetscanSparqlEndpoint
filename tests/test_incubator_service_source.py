@@ -63,6 +63,53 @@ class IncubatorServiceSourceTests(SimpleTestCase):
         with self.assertRaisesMessage(ValueError, "page_latest must be greater than zero."):
             service_source.normalize_page_latest("0")
 
+    def test_normalize_page_prefixes_supports_commas_and_ellipsis_suffix(self) -> None:
+        self.assertEqual(
+            service_source.normalize_page_prefixes(" Wt/sms/..., Wp/sms/Kat , , "),
+            ["Wp/sms/Kat", "Wt/sms/"],
+        )
+
+    def test_available_incubator_namespace_options_uses_configured_setting(self) -> None:
+        with self.settings(
+            INCUBATOR_NAMESPACE_OPTIONS=(
+                {"id": 0, "label": "Main"},
+                {"id": 14, "label": "Category"},
+            )
+        ):
+            self.assertEqual(
+                service_source.available_incubator_namespace_options(),
+                [
+                    {"id": 0, "label": "Main"},
+                    {"id": 14, "label": "Category"},
+                ],
+            )
+
+    def test_normalize_namespaces_supports_commas_and_deduplicates(self) -> None:
+        self.assertEqual(service_source.normalize_namespaces("14, 0, 999, 14"), [0, 14, 999])
+
+    def test_normalize_namespaces_rejects_negative_namespace(self) -> None:
+        with self.assertRaisesMessage(
+            ValueError,
+            "namespace must be zero or a positive integer.",
+        ):
+            service_source.normalize_namespaces("-1")
+
+    def test_normalize_page_prefixes_rejects_more_than_ten_values(self) -> None:
+        with self.assertRaisesMessage(
+            ValueError,
+            "page_prefix supports at most 10 comma-separated values.",
+        ):
+            service_source.normalize_page_prefixes(
+                ",".join("Wp/sms/{}".format(index) for index in range(11))
+            )
+
+    def test_normalize_page_prefixes_rejects_values_longer_than_ten_characters(self) -> None:
+        with self.assertRaisesMessage(
+            ValueError,
+            "page_prefix values must be at most 10 characters long.",
+        ):
+            service_source.normalize_page_prefixes("Wp/sms/1234")
+
     def test_fetch_incubator_records_via_api_stops_at_limit_and_normalizes_fields(self) -> None:
         with self.settings(WIKIDATA_LOOKUP_BACKEND="api"):
             with patch("incubator.service_source.urlopen") as urlopen_mock:
@@ -196,6 +243,7 @@ class IncubatorServiceSourceTests(SimpleTestCase):
 
                     records, source_url = service_source.fetch_incubator_records(
                         limit=2,
+                        namespaces=[0, 14],
                         recentchanges_only=True,
                     )
 
@@ -206,6 +254,7 @@ class IncubatorServiceSourceTests(SimpleTestCase):
                     )
                     request_url = urlopen_mock.call_args.args[0].full_url
                     self.assertIn("cmprop=ids%7Ctitle%7Csortkeyprefix%7Ctimestamp", request_url)
+                    self.assertIn("cmnamespace=0%7C14", request_url)
                     self.assertIn("cmsort=timestamp", request_url)
                     self.assertIn("cmdir=desc", request_url)
 
@@ -268,6 +317,85 @@ class IncubatorServiceSourceTests(SimpleTestCase):
                     )
                     self.assertEqual(urlopen_mock.call_count, 2)
 
+    def test_fetch_incubator_records_via_api_stops_after_consecutive_empty_batches(self) -> None:
+        with self.settings(WIKIDATA_LOOKUP_BACKEND="api"):
+            with patch.object(
+                service_source,
+                "_MAX_INCUBATOR_API_CONSECUTIVE_EMPTY_BATCHES",
+                2,
+            ):
+                with patch("incubator.service_source.urlopen") as urlopen_mock:
+                    urlopen_mock.side_effect = [
+                        _FakeHttpResponse(
+                            json.dumps(
+                                {
+                                    "query": {"categorymembers": []},
+                                    "continue": {"cmcontinue": "page|one"},
+                                }
+                            ).encode("utf-8")
+                        ),
+                        _FakeHttpResponse(
+                            json.dumps(
+                                {
+                                    "query": {"categorymembers": []},
+                                    "continue": {"cmcontinue": "page|two"},
+                                }
+                            ).encode("utf-8")
+                        ),
+                        _FakeHttpResponse(
+                            json.dumps(
+                                {
+                                    "query": {
+                                        "categorymembers": [
+                                            {
+                                                "pageid": 11,
+                                                "title": "Wp/sms/Katja_Gauriloff",
+                                                "sortkeyprefix": "Q138849357",
+                                            }
+                                        ]
+                                    }
+                                }
+                            ).encode("utf-8")
+                        ),
+                    ]
+
+                    records, source_url = service_source.fetch_incubator_records(
+                        limit=10,
+                        namespaces=[4],
+                    )
+
+                    self.assertEqual(source_url, service_source.build_incubator_category_url())
+                    self.assertEqual(records, [])
+                    self.assertEqual(urlopen_mock.call_count, 2)
+
+    def test_fetch_incubator_records_via_api_stops_on_repeated_continuation_token(self) -> None:
+        with self.settings(WIKIDATA_LOOKUP_BACKEND="api"):
+            with patch("incubator.service_source.urlopen") as urlopen_mock:
+                urlopen_mock.side_effect = [
+                    _FakeHttpResponse(
+                        json.dumps(
+                            {
+                                "query": {"categorymembers": []},
+                                "continue": {"cmcontinue": "page|same"},
+                            }
+                        ).encode("utf-8")
+                    ),
+                    _FakeHttpResponse(
+                        json.dumps(
+                            {
+                                "query": {"categorymembers": []},
+                                "continue": {"cmcontinue": "page|same"},
+                            }
+                        ).encode("utf-8")
+                    ),
+                ]
+
+                records, source_url = service_source.fetch_incubator_records(limit=10)
+
+                self.assertEqual(source_url, service_source.build_incubator_category_url())
+                self.assertEqual(records, [])
+                self.assertEqual(urlopen_mock.call_count, 2)
+
     def test_fetch_incubator_records_rejects_page_latest_filter_in_api_mode(self) -> None:
         with self.settings(WIKIDATA_LOOKUP_BACKEND="api"):
             with self.assertRaisesMessage(
@@ -275,6 +403,14 @@ class IncubatorServiceSourceTests(SimpleTestCase):
                 "page_latest filter is only available when using the Toolforge replica backend.",
             ):
                 service_source.fetch_incubator_records(page_latest=123456789)
+
+    def test_fetch_incubator_records_rejects_page_prefix_filter_in_api_mode(self) -> None:
+        with self.settings(WIKIDATA_LOOKUP_BACKEND="api"):
+            with self.assertRaisesMessage(
+                ValueError,
+                "page_prefix filter is only available when using the Toolforge replica backend.",
+            ):
+                service_source.fetch_incubator_records(page_prefixes=["Wp/sms/"])
 
     def test_fetch_incubator_records_via_replica_uses_configured_cnf(self) -> None:
         with self.settings(
@@ -297,7 +433,9 @@ class IncubatorServiceSourceTests(SimpleTestCase):
 
                 records, source_url = service_source.fetch_incubator_records(
                     limit=2,
+                    namespaces=[0, 14],
                     page_latest=123456789,
+                    page_prefixes=["Wt/fi_", "Wp/sms/..."],
                 )
 
                 self.assertEqual(source_url, service_source.build_incubator_category_url())
@@ -320,12 +458,23 @@ class IncubatorServiceSourceTests(SimpleTestCase):
 
                 sql, params = cursor.execute.call_args.args
                 self.assertIn("FROM page AS p", sql)
+                self.assertIn("p.page_namespace IN (%s, %s)", sql)
                 self.assertIn("p.page_latest >= %s", sql)
+                self.assertIn("p.page_title LIKE %s ESCAPE '\\\\'", sql)
+                self.assertIn("OR p.page_title LIKE %s ESCAPE '\\\\'", sql)
                 self.assertIn("cl.cl_sortkey_prefix", sql)
                 self.assertIn("LIMIT %s", sql)
                 self.assertEqual(
                     params,
-                    ["Maintenance:Wikidata_interwiki_links", 123456789, 2],
+                    [
+                        "Maintenance:Wikidata_interwiki_links",
+                        0,
+                        14,
+                        123456789,
+                        "Wp/sms/%",
+                        "Wt/fi\\_%",
+                        2,
+                    ],
                 )
 
     def test_fetch_incubator_records_via_recentchanges_replica_uses_recentchanges_table(self) -> None:
@@ -349,7 +498,9 @@ class IncubatorServiceSourceTests(SimpleTestCase):
 
                 records, source_url = service_source.fetch_incubator_records(
                     limit=2,
+                    namespaces=[0, 14],
                     page_latest=123456789,
+                    page_prefixes=["Wt/fi_", "Wp/sms/..."],
                     recentchanges_only=True,
                 )
 
@@ -369,11 +520,25 @@ class IncubatorServiceSourceTests(SimpleTestCase):
                 self.assertIn("rc.rc_source = %s", sql)
                 self.assertIn("rc.rc_log_type = %s", sql)
                 self.assertIn("OR (rc.rc_source = %s AND rc.rc_log_type = %s)", sql)
+                self.assertIn("latest_rc.rc_namespace IN (%s, %s)", sql)
                 self.assertNotIn("rc.rc_namespace = 0", sql)
                 self.assertIn("AND latest_rc.rc_this_oldid >= %s", sql)
+                self.assertIn("latest_rc.rc_title LIKE %s ESCAPE '\\\\'", sql)
+                self.assertIn("OR latest_rc.rc_title LIKE %s ESCAPE '\\\\'", sql)
                 self.assertIn("ORDER BY latest_per_page.latest_rc_id DESC", sql)
                 self.assertIn("LIMIT %s", sql)
                 self.assertEqual(
                     params,
-                    ["mw.edit", "mw.log", "move", "Maintenance:Wikidata_interwiki_links", 123456789, 2],
+                    [
+                        "mw.edit",
+                        "mw.log",
+                        "move",
+                        "Maintenance:Wikidata_interwiki_links",
+                        0,
+                        14,
+                        123456789,
+                        "Wp/sms/%",
+                        "Wt/fi\\_%",
+                        2,
+                    ],
                 )

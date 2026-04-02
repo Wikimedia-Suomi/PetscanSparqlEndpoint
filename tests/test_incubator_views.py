@@ -10,13 +10,22 @@ from petscan.service_errors import PetscanServiceError
 INCUBATOR_API_STRUCTURE_PATH = "/incubator/api/structure"
 INCUBATOR_SPARQL_PATH = "/incubator/sparql"
 INCUBATOR_FILTERED_SPARQL_PATH = "/incubator/sparql/limit=25"
+INCUBATOR_FILTERED_WITH_NAMESPACE_SPARQL_PATH = "/incubator/sparql/limit=25&namespace=0&namespace=14"
 INCUBATOR_FILTERED_WITH_PAGE_LATEST_SPARQL_PATH = "/incubator/sparql/limit=25&page_latest=123456789"
+INCUBATOR_FILTERED_WITH_PAGE_PREFIX_SPARQL_PATH = "/incubator/sparql/limit=25&page_prefix=Wp%2Fsms%2F%2CWt%2Fsms%2F"
 INCUBATOR_RECENTCHANGES_SPARQL_PATH = "/incubator/sparql/limit=25&recentchanges_only=1"
 
 ASK_QUERY = "ASK { ?s ?p ?o }"
 
 
 class IncubatorApiViewTests(SimpleTestCase):
+    @staticmethod
+    def _namespace_options() -> list[dict[str, object]]:
+        return [
+            {"id": 0, "label": "Main"},
+            {"id": 14, "label": "Category"},
+        ]
+
     def _post_json(self, path: str, payload: Dict[str, Any]) -> HttpResponse:
         return self.client.post(
             path,
@@ -34,7 +43,11 @@ class IncubatorApiViewTests(SimpleTestCase):
         }
 
     def test_incubator_index_renders(self) -> None:
-        response = self.client.get("/incubator/")
+        with patch(
+            "incubator.views.service_source.available_incubator_namespace_options",
+            return_value=self._namespace_options(),
+        ):
+            response = self.client.get("/incubator/")
 
         self.assertEqual(response.status_code, 200)
         self.assertContains(response, 'class="breadcrumb-nav page-breadcrumb"', html=False)
@@ -56,7 +69,16 @@ class IncubatorApiViewTests(SimpleTestCase):
             "https%3A//sparqlbridge.toolforge.org/incubator/sparql",
             html=False,
         )
+        self.assertContains(response, "Namespaces", html=False)
+        self.assertContains(response, "Main", html=False)
+        self.assertContains(response, "Category", html=False)
+        self.assertContains(
+            response,
+            "In API mode, namespace filtering is affected by MediaWiki miser mode",
+            html=False,
+        )
         self.assertContains(response, "Only pages edited during the last 30 days", html=False)
+        self.assertNotContains(response, 'id="incubator-page-prefix"', html=False)
         self.assertNotContains(response, 'id="incubator-page-latest"', html=False)
         self.assertContains(
             response,
@@ -67,12 +89,27 @@ class IncubatorApiViewTests(SimpleTestCase):
 
     def test_incubator_index_renders_replica_recentchanges_help_text_when_sql_backend_is_active(self) -> None:
         with self.settings(WIKIDATA_LOOKUP_BACKEND="toolforge_sql"):
-            response = self.client.get("/incubator/")
+            with patch(
+                "incubator.views.service_source.available_incubator_namespace_options",
+                return_value=self._namespace_options(),
+            ):
+                response = self.client.get("/incubator/")
 
         self.assertEqual(response.status_code, 200)
         self.assertContains(
             response,
             "This uses recent changes from the last 30 days, including normal edits and page moves.",
+            html=False,
+        )
+        self.assertContains(
+            response,
+            "Choose one or more subject namespaces to include.",
+            html=False,
+        )
+        self.assertContains(response, 'id="incubator-page-prefix"', html=False)
+        self.assertContains(
+            response,
+            "Use comma-separated page title prefixes such as",
             html=False,
         )
         self.assertContains(response, 'id="incubator-page-latest"', html=False)
@@ -97,26 +134,47 @@ class IncubatorApiViewTests(SimpleTestCase):
             "records": 2,
             "source_url": "https://incubator.wikimedia.org/wiki/Category:Maintenance:Wikidata_interwiki_links",
             "loaded_at": "2026-04-02T08:00:00+00:00",
-            "source_params": {"limit": ["10"], "recentchanges_only": ["1"], "page_latest": ["123456789"]},
+            "source_params": {
+                "limit": ["10"],
+                "namespace": ["0", "14"],
+                "recentchanges_only": ["1"],
+                "page_latest": ["123456789"],
+                "page_prefix": ["Wp/sms/", "Wt/sms/"],
+            },
             "structure": {"row_count": 2, "field_count": 1, "fields": []},
         }
 
-        response = self.client.get(
-            INCUBATOR_API_STRUCTURE_PATH,
-            data={"limit": "10", "page_latest": "123456789", "refresh": "1", "recentchanges_only": "1"},
-        )
+        with patch(
+            "incubator.views.service_source.available_incubator_namespace_options",
+            return_value=self._namespace_options(),
+        ):
+            response = self.client.get(
+                INCUBATOR_API_STRUCTURE_PATH,
+                data={
+                    "limit": "10",
+                    "namespace": ["0", "14"],
+                    "page_latest": "123456789",
+                    "page_prefix": "Wp/sms/...,Wt/sms/",
+                    "refresh": "1",
+                    "recentchanges_only": "1",
+                },
+            )
 
         self.assertEqual(response.status_code, 200)
         payload = response.json()
         self.assertEqual(payload["source"], "incubator")
         self.assertEqual(payload["limit"], 10)
+        self.assertEqual(payload["namespaces"], [0, 14])
         self.assertEqual(payload["page_latest"], 123456789)
+        self.assertEqual(payload["page_prefixes"], ["Wp/sms/", "Wt/sms/"])
         self.assertEqual(payload["recentchanges_only"], True)
         self.assertEqual(payload["meta"]["records"], 2)
         ensure_loaded.assert_called_once_with(
             refresh=True,
             limit=10,
+            namespaces=[0, 14],
             page_latest=123456789,
+            page_prefixes=["Wp/sms/", "Wt/sms/"],
             recentchanges_only=True,
         )
 
@@ -125,6 +183,30 @@ class IncubatorApiViewTests(SimpleTestCase):
 
         self.assertEqual(response.status_code, 405)
         self.assertEqual(response.json()["error"], "Method not allowed. Use GET.")
+
+    def test_structure_endpoint_rejects_page_prefix_values_longer_than_ten_characters(self) -> None:
+        response = self.client.get(
+            INCUBATOR_API_STRUCTURE_PATH,
+            data={"page_prefix": "Wp/sms/1234"},
+        )
+
+        self.assertEqual(response.status_code, 400)
+        self.assertEqual(
+            response.json()["error"],
+            "page_prefix values must be at most 10 characters long.",
+        )
+
+    def test_structure_endpoint_rejects_unknown_namespace(self) -> None:
+        response = self.client.get(
+            INCUBATOR_API_STRUCTURE_PATH,
+            data={"namespace": "-1"},
+        )
+
+        self.assertEqual(response.status_code, 400)
+        self.assertEqual(
+            response.json()["error"],
+            "namespace must be zero or a positive integer.",
+        )
 
     @patch("incubator.views.incubator_service.ensure_loaded")
     def test_structure_endpoint_sanitizes_service_errors_with_public_message(self, ensure_loaded: Any) -> None:
@@ -159,7 +241,55 @@ class IncubatorApiViewTests(SimpleTestCase):
             ASK_QUERY,
             refresh=False,
             limit=25,
+            namespaces=[],
             page_latest=None,
+            page_prefixes=[],
+            recentchanges_only=False,
+        )
+
+    @patch("incubator.views.incubator_service.execute_query")
+    def test_sparql_endpoint_passes_namespace_filter_from_path(self, execute_query: Any) -> None:
+        execute_query.return_value = self._ask_execution_result()
+
+        with patch(
+            "incubator.views.service_source.available_incubator_namespace_options",
+            return_value=self._namespace_options(),
+        ):
+            response = self.client.get(
+                INCUBATOR_FILTERED_WITH_NAMESPACE_SPARQL_PATH,
+                data={"query": ASK_QUERY},
+            )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertIn("application/sparql-results+json", response["Content-Type"])
+        execute_query.assert_called_once_with(
+            ASK_QUERY,
+            refresh=False,
+            limit=25,
+            namespaces=[0, 14],
+            page_latest=None,
+            page_prefixes=[],
+            recentchanges_only=False,
+        )
+
+    @patch("incubator.views.incubator_service.execute_query")
+    def test_sparql_endpoint_passes_page_prefix_filter_from_path(self, execute_query: Any) -> None:
+        execute_query.return_value = self._ask_execution_result()
+
+        response = self.client.get(
+            INCUBATOR_FILTERED_WITH_PAGE_PREFIX_SPARQL_PATH,
+            data={"query": ASK_QUERY},
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertIn("application/sparql-results+json", response["Content-Type"])
+        execute_query.assert_called_once_with(
+            ASK_QUERY,
+            refresh=False,
+            limit=25,
+            namespaces=[],
+            page_latest=None,
+            page_prefixes=["Wp/sms/", "Wt/sms/"],
             recentchanges_only=False,
         )
 
@@ -178,7 +308,9 @@ class IncubatorApiViewTests(SimpleTestCase):
             ASK_QUERY,
             refresh=False,
             limit=25,
+            namespaces=[],
             page_latest=123456789,
+            page_prefixes=[],
             recentchanges_only=False,
         )
 
@@ -197,7 +329,9 @@ class IncubatorApiViewTests(SimpleTestCase):
             ASK_QUERY,
             refresh=False,
             limit=25,
+            namespaces=[],
             page_latest=None,
+            page_prefixes=[],
             recentchanges_only=True,
         )
 
@@ -217,7 +351,9 @@ class IncubatorApiViewTests(SimpleTestCase):
             ASK_QUERY,
             refresh=False,
             limit=None,
+            namespaces=[],
             page_latest=None,
+            page_prefixes=[],
             recentchanges_only=False,
         )
 

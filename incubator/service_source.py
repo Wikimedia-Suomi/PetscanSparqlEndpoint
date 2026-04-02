@@ -19,11 +19,14 @@ from petscan.service_source import HTTP_USER_AGENT
 __all__ = [
     "LOOKUP_BACKEND_API",
     "LOOKUP_BACKEND_TOOLFORGE_SQL",
+    "available_incubator_namespace_options",
     "build_incubator_category_url",
     "fetch_incubator_records",
     "incubator_lookup_backend",
     "normalize_load_limit",
+    "normalize_namespaces",
     "normalize_page_latest",
+    "normalize_page_prefixes",
     "normalize_source_params",
 ]
 
@@ -36,6 +39,16 @@ _INCUBATOR_WIKIDATA_CATEGORY_DB_TITLE = "Maintenance:Wikidata_interwiki_links"
 _INCUBATOR_FETCH_PUBLIC_MESSAGE = "Failed to load Incubator data from the upstream service."
 _INCUBATOR_REPLICA_HOST = "incubatorwiki.web.db.svc.wikimedia.cloud"
 _INCUBATOR_REPLICA_DB = "incubatorwiki_p"
+_DEFAULT_INCUBATOR_NAMESPACE_OPTIONS = (
+    {"id": 0, "label": "Main"},
+    {"id": 4, "label": "Project"},
+    {"id": 6, "label": "File"},
+    {"id": 8, "label": "MediaWiki"},
+    {"id": 10, "label": "Template"},
+    {"id": 12, "label": "Help"},
+    {"id": 14, "label": "Category"},
+    {"id": 828, "label": "Module"},
+)
 _WIKI_GROUP_BY_CODE = {
     "Wp": "wikipedia",
     "Wt": "wiktionary",
@@ -46,14 +59,52 @@ _WIKI_GROUP_BY_CODE = {
     "Ws": "wikisource",
     "Wv": "wikiversity",
 }
-_SOURCE_PARAM_KEYS = frozenset({"limit", "page_latest", "recentchanges_only"})
+_SOURCE_PARAM_KEYS = frozenset(
+    {"limit", "namespace", "page_latest", "page_prefix", "recentchanges_only"}
+)
 _MAX_INCUBATOR_API_BATCH_SIZE = 50
+_MAX_INCUBATOR_API_CONSECUTIVE_EMPTY_BATCHES = 10
+_MAX_PAGE_PREFIX_COUNT = 10
+_MAX_PAGE_PREFIX_LENGTH = 10
 _INCUBATOR_URL_SAFE_CHARS = "/:()-,._"
 pymysql = cast(Any, enrichment_sql.pymysql)
 
 
 def _console_log(message: str) -> None:
     print("[incubator-api] {}".format(message), flush=True)
+
+
+def _sanitize_for_log(value: str) -> str:
+    return "".join(character if character.isprintable() and character not in "\r\n\t" else "?" for character in value)
+
+
+def available_incubator_namespace_options() -> List[Dict[str, Any]]:
+    configured = getattr(settings, "INCUBATOR_NAMESPACE_OPTIONS", _DEFAULT_INCUBATOR_NAMESPACE_OPTIONS)
+    if not isinstance(configured, (list, tuple)):
+        configured = _DEFAULT_INCUBATOR_NAMESPACE_OPTIONS
+
+    options: List[Dict[str, Any]] = []
+    seen = set()
+    for item in configured:
+        if not isinstance(item, Mapping):
+            continue
+        try:
+            namespace_id = int(str(item.get("id", "")).strip())
+        except (TypeError, ValueError):
+            continue
+        if namespace_id < 0 or namespace_id in seen:
+            continue
+        label = str(item.get("label", "")).strip()
+        if not label:
+            continue
+        seen.add(namespace_id)
+        options.append({"id": namespace_id, "label": label})
+
+    if not options:
+        return [dict(item) for item in _DEFAULT_INCUBATOR_NAMESPACE_OPTIONS]
+
+    options.sort(key=lambda option: int(option["id"]))
+    return options
 
 
 def _incubator_api_url() -> str:
@@ -96,6 +147,45 @@ def normalize_load_limit(value: Any) -> Optional[int]:
     return limit
 
 
+def normalize_namespaces(value: Any) -> List[int]:
+    if value is None:
+        return []
+
+    raw_values: List[str]
+    if isinstance(value, (list, tuple, set)):
+        raw_values = [str(item) for item in value]
+    else:
+        raw_values = [str(value)]
+
+    raw_parts = []  # type: List[str]
+    for raw_value in raw_values:
+        for part in raw_value.split(","):
+            text = str(part).strip()
+            if text:
+                raw_parts.append(text)
+
+    if not raw_parts:
+        return []
+
+    namespaces: List[int] = []
+    seen = set()
+
+    for text in raw_parts:
+        try:
+            namespace_id = int(text)
+        except (TypeError, ValueError) as exc:
+            raise ValueError("namespace must be zero or a positive integer.") from exc
+        if namespace_id < 0:
+            raise ValueError("namespace must be zero or a positive integer.")
+        if namespace_id in seen:
+            continue
+        seen.add(namespace_id)
+        namespaces.append(namespace_id)
+
+    namespaces.sort()
+    return namespaces
+
+
 def normalize_page_latest(value: Any) -> Optional[int]:
     if value is None:
         return None
@@ -111,6 +201,50 @@ def normalize_page_latest(value: Any) -> Optional[int]:
     return page_latest
 
 
+def normalize_page_prefixes(value: Any) -> List[str]:
+    if value is None:
+        return []
+
+    raw_values: List[str]
+    if isinstance(value, (list, tuple, set)):
+        raw_values = [str(item) for item in value]
+    else:
+        raw_values = [str(value)]
+
+    normalized_prefixes: List[str] = []
+    seen = set()
+
+    for raw_value in raw_values:
+        for part in raw_value.split(","):
+            text = str(part).strip()
+            if not text:
+                continue
+            if text.endswith("..."):
+                text = text[:-3].rstrip()
+            normalized = normalize_page_title(text)
+            if normalized.endswith("..."):
+                normalized = normalized[:-3].rstrip()
+            if not normalized or normalized in seen:
+                continue
+            if len(normalized) > _MAX_PAGE_PREFIX_LENGTH:
+                raise ValueError(
+                    "page_prefix values must be at most {} characters long.".format(
+                        _MAX_PAGE_PREFIX_LENGTH
+                    )
+                )
+            seen.add(normalized)
+            normalized_prefixes.append(normalized)
+            if len(normalized_prefixes) > _MAX_PAGE_PREFIX_COUNT:
+                raise ValueError(
+                    "page_prefix supports at most {} comma-separated values.".format(
+                        _MAX_PAGE_PREFIX_COUNT
+                    )
+                )
+
+    normalized_prefixes.sort()
+    return normalized_prefixes
+
+
 def normalize_source_params(params: Optional[Mapping[str, Any]]) -> Dict[str, List[str]]:
     normalized = {}  # type: Dict[str, List[str]]
     if not params or not isinstance(params, Mapping):
@@ -119,6 +253,17 @@ def normalize_source_params(params: Optional[Mapping[str, Any]]) -> Dict[str, Li
     for key, raw_value in params.items():
         text_key = str(key).strip()
         if not text_key or text_key not in _SOURCE_PARAM_KEYS:
+            continue
+
+        if text_key == "page_prefix":
+            page_prefixes = normalize_page_prefixes(raw_value)
+            if page_prefixes:
+                normalized[text_key] = page_prefixes
+            continue
+        if text_key == "namespace":
+            namespaces = normalize_namespaces(raw_value)
+            if namespaces:
+                normalized[text_key] = [str(namespace_id) for namespace_id in namespaces]
             continue
 
         if isinstance(raw_value, (list, tuple, set)):
@@ -288,6 +433,7 @@ def _api_batch_limit(limit: Optional[int], collected_count: int) -> int:
 def _fetch_page_batch_api(
     *,
     batch_limit: int,
+    namespaces: Optional[List[int]] = None,
     recentchanges_only: bool = False,
     continuation: Optional[str] = None,
 ) -> Tuple[List[Mapping[str, Any]], Optional[str]]:
@@ -314,6 +460,8 @@ def _fetch_page_batch_api(
             "format": "json",
             "formatversion": "2",
         }
+    if namespaces:
+        params["cmnamespace"] = "|".join(str(namespace_id) for namespace_id in namespaces)
     if continuation:
         params["cmcontinue"] = continuation
 
@@ -333,16 +481,27 @@ def _fetch_page_batch_api(
 
 def _fetch_incubator_records_api(
     limit: Optional[int],
+    namespaces: Optional[List[int]] = None,
     recentchanges_only: bool = False,
 ) -> Tuple[List[Dict[str, Any]], str]:
     records: List[Dict[str, Any]] = []
     continuation: Optional[str] = None
+    seen_continuations = set()  # type: set[str]
+    consecutive_empty_batches = 0
     cutoff = _recentchanges_cutoff() if recentchanges_only else None
     page_base_url = _incubator_page_base_url()
+    normalized_namespaces = normalize_namespaces(namespaces)
 
     while True:
+        if continuation is not None:
+            if continuation in seen_continuations:
+                _console_log("Stopping API scan after repeated continuation token.")
+                break
+            seen_continuations.add(continuation)
+
         categorymembers, continuation = _fetch_page_batch_api(
             batch_limit=_api_batch_limit(limit, len(records)),
+            namespaces=normalized_namespaces,
             recentchanges_only=recentchanges_only,
             continuation=continuation,
         )
@@ -377,9 +536,21 @@ def _fetch_incubator_records_api(
 
         _console_log("accepted={} accumulated={}".format(accepted_in_batch, len(records)))
 
+        if accepted_in_batch == 0:
+            consecutive_empty_batches += 1
+        else:
+            consecutive_empty_batches = 0
+
         if limit is not None and len(records) >= limit:
             break
         if reached_cutoff:
+            break
+        if consecutive_empty_batches >= _MAX_INCUBATOR_API_CONSECUTIVE_EMPTY_BATCHES:
+            _console_log(
+                "Stopping API scan after {} consecutive empty batches.".format(
+                    consecutive_empty_batches
+                )
+            )
             break
         if continuation is None:
             break
@@ -389,8 +560,10 @@ def _fetch_incubator_records_api(
 
 def _fetch_incubator_records_sql(
     limit: Optional[int],
+    namespaces: Optional[List[int]] = None,
     recentchanges_only: bool = False,
     page_latest: Optional[int] = None,
+    page_prefixes: Optional[List[str]] = None,
 ) -> Tuple[List[Dict[str, Any]], str]:
     if pymysql is None:
         raise PetscanServiceError(
@@ -412,6 +585,8 @@ def _fetch_incubator_records_sql(
     if replica_cnf:
         connect_kwargs["read_default_file"] = os.path.expanduser(os.path.expandvars(replica_cnf))
 
+    normalized_namespaces = normalize_namespaces(namespaces)
+    normalized_page_prefixes = normalize_page_prefixes(page_prefixes)
     params: List[object]
     if recentchanges_only:
         sql = (
@@ -433,9 +608,19 @@ def _fetch_incubator_records_sql(
             "AND lt.lt_title = %s "
         )
         params = ["mw.edit", "mw.log", "move", _INCUBATOR_WIKIDATA_CATEGORY_DB_TITLE]
+        if normalized_namespaces:
+            sql += "AND latest_rc.rc_namespace IN ({}) ".format(
+                ", ".join(["%s"] * len(normalized_namespaces))
+            )
+            params.extend(normalized_namespaces)
         if page_latest is not None:
             sql += "AND latest_rc.rc_this_oldid >= %s "
             params.append(page_latest)
+        if normalized_page_prefixes:
+            sql += "AND ({}) ".format(
+                " OR ".join(["latest_rc.rc_title LIKE %s ESCAPE '\\\\'"] * len(normalized_page_prefixes))
+            )
+            params.extend(_sql_like_prefix_param(prefix) for prefix in normalized_page_prefixes)
         sql += (
             "ORDER BY latest_per_page.latest_rc_id DESC"
         )
@@ -449,9 +634,19 @@ def _fetch_incubator_records_sql(
             "AND lt.lt_title = %s"
         )
         params = [_INCUBATOR_WIKIDATA_CATEGORY_DB_TITLE]
+        if normalized_namespaces:
+            sql += " AND p.page_namespace IN ({})".format(
+                ", ".join(["%s"] * len(normalized_namespaces))
+            )
+            params.extend(normalized_namespaces)
         if page_latest is not None:
             sql += " AND p.page_latest >= %s"
             params.append(page_latest)
+        if normalized_page_prefixes:
+            sql += " AND ({})".format(
+                " OR ".join(["p.page_title LIKE %s ESCAPE '\\\\'"] * len(normalized_page_prefixes))
+            )
+            params.extend(_sql_like_prefix_param(prefix) for prefix in normalized_page_prefixes)
     if limit is not None:
         sql += " LIMIT %s"
         params.append(limit)
@@ -492,24 +687,49 @@ def _fetch_incubator_records_sql(
 
 def fetch_incubator_records(
     limit: Optional[int] = None,
+    namespaces: Optional[List[int]] = None,
     recentchanges_only: bool = False,
     page_latest: Optional[int] = None,
+    page_prefixes: Optional[List[str]] = None,
 ) -> Tuple[List[Dict[str, Any]], str]:
+    normalized_namespaces = normalize_namespaces(namespaces)
+    normalized_page_prefixes = normalize_page_prefixes(page_prefixes)
     backend = incubator_lookup_backend()
     _console_log(
-        "backend={} limit={} recentchanges_only={} page_latest={}".format(
+        "backend={} limit={} namespaces={} recentchanges_only={} page_latest={} page_prefixes={}".format(
             backend,
             limit if limit is not None else "all",
+            ",".join(str(namespace_id) for namespace_id in normalized_namespaces)
+            if normalized_namespaces
+            else "any",
             "yes" if recentchanges_only else "no",
             page_latest if page_latest is not None else "any",
+            (
+                ",".join(_sanitize_for_log(prefix) for prefix in normalized_page_prefixes)
+                if normalized_page_prefixes
+                else "any"
+            ),
         )
     )
     if backend == LOOKUP_BACKEND_TOOLFORGE_SQL:
         return _fetch_incubator_records_sql(
             limit=limit,
+            namespaces=normalized_namespaces,
             recentchanges_only=recentchanges_only,
             page_latest=page_latest,
+            page_prefixes=normalized_page_prefixes,
         )
     if page_latest is not None:
         raise ValueError("page_latest filter is only available when using the Toolforge replica backend.")
-    return _fetch_incubator_records_api(limit=limit, recentchanges_only=recentchanges_only)
+    if normalized_page_prefixes:
+        raise ValueError("page_prefix filter is only available when using the Toolforge replica backend.")
+    return _fetch_incubator_records_api(
+        limit=limit,
+        namespaces=normalized_namespaces,
+        recentchanges_only=recentchanges_only,
+    )
+
+
+def _sql_like_prefix_param(prefix: str) -> str:
+    escaped = prefix.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+    return "{}%".format(escaped)
