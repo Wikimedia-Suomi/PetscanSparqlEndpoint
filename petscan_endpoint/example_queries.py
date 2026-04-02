@@ -18,7 +18,7 @@ SELECT * WHERE {
     ?isPartOf wikibase:wikiGroup ?wikiGroup .
   }
   UNION {
-    SERVICE <https://sparqlbridge.toolforge.org/incubator/sparql> {
+    SERVICE <https://sparqlbridge.toolforge.org/incubator/sparql/namespace=0&page_prefix=Wp/sms> {
       ?sitelink schema:about ?qid .
       ?sitelink schema:inLanguage ?inLanguage .
       ?sitelink rdf:type ?type .

@@ -60,7 +60,7 @@ class ApiViewTests(SimpleTestCase):
         )
         self.assertContains(
             response,
-            "https%3A//sparqlbridge.toolforge.org/incubator/sparql",
+            "https%3A//sparqlbridge.toolforge.org/incubator/sparql/namespace%3D0%26page_prefix%3DWp/sms",
             html=False,
         )
         self.assertContains(
