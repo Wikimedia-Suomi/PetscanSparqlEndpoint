@@ -30,20 +30,6 @@
           <h2 id="query-heading">Data Loading</h2>
 
           <form class="query-form">
-            <label for="incubator-limit">Load data limit</label>
-            <input
-              id="incubator-limit"
-              type="text"
-              inputmode="numeric"
-              spellcheck="false"
-              placeholder="10"
-              v-model.trim="incubatorLimit"
-              aria-describedby="incubator-limit-help"
-            />
-            <p id="incubator-limit-help" class="help">
-              Default is <code>10</code>. Clear this field to load all matching Incubator pages.
-            </p>
-
             {% endverbatim %}
             {% if namespace_options %}
             <fieldset class="query-target-list namespace-filter-list">
@@ -111,6 +97,20 @@
               {{ recentchanges_help_text }}
             </p>
             {% verbatim %}
+
+            <label for="incubator-limit">Load data limit</label>
+            <input
+              id="incubator-limit"
+              type="text"
+              inputmode="numeric"
+              spellcheck="false"
+              placeholder="10"
+              v-model.trim="incubatorLimit"
+              aria-describedby="incubator-limit-help"
+            />
+            <p id="incubator-limit-help" class="help">
+              Default is <code>10</code>. Clear this field to load all matching Incubator pages.
+            </p>
 
             <div class="actions">
               <button type="button" class="primary" :disabled="isBusy" @click="loadStructure">

@@ -1,6 +1,89 @@
 from urllib.parse import quote
 
-_INCUBATOR_EXAMPLE_QUERY = """PREFIX schema: <http://schema.org/>
+_PETSCAN_EXAMPLE_QUERY = """# This query finds spoken English Wikipedia articles whose spoken-version creation date
+# differs the most from the latest revision date of the linked article.
+PREFIX petscan: <https://petscan.wmcloud.org/ontology/>
+PREFIX xsd: <http://www.w3.org/2001/XMLSchema#>
+
+SELECT * WHERE {
+  SERVICE <https://sparqlbridge.toolforge.org/petscan/sparql/psid=43641756> {
+    SELECT
+      ?item
+      ?namespace
+      ?title
+      ?gil_link
+      ?gil_link_wikidata_entity
+      ?gil_link_rev_timestamp
+      ?img_timestamp
+      ?days_diff
+    WHERE {
+      ?item a petscan:Page .
+      OPTIONAL { ?item petscan:namespace ?namespace . }
+      OPTIONAL { ?item petscan:title ?title . }
+      OPTIONAL { ?item petscan:img_timestamp ?img_timestamp . }
+
+      ?item petscan:gil_link ?gil_link .
+      FILTER(STRSTARTS(STR(?gil_link), "https://en.wikipedia.org/wiki/"))
+
+      ?gil_link petscan:gil_link_wikidata_entity ?gil_link_wikidata_entity .
+      OPTIONAL { ?gil_link petscan:gil_link_rev_timestamp ?gil_link_rev_timestamp . }
+
+      BIND(
+        ABS(
+          (YEAR(?img_timestamp) - YEAR(?gil_link_rev_timestamp)) * 365 +
+          (MONTH(?img_timestamp) - MONTH(?gil_link_rev_timestamp)) * 30 +
+          (DAY(?img_timestamp) - DAY(?gil_link_rev_timestamp))
+        ) AS ?days_diff
+      )
+    }
+    ORDER BY DESC(?days_diff)
+  }
+}
+"""
+_QUARRY_EXAMPLE_QUERY = """# This query finds Finnish Wikipedia biographies of women that do not yet have images.
+# It then looks for matching subject images in Wikimedia Commons.
+PREFIX quarrycol: <https://quarry.wmcloud.org/ontology/>
+PREFIX wdt: <http://www.wikidata.org/prop/direct/>
+PREFIX wd: <http://www.wikidata.org/entity/>
+
+SELECT DISTINCT ?page_title ?page_id ?page_uri ?pp_value ?file WHERE {
+  # 1. Fetch source data: fiwiki biographies without the "page_image_free" page property.
+  # https://quarry.wmcloud.org/query/103960
+  SERVICE <https://sparqlbridge.toolforge.org/quarry/sparql/quarry_id=103960> {
+    SELECT ?page_id ?page_title ?page_uri ?pp_value WHERE {
+      ?quarry_row_id quarrycol:page_id ?page_id .
+      ?quarry_row_id quarrycol:page_title ?page_title .
+      ?quarry_row_id quarrycol:page_uri ?page_uri .
+      ?quarry_row_id quarrycol:pp_value ?pp_value .
+    }
+  }
+
+  # 2. Filter in QLever before hitting Commons to reduce the ?pp_value set early.
+  # Q5 = Human, Q6581072 = Female
+  SERVICE <https://qlever.dev/api/wikidata> {
+    ?pp_value wdt:P31 wd:Q5 .
+    ?pp_value wdt:P21 wd:Q6581072 .
+  }
+
+  # 3. Query Commons only for the already-filtered set.
+  ?file wdt:P180 ?pp_value .
+
+  # 4. Exclude pages that already have large images using one uncorrelated subquery.
+  # https://quarry.wmcloud.org/query/103966
+  MINUS {
+    SERVICE <https://sparqlbridge.toolforge.org/quarry/sparql/quarry_id=103966> {
+      SELECT DISTINCT ?linked_page WHERE {
+        ?r quarrycol:gil_page ?linked_page .
+        ?r quarrycol:gil_to [] .
+      }
+    }
+    FILTER(?linked_page = ?page_id)
+  }
+}
+"""
+_INCUBATOR_EXAMPLE_QUERY = """# This query adds Incubator language-link data to the RDF graph.
+# That makes Incubator articles usable in SPARQL queries much like normal Wikipedia articles.
+PREFIX schema: <http://schema.org/>
 PREFIX wikibase: <http://wikiba.se/ontology#>
 PREFIX incubator: <https://incubator.wikimedia.org/ontology/>
 PREFIX rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#>
@@ -31,7 +114,16 @@ SELECT * WHERE {
 }
 """
 _QLEVER_WIKIDATA_BASE_URL = "https://qlever.wikidata.dbis.rwth-aachen.de/wikidata/?query="
+_QLEVER_COMMONS_BASE_URL = "https://qlever.dev/wikimedia-commons?query="
 
 
 def build_incubator_example_query_url() -> str:
     return "{}{}".format(_QLEVER_WIKIDATA_BASE_URL, quote(_INCUBATOR_EXAMPLE_QUERY))
+
+
+def build_petscan_example_query_url() -> str:
+    return "{}{}".format(_QLEVER_WIKIDATA_BASE_URL, quote(_PETSCAN_EXAMPLE_QUERY))
+
+
+def build_quarry_example_query_url() -> str:
+    return "{}{}".format(_QLEVER_COMMONS_BASE_URL, quote(_QUARRY_EXAMPLE_QUERY))

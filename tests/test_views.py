@@ -60,6 +60,26 @@ class ApiViewTests(SimpleTestCase):
         )
         self.assertContains(
             response,
+            'href="https://qlever.dev/wikimedia-commons?query=',
+            html=False,
+        )
+        self.assertContains(
+            response,
+            "https%3A//sparqlbridge.toolforge.org/petscan/sparql/psid%3D43641756",
+            html=False,
+        )
+        self.assertContains(
+            response,
+            "https%3A//sparqlbridge.toolforge.org/quarry/sparql/quarry_id%3D103960",
+            html=False,
+        )
+        self.assertContains(
+            response,
+            'href="https://qlever.dev/wikimedia-commons?query=',
+            html=False,
+        )
+        self.assertContains(
+            response,
             "https%3A//sparqlbridge.toolforge.org/incubator/sparql/namespace%3D0%26page_prefix%3DWp/sms",
             html=False,
         )
@@ -89,6 +109,38 @@ class ApiViewTests(SimpleTestCase):
             html=False,
         )
         self.assertContains(response, 'href="https://meta.wikimedia.org/wiki/PetScan"', html=False)
+        self.assertContains(response, "Example query", html=False)
+        self.assertContains(
+            response,
+            "https%3A//sparqlbridge.toolforge.org/petscan/sparql/psid%3D43641756",
+            html=False,
+        )
+
+    def test_quarry_index_renders_header_with_home_link(self) -> None:
+        response = self.client.get("/quarry/")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, 'class="breadcrumb-nav page-breadcrumb"', html=False)
+        self.assertContains(response, 'aria-label="Breadcrumb"', html=False)
+        self.assertContains(response, '<li><a href="/">All data sources</a></li>', html=True)
+        self.assertContains(response, '<li aria-current="page">Quarry</li>', html=True)
+        self.assertContains(response, "<h1>Quarry SPARQL endpoint</h1>", html=True)
+        self.assertContains(response, 'class="source-layout"', html=False)
+        self.assertContains(response, 'class="card source-info-card"', html=False)
+        self.assertContains(response, 'aria-labelledby="quarry-info-heading"', html=False)
+        self.assertContains(response, '<h2 id="quarry-info-heading">About Quarry</h2>', html=True)
+        self.assertContains(
+            response,
+            "is a public querying interface for Wiki Replicas and ToolsDBs",
+            html=False,
+        )
+        self.assertContains(response, 'href="https://meta.wikimedia.org/wiki/Research:Quarry"', html=False)
+        self.assertContains(response, "Example query", html=False)
+        self.assertContains(
+            response,
+            "https%3A//sparqlbridge.toolforge.org/quarry/sparql/quarry_id%3D103960",
+            html=False,
+        )
 
     @patch("petscan.views.petscan_service.ensure_loaded")
     def test_structure_endpoint_returns_meta(self, ensure_loaded):

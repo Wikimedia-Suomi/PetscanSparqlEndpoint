@@ -103,7 +103,7 @@ class IncubatorApiViewTests(SimpleTestCase):
         )
         self.assertContains(
             response,
-            "Choose one or more subject namespaces to include.",
+            "Choose one or more namespaces to include in the results.",
             html=False,
         )
         self.assertContains(response, 'id="incubator-page-prefix"', html=False)

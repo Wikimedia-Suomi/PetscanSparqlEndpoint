@@ -65,7 +65,7 @@ def _recentchanges_help_text() -> str:
 
 def _namespace_help_text() -> str:
     if service_source.incubator_lookup_backend() == service_source.LOOKUP_BACKEND_TOOLFORGE_SQL:
-        return "Choose one or more subject namespaces to include."
+        return "Choose one or more namespaces to include in the results."
     return (
         "In API mode, namespace filtering is affected by MediaWiki miser mode, "
         "so the filter may miss valid matches or appear not to work."
