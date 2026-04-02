@@ -31,6 +31,22 @@
 
           <form class="query-form">
             {% endverbatim %}
+            {% if replica_only_filters_enabled %}
+            <label for="incubator-page-prefix">Page prefix filter</label>
+            <input
+              id="incubator-page-prefix"
+              type="text"
+              spellcheck="false"
+              placeholder="Wp/sms/, Wt/sms/"
+              v-model.trim="incubatorPagePrefix"
+              aria-describedby="incubator-page-prefix-help"
+            />
+            <p id="incubator-page-prefix-help" class="help">
+              Use comma-separated page title prefixes such as <code>Wp/sms/</code> or
+              <code>Wp/sms/...</code>. Maximum 10 prefixes, 10 characters each.
+            </p>
+            {% endif %}
+
             {% if namespace_options %}
             <fieldset class="query-target-list namespace-filter-list">
               <legend>Namespaces</legend>
@@ -52,36 +68,6 @@
               {{ namespace_help_text }}
             </p>
             {% endif %}
-
-            {% if replica_only_filters_enabled %}
-            <label for="incubator-page-prefix">Page prefix filter</label>
-            <input
-              id="incubator-page-prefix"
-              type="text"
-              spellcheck="false"
-              placeholder="Wp/sms/, Wt/sms/"
-              v-model.trim="incubatorPagePrefix"
-              aria-describedby="incubator-page-prefix-help"
-            />
-            <p id="incubator-page-prefix-help" class="help">
-              Use comma-separated page title prefixes such as <code>Wp/sms/</code> or
-              <code>Wp/sms/...</code>. Maximum 10 prefixes, 10 characters each.
-            </p>
-
-            <label for="incubator-page-latest">Minimum <code>page_latest</code></label>
-            <input
-              id="incubator-page-latest"
-              type="text"
-              inputmode="numeric"
-              spellcheck="false"
-              placeholder="123456789"
-              v-model.trim="incubatorPageLatest"
-              aria-describedby="incubator-page-latest-help"
-            />
-            <p id="incubator-page-latest-help" class="help">
-              This shows only pages with newer revision than the given <code>rev_id</code>.
-            </p>
-            {% endif %}
             {% verbatim %}
 
             <label class="checkbox-row" for="incubator-recentchanges-only">
@@ -96,6 +82,21 @@
             <p class="help">
               {{ recentchanges_help_text }}
             </p>
+            {% if replica_only_filters_enabled %}
+            <label for="incubator-page-latest">Minimum <code>page_latest</code></label>
+            <input
+              id="incubator-page-latest"
+              type="text"
+              inputmode="numeric"
+              spellcheck="false"
+              placeholder="123456789"
+              v-model.trim="incubatorPageLatest"
+              aria-describedby="incubator-page-latest-help"
+            />
+            <p id="incubator-page-latest-help" class="help">
+              This shows only pages with newer revision than the given <code>rev_id</code>.
+            </p>
+            {% endif %}
             {% verbatim %}
 
             <label for="incubator-limit">Load data limit</label>
