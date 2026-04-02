@@ -6,8 +6,9 @@ from urllib.parse import parse_qs
 
 from django.http import HttpRequest, HttpResponse, JsonResponse
 from django.shortcuts import render
-from django.utils.html import format_html
 from django.views.decorators.csrf import csrf_exempt
+
+from petscan_endpoint.example_queries import build_incubator_example_query_url
 
 from . import service as incubator_service
 from . import service_source
@@ -38,6 +39,7 @@ def index(request: HttpRequest) -> HttpResponse:
         request,
         "incubator.html",
         {
+            "incubator_example_query_url": build_incubator_example_query_url(),
             "page_latest_filter_enabled": _page_latest_filter_enabled(),
             "recentchanges_help_text": _recentchanges_help_text(),
         },
@@ -50,14 +52,7 @@ def _page_latest_filter_enabled() -> bool:
 
 def _recentchanges_help_text() -> str:
     if service_source.incubator_lookup_backend() == service_source.LOOKUP_BACKEND_TOOLFORGE_SQL:
-        return cast(
-            str,
-            format_html(
-                'This fetches pages from the <code>recentchanges</code> table using '
-                '<code>rc_source="mw.edit"</code> plus move log events '
-                '<code>(rc_source="mw.log" AND rc_log_type="move")</code> as the filter.'
-            ),
-        )
+        return "This uses recent changes from the last 30 days, including normal edits and page moves."
     return (
         "In API mode, it uses category member timestamps sorted from newest to oldest "
         "and stops when the 30-day window is exceeded."

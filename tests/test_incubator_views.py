@@ -45,6 +45,17 @@ class IncubatorApiViewTests(SimpleTestCase):
         self.assertContains(response, '<h2 id="incubator-info-heading">About Incubator</h2>', html=True)
         self.assertContains(response, "hosts test wikis for new language editions", html=False)
         self.assertContains(response, "Open Incubator category", html=False)
+        self.assertContains(response, "Example query", html=False)
+        self.assertContains(
+            response,
+            'href="https://qlever.wikidata.dbis.rwth-aachen.de/wikidata/?query=',
+            html=False,
+        )
+        self.assertContains(
+            response,
+            "https%3A//sparqlbridge.toolforge.org/incubator/sparql",
+            html=False,
+        )
         self.assertContains(response, "Only pages edited during the last 30 days", html=False)
         self.assertNotContains(response, 'id="incubator-page-latest"', html=False)
         self.assertContains(
@@ -61,11 +72,15 @@ class IncubatorApiViewTests(SimpleTestCase):
         self.assertEqual(response.status_code, 200)
         self.assertContains(
             response,
-            'This fetches pages from the <code>recentchanges</code> table using <code>rc_source="mw.edit"</code> plus move log events <code>(rc_source="mw.log" AND rc_log_type="move")</code> as the filter.',
-            html=True,
+            "This uses recent changes from the last 30 days, including normal edits and page moves.",
+            html=False,
         )
         self.assertContains(response, 'id="incubator-page-latest"', html=False)
-        self.assertContains(response, "Filters replica results with", html=False)
+        self.assertContains(
+            response,
+            "This shows only pages with newer revision than the given",
+            html=False,
+        )
         self.assertNotContains(
             response,
             "In API mode, it uses category member timestamps sorted from newest to oldest",

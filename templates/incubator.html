@@ -57,8 +57,7 @@
               aria-describedby="incubator-page-latest-help"
             />
             <p id="incubator-page-latest-help" class="help">
-              Only available with the Toolforge replica backend. Filters replica results with
-              <code>page.page_latest &gt;= value</code>.
+              This shows only pages with newer revision than the given <code>rev_id</code>.
             </p>
             {% endif %}
             {% verbatim %}
@@ -106,6 +105,18 @@
             This source exposes pages from the maintenance category for Wikidata interwiki links as RDF,
             including schema.org sitelink-style triples that can be reused in federated WDQS queries.
           </p>
+          {% endverbatim %}
+          <div class="actions">
+            <a
+              class="button-link secondary"
+              href="{{ incubator_example_query_url }}"
+              target="_blank"
+              rel="noopener noreferrer"
+            >
+              Example query
+            </a>
+          </div>
+          {% verbatim %}
         </aside>
       </div>
 

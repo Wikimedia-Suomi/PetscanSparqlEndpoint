@@ -52,6 +52,17 @@ class ApiViewTests(SimpleTestCase):
         self.assertContains(response, 'href="/quarry/"', html=False)
         self.assertContains(response, 'href="https://meta.wikimedia.org/wiki/PetScan"', html=False)
         self.assertContains(response, 'href="https://incubator.wikimedia.org"', html=False)
+        self.assertContains(response, "Example query")
+        self.assertContains(
+            response,
+            'href="https://qlever.wikidata.dbis.rwth-aachen.de/wikidata/?query=',
+            html=False,
+        )
+        self.assertContains(
+            response,
+            "https%3A//sparqlbridge.toolforge.org/incubator/sparql",
+            html=False,
+        )
         self.assertContains(
             response,
             'href="https://meta.wikimedia.org/wiki/Research:Quarry"',
