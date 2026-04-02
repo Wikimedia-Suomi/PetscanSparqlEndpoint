@@ -9,9 +9,9 @@ from urllib.parse import quote, urlencode
 from urllib.request import Request, urlopen
 
 from django.conf import settings
-from django.core.exceptions import ImproperlyConfigured
 
 from petscan import enrichment_sql
+from petscan import service_links
 from petscan.normalization import normalize_page_title, normalize_qid
 from petscan.service_errors import PetscanServiceError
 from petscan.service_source import HTTP_USER_AGENT
@@ -26,8 +26,8 @@ __all__ = [
     "normalize_source_params",
 ]
 
-LOOKUP_BACKEND_API = "api"
-LOOKUP_BACKEND_TOOLFORGE_SQL = "toolforge_sql"
+LOOKUP_BACKEND_API = service_links.LOOKUP_BACKEND_API
+LOOKUP_BACKEND_TOOLFORGE_SQL = service_links.LOOKUP_BACKEND_TOOLFORGE_SQL
 _DEFAULT_INCUBATOR_API_URL = "https://incubator.wikimedia.org/w/api.php"
 _DEFAULT_INCUBATOR_PAGE_BASE_URL = "https://incubator.wikimedia.org/wiki/"
 _INCUBATOR_WIKIDATA_CATEGORY_PAGE = "Category:Maintenance:Wikidata_interwiki_links"
@@ -84,12 +84,7 @@ def build_incubator_category_url() -> str:
 
 
 def incubator_lookup_backend() -> str:
-    configured = str(getattr(settings, "INCUBATOR_LOOKUP_BACKEND", LOOKUP_BACKEND_API) or "").strip().lower()
-    if configured in {LOOKUP_BACKEND_API, LOOKUP_BACKEND_TOOLFORGE_SQL}:
-        return configured
-    raise ImproperlyConfigured(
-        "INCUBATOR_LOOKUP_BACKEND must be 'api' or 'toolforge_sql'."
-    )
+    return service_links.wikidata_lookup_backend()
 
 
 def normalize_load_limit(value: Any) -> Optional[int]:

@@ -4,7 +4,6 @@ from datetime import datetime, timezone
 from types import TracebackType
 from unittest.mock import MagicMock, patch
 
-from django.core.exceptions import ImproperlyConfigured
 from django.test import SimpleTestCase
 
 from incubator import service_source
@@ -30,13 +29,25 @@ class _FakeHttpResponse:
 
 
 class IncubatorServiceSourceTests(SimpleTestCase):
-    def test_incubator_lookup_backend_rejects_auto(self) -> None:
-        with self.settings(INCUBATOR_LOOKUP_BACKEND="auto"):
-            with self.assertRaisesMessage(
-                ImproperlyConfigured,
-                "INCUBATOR_LOOKUP_BACKEND must be 'api' or 'toolforge_sql'.",
-            ):
-                service_source.incubator_lookup_backend()
+    def test_incubator_lookup_backend_follows_global_wikidata_backend_setting(self) -> None:
+        with self.settings(WIKIDATA_LOOKUP_BACKEND="toolforge_sql"):
+            self.assertEqual(
+                service_source.incubator_lookup_backend(),
+                service_source.LOOKUP_BACKEND_TOOLFORGE_SQL,
+            )
+
+        with self.settings(WIKIDATA_LOOKUP_BACKEND="api"):
+            self.assertEqual(
+                service_source.incubator_lookup_backend(),
+                service_source.LOOKUP_BACKEND_API,
+            )
+
+    def test_incubator_lookup_backend_uses_global_replica_flag_when_backend_is_not_explicit(self) -> None:
+        with self.settings(WIKIDATA_LOOKUP_BACKEND="", TOOLFORGE_USE_REPLICA=True):
+            self.assertEqual(
+                service_source.incubator_lookup_backend(),
+                service_source.LOOKUP_BACKEND_TOOLFORGE_SQL,
+            )
 
     def test_normalize_load_limit_supports_blank_and_positive_values(self) -> None:
         self.assertIsNone(service_source.normalize_load_limit(""))
@@ -46,7 +57,7 @@ class IncubatorServiceSourceTests(SimpleTestCase):
             service_source.normalize_load_limit("0")
 
     def test_fetch_incubator_records_via_api_stops_at_limit_and_normalizes_fields(self) -> None:
-        with self.settings(INCUBATOR_LOOKUP_BACKEND="api"):
+        with self.settings(WIKIDATA_LOOKUP_BACKEND="api"):
             with patch("incubator.service_source.urlopen") as urlopen_mock:
                 urlopen_mock.return_value = _FakeHttpResponse(
                     json.dumps(
@@ -106,7 +117,7 @@ class IncubatorServiceSourceTests(SimpleTestCase):
                 self.assertEqual(len(request_urls), 1)
 
     def test_fetch_incubator_records_via_api_stops_after_first_batch_when_limit_is_satisfied(self) -> None:
-        with self.settings(INCUBATOR_LOOKUP_BACKEND="api"):
+        with self.settings(WIKIDATA_LOOKUP_BACKEND="api"):
             with patch("incubator.service_source.urlopen") as urlopen_mock:
                 urlopen_mock.return_value = _FakeHttpResponse(
                     json.dumps(
@@ -147,7 +158,7 @@ class IncubatorServiceSourceTests(SimpleTestCase):
                 self.assertIn("cmlimit=2", request_url)
 
     def test_fetch_incubator_records_via_api_recentchanges_uses_timestamp_sorting(self) -> None:
-        with self.settings(INCUBATOR_LOOKUP_BACKEND="api"):
+        with self.settings(WIKIDATA_LOOKUP_BACKEND="api"):
             with patch("incubator.service_source._recentchanges_cutoff") as cutoff_mock:
                 with patch("incubator.service_source.urlopen") as urlopen_mock:
                     cutoff_mock.return_value = datetime(2026, 3, 1, tzinfo=timezone.utc)
@@ -191,7 +202,7 @@ class IncubatorServiceSourceTests(SimpleTestCase):
                     self.assertIn("cmdir=desc", request_url)
 
     def test_fetch_incubator_records_via_api_recentchanges_stops_at_30_day_cutoff(self) -> None:
-        with self.settings(INCUBATOR_LOOKUP_BACKEND="api"):
+        with self.settings(WIKIDATA_LOOKUP_BACKEND="api"):
             with patch("incubator.service_source._recentchanges_cutoff") as cutoff_mock:
                 with patch("incubator.service_source.urlopen") as urlopen_mock:
                     cutoff_mock.return_value = datetime(2026, 3, 1, tzinfo=timezone.utc)
@@ -251,7 +262,7 @@ class IncubatorServiceSourceTests(SimpleTestCase):
 
     def test_fetch_incubator_records_via_replica_uses_configured_cnf(self) -> None:
         with self.settings(
-            INCUBATOR_LOOKUP_BACKEND="toolforge_sql",
+            WIKIDATA_LOOKUP_BACKEND="toolforge_sql",
             TOOLFORGE_REPLICA_CNF="$HOME/replica.my.cnf",
         ):
             with patch("incubator.service_source.pymysql") as pymysql_mock:
@@ -297,7 +308,7 @@ class IncubatorServiceSourceTests(SimpleTestCase):
 
     def test_fetch_incubator_records_via_recentchanges_replica_uses_recentchanges_table(self) -> None:
         with self.settings(
-            INCUBATOR_LOOKUP_BACKEND="toolforge_sql",
+            WIKIDATA_LOOKUP_BACKEND="toolforge_sql",
             TOOLFORGE_REPLICA_CNF="$HOME/replica.my.cnf",
         ):
             with patch("incubator.service_source.pymysql") as pymysql_mock:
