@@ -65,16 +65,10 @@ __all__ = [
     "value_kind",
 ]
 
-if NamedNode is not None:
-    _XSD_INTEGER_NODE = NamedNode(XSD_INTEGER_IRI)
-    _XSD_DOUBLE_NODE = NamedNode(XSD_DOUBLE_IRI)
-    _XSD_BOOLEAN_NODE = NamedNode(XSD_BOOLEAN_IRI)
-    _XSD_DATE_TIME_NODE = NamedNode(XSD_DATE_TIME_IRI)
-else:  # pragma: no cover - dependency check at runtime
-    _XSD_INTEGER_NODE = None
-    _XSD_DOUBLE_NODE = None
-    _XSD_BOOLEAN_NODE = None
-    _XSD_DATE_TIME_NODE = None
+_XSD_INTEGER_NODE: Any = NamedNode(XSD_INTEGER_IRI) if NamedNode is not None else None
+_XSD_DOUBLE_NODE: Any = NamedNode(XSD_DOUBLE_IRI) if NamedNode is not None else None
+_XSD_BOOLEAN_NODE: Any = NamedNode(XSD_BOOLEAN_IRI) if NamedNode is not None else None
+_XSD_DATE_TIME_NODE: Any = NamedNode(XSD_DATE_TIME_IRI) if NamedNode is not None else None
 
 _FIELD_NAME_RE = re.compile(r"[^0-9A-Za-z_]+")
 _FIELD_RENAMES = {
