@@ -38,6 +38,7 @@ INSTALLED_APPS = [
     "django.contrib.staticfiles",
     "petscan.apps.PetscanConfig",
     "incubator.apps.IncubatorConfig",
+    "newpages.apps.NewpagesConfig",
     "quarry.apps.QuarryConfig",
 ]
 
@@ -89,6 +90,10 @@ OXIGRAPH_BASE_DIR = _required_env("OXIGRAPH_BASE_DIR")
 
 WIKIDATA_LOOKUP_BACKEND = os.getenv("WIKIDATA_LOOKUP_BACKEND", "api")
 INCUBATOR_API_ENDPOINT = os.getenv("INCUBATOR_API_ENDPOINT", "https://incubator.wikimedia.org/w/api.php")
+NEWPAGES_SITEMATRIX_API_ENDPOINT = os.getenv(
+    "NEWPAGES_SITEMATRIX_API_ENDPOINT",
+    "https://meta.wikimedia.org/w/api.php",
+)
 INCUBATOR_NAMESPACE_OPTIONS = (
     {"id": 0, "label": "Main"},
     {"id": 4, "label": "Project", "url_prefix": "Incubator"},

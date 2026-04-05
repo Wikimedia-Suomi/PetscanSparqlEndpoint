@@ -357,6 +357,36 @@ class IncubatorApiViewTests(SimpleTestCase):
             recentchanges_only=False,
         )
 
+    @patch("incubator.views.incubator_service.execute_query")
+    def test_sparql_endpoint_rejects_invalid_utf8_protocol_post(self, execute_query: Any) -> None:
+        response = self.client.post(
+            INCUBATOR_SPARQL_PATH,
+            data=b"\xff\xfeSELECT ?item WHERE { ?item ?p ?o }",
+            content_type="application/sparql-query",
+        )
+
+        self.assertEqual(response.status_code, 400)
+        self.assertEqual(
+            response.content.decode("utf-8"),
+            "SPARQL query body must be valid UTF-8.",
+        )
+        execute_query.assert_not_called()
+
+    @patch("incubator.views.incubator_service.execute_query")
+    def test_sparql_endpoint_rejects_oversized_protocol_post(self, execute_query: Any) -> None:
+        response = self.client.post(
+            INCUBATOR_SPARQL_PATH,
+            data="A" * (500 * 1024 + 1),
+            content_type="application/sparql-query",
+        )
+
+        self.assertEqual(response.status_code, 400)
+        self.assertEqual(
+            response.content.decode("utf-8"),
+            "SPARQL query must be at most 500 KB.",
+        )
+        execute_query.assert_not_called()
+
     def test_sparql_endpoint_rejects_non_sparql_query_post_content_type(self) -> None:
         with self.assertLogs("incubator.views", level="WARNING") as captured_logs:
             response = self.client.post(

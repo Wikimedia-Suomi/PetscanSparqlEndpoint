@@ -20,6 +20,119 @@ export const OPEN_QUERY_TARGETS = [
   { value: "qlever", label: "QLever endpoint" },
 ];
 
+const NEWPAGES_STANDARD_INTERWIKI_PREFIX_BY_SUFFIX = {
+  ".wikipedia.org": "w",
+  ".wiktionary.org": "wikt",
+  ".wikibooks.org": "b",
+  ".wikinews.org": "n",
+  ".wikiquote.org": "q",
+  ".wikisource.org": "s",
+  ".wikiversity.org": "v",
+  ".wikivoyage.org": "voy",
+};
+
+const NEWPAGES_SPECIAL_INTERWIKI_PREFIX_BY_HOST = {
+  "commons.wikimedia.org": "commons",
+  "www.wikidata.org": "d",
+  "wikidata.org": "d",
+  "incubator.wikimedia.org": "incubator",
+  "meta.wikimedia.org": "meta",
+};
+
+const NEWPAGES_INTERWIKI_CANONICAL_PREFIX = {
+  w: "w",
+  wikipedia: "w",
+  wikt: "wikt",
+  wiktionary: "wikt",
+  b: "b",
+  wikibooks: "b",
+  n: "n",
+  wikinews: "n",
+  q: "q",
+  wikiquote: "q",
+  s: "s",
+  wikisource: "s",
+  v: "v",
+  wikiversity: "v",
+  voy: "voy",
+  wikivoyage: "voy",
+  d: "d",
+  wikidata: "d",
+  commons: "commons",
+  c: "commons",
+  incubator: "incubator",
+  meta: "meta",
+  m: "meta",
+};
+
+function normalizeInterwikiPageTitle(rawValue) {
+  return String(rawValue || "").trim().replace(/^:+/, "").replace(/ /g, "_");
+}
+
+export function normalizeNewpagesUserListPage(rawValue) {
+  var raw = String(rawValue || "").trim();
+  if (!raw) {
+    return "";
+  }
+
+  try {
+    var parsedUrl = new URL(raw);
+    var host = String(parsedUrl.hostname || "").trim().toLowerCase();
+    var specialPrefix = NEWPAGES_SPECIAL_INTERWIKI_PREFIX_BY_HOST[host];
+    var pageTitle = "";
+    if (parsedUrl.pathname.indexOf("/wiki/") === 0) {
+      pageTitle = decodeURIComponent(parsedUrl.pathname.slice("/wiki/".length));
+    } else {
+      pageTitle = String(parsedUrl.searchParams.get("title") || "");
+    }
+    pageTitle = normalizeInterwikiPageTitle(pageTitle);
+    if (!pageTitle) {
+      return raw;
+    }
+    if (specialPrefix) {
+      return ":" + specialPrefix + ":" + pageTitle;
+    }
+    for (var suffix in NEWPAGES_STANDARD_INTERWIKI_PREFIX_BY_SUFFIX) {
+      if (!Object.prototype.hasOwnProperty.call(NEWPAGES_STANDARD_INTERWIKI_PREFIX_BY_SUFFIX, suffix)) {
+        continue;
+      }
+      if (!host.endsWith(suffix)) {
+        continue;
+      }
+      var langCode = host.slice(0, host.length - suffix.length);
+      if (!langCode || langCode === "www") {
+        break;
+      }
+      return ":" + NEWPAGES_STANDARD_INTERWIKI_PREFIX_BY_SUFFIX[suffix] + ":" + langCode + ":" + pageTitle;
+    }
+  } catch (_err) {
+    // Fall through to interwiki normalization.
+  }
+
+  var normalized = raw.replace(/^:+/, "");
+  var segments = normalized.split(":");
+  if (segments.length < 2) {
+    return raw;
+  }
+  var canonicalPrefix = NEWPAGES_INTERWIKI_CANONICAL_PREFIX[String(segments[0] || "").trim().toLowerCase()];
+  if (!canonicalPrefix) {
+    return raw;
+  }
+  if (canonicalPrefix === "commons" || canonicalPrefix === "d" || canonicalPrefix === "incubator" || canonicalPrefix === "meta") {
+    var specialTitle = normalizeInterwikiPageTitle(segments.slice(1).join(":"));
+    return specialTitle ? ":" + canonicalPrefix + ":" + specialTitle : raw;
+  }
+  if (segments.length < 3) {
+    return raw;
+  }
+  var langCode = String(segments[1] || "").trim().toLowerCase();
+  var title = normalizeInterwikiPageTitle(segments.slice(2).join(":"));
+  if (!langCode || !title) {
+    return raw;
+  }
+  return ":" + canonicalPrefix + ":" + langCode + ":" + title;
+}
+
 export function buildDefaultQueryText(prefixName, ontologyBase, subjectVariableName, extraPrefixEntries) {
   var normalizedPrefix = String(prefixName || "").trim() || PETSCAN_ONTOLOGY_PREFIX;
   var normalizedBase = String(ontologyBase || "").trim() || PETSCAN_ONTOLOGY_BASE;

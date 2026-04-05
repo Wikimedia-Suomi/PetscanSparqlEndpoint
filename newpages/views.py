@@ -8,9 +8,9 @@ from django.http import HttpRequest, HttpResponse, JsonResponse
 from django.shortcuts import render
 from django.views.decorators.csrf import csrf_exempt
 
-from petscan_endpoint.example_queries import build_incubator_example_query_url
+from petscan_endpoint.example_queries import build_newpages_example_query_url
 
-from . import service as incubator_service
+from . import service as newpages_service
 from . import service_source
 
 logger = logging.getLogger(__name__)
@@ -27,10 +27,10 @@ def _csrf_exempt(view_func: _ViewFunc) -> _ViewFunc:
 class RequestContext:
     refresh: bool
     limit: int | None
-    namespaces: list[int]
-    page_latest: int | None
-    page_prefixes: list[str]
-    recentchanges_only: bool
+    wiki_domains: list[str]
+    timestamp: str | None
+    user_list_page: str | None
+    include_edited_pages: bool
 
 
 @dataclass(frozen=True)
@@ -41,36 +41,28 @@ class SparqlRequest(RequestContext):
 def index(request: HttpRequest) -> HttpResponse:
     return render(
         request,
-        "incubator.html",
+        "newpages.html",
         {
-            "incubator_example_query_url": build_incubator_example_query_url(),
-            "namespace_options": service_source.available_incubator_namespace_options(),
-            "namespace_help_text": _namespace_help_text(),
-            "replica_only_filters_enabled": _replica_only_filters_enabled(),
-            "recentchanges_help_text": _recentchanges_help_text(),
+            "newpages_example_query_url": build_newpages_example_query_url(),
+            "wiki_help_text": (
+                "Use one or more comma-separated Wikimedia wiki hostnames such as "
+                "fi.wikipedia.org, sv.wikipedia.org, incubator.wikimedia.org."
+            ),
+            "timestamp_help_text": (
+                "Accepts YYYYMMDDHHMMSS prefixes. Shorter values are right-padded with zeros, "
+                "so YYYYMM becomes YYYYMM00000000."
+            ),
+            "user_list_page_help_text": (
+                "Accepts either interwiki page references such as "
+                ":w:fi:Wikipedia:Viikon_kilpailu/Viikon_kilpailu_2026-15 "
+                "or direct https://.../wiki/... links."
+            ),
+            "include_edited_pages_help_text": (
+                "Only available together with User list page. When enabled, the timestamp filter applies to "
+                "matching edits and must be within the last 60 days."
+            ),
+            "source_data_url": service_source.SITEMATRIX_SOURCE_URL,
         },
-    )
-
-
-def _replica_only_filters_enabled() -> bool:
-    return service_source.incubator_lookup_backend() == service_source.LOOKUP_BACKEND_TOOLFORGE_SQL
-
-
-def _recentchanges_help_text() -> str:
-    if service_source.incubator_lookup_backend() == service_source.LOOKUP_BACKEND_TOOLFORGE_SQL:
-        return "This uses recent changes from the last 30 days, including normal edits and page moves."
-    return (
-        "In API mode, it uses category member timestamps sorted from newest to oldest "
-        "and stops when the 30-day window is exceeded."
-    )
-
-
-def _namespace_help_text() -> str:
-    if service_source.incubator_lookup_backend() == service_source.LOOKUP_BACKEND_TOOLFORGE_SQL:
-        return "Choose one or more namespaces to include in the results."
-    return (
-        "In API mode, namespace filtering is affected by MediaWiki miser mode, "
-        "so the filter may miss valid matches or appear not to work."
     )
 
 
@@ -113,10 +105,10 @@ def _parse_request_context(request: HttpRequest) -> RequestContext:
     return RequestContext(
         refresh=_parse_bool(request.GET.get("refresh"), default=False),
         limit=service_source.normalize_load_limit(request.GET.get("limit")),
-        namespaces=service_source.normalize_namespaces(request.GET.getlist("namespace")),
-        page_latest=service_source.normalize_page_latest(request.GET.get("page_latest")),
-        page_prefixes=service_source.normalize_page_prefixes(request.GET.getlist("page_prefix")),
-        recentchanges_only=_parse_bool(request.GET.get("recentchanges_only"), default=False),
+        wiki_domains=service_source.normalize_wikis(request.GET.getlist("wiki")),
+        timestamp=service_source.normalize_timestamp(request.GET.get("timestamp")),
+        user_list_page=service_source.normalize_user_list_page(request.GET.get("user_list_page")),
+        include_edited_pages=service_source.normalize_include_edited_pages(request.GET.get("include_edited_pages")),
     )
 
 
@@ -126,34 +118,31 @@ def _parse_path_request_context(service_params: str) -> RequestContext:
         return RequestContext(
             refresh=False,
             limit=None,
-            namespaces=[],
-            page_latest=None,
-            page_prefixes=[],
-            recentchanges_only=False,
+            wiki_domains=[],
+            timestamp=None,
+            user_list_page=None,
+            include_edited_pages=False,
         )
 
     parsed = parse_qs(raw, keep_blank_values=False)
     refresh_values = [str(value).strip() for value in parsed.get("refresh", []) if str(value).strip()]
     limit_values = [str(value).strip() for value in parsed.get("limit", []) if str(value).strip()]
-    namespace_values = [str(value).strip() for value in parsed.get("namespace", []) if str(value).strip()]
-    page_latest_values = [str(value).strip() for value in parsed.get("page_latest", []) if str(value).strip()]
-    page_prefix_values = [str(value).strip() for value in parsed.get("page_prefix", []) if str(value).strip()]
-    recentchanges_values = [
-        str(value).strip()
-        for value in parsed.get("recentchanges_only", [])
-        if str(value).strip()
+    wiki_values = [str(value).strip() for value in parsed.get("wiki", []) if str(value).strip()]
+    timestamp_values = [str(value).strip() for value in parsed.get("timestamp", []) if str(value).strip()]
+    user_list_page_values = [str(value).strip() for value in parsed.get("user_list_page", []) if str(value).strip()]
+    include_edited_pages_values = [
+        str(value).strip() for value in parsed.get("include_edited_pages", []) if str(value).strip()
     ]
     return RequestContext(
         refresh=_parse_bool(refresh_values[-1] if refresh_values else None, default=False),
         limit=service_source.normalize_load_limit(limit_values[-1] if limit_values else None),
-        namespaces=service_source.normalize_namespaces(namespace_values),
-        page_latest=service_source.normalize_page_latest(
-            page_latest_values[-1] if page_latest_values else None
+        wiki_domains=service_source.normalize_wikis(wiki_values),
+        timestamp=service_source.normalize_timestamp(timestamp_values[-1] if timestamp_values else None),
+        user_list_page=service_source.normalize_user_list_page(
+            user_list_page_values[-1] if user_list_page_values else None
         ),
-        page_prefixes=service_source.normalize_page_prefixes(page_prefix_values),
-        recentchanges_only=_parse_bool(
-            recentchanges_values[-1] if recentchanges_values else None,
-            default=False,
+        include_edited_pages=service_source.normalize_include_edited_pages(
+            include_edited_pages_values[-1] if include_edited_pages_values else None
         ),
     )
 
@@ -182,7 +171,7 @@ def _parse_sparql_query(request: HttpRequest) -> str:
 
     logger.warning(
         (
-            "[sparql-content-type-debug] Rejected POST /incubator/sparql due to unsupported Content-Type. "
+            "[sparql-content-type-debug] Rejected POST /newpages/sparql due to unsupported Content-Type. "
             "parsed_content_type=%r raw_content_type=%r method=%s path=%s query_string=%r "
             "accept=%r user_agent=%r content_length=%r"
         ),
@@ -196,7 +185,7 @@ def _parse_sparql_query(request: HttpRequest) -> str:
         request.META.get("CONTENT_LENGTH", ""),
     )
     raise ValueError(
-        "POST /incubator/sparql requires Content-Type: application/sparql-query or application/x-www-form-urlencoded."
+        "POST /newpages/sparql requires Content-Type: application/sparql-query or application/x-www-form-urlencoded."
     )
 
 
@@ -208,11 +197,11 @@ def _parse_sparql_request(request: HttpRequest, service_params: str = "") -> Spa
     return SparqlRequest(
         refresh=context.refresh,
         limit=context.limit,
-        namespaces=context.namespaces,
-        page_latest=context.page_latest,
-        page_prefixes=context.page_prefixes,
-        recentchanges_only=context.recentchanges_only,
+        wiki_domains=context.wiki_domains,
+        timestamp=context.timestamp,
+        user_list_page=context.user_list_page,
         query=query,
+        include_edited_pages=context.include_edited_pages,
     )
 
 
@@ -230,27 +219,27 @@ def structure_endpoint(request: HttpRequest) -> JsonResponse:
 
     try:
         request_context = _parse_request_context(request)
-        meta = incubator_service.ensure_loaded(
+        meta = newpages_service.ensure_loaded(
             refresh=request_context.refresh,
             limit=request_context.limit,
-            namespaces=request_context.namespaces,
-            page_latest=request_context.page_latest,
-            page_prefixes=request_context.page_prefixes,
-            recentchanges_only=request_context.recentchanges_only,
+            wiki_domains=request_context.wiki_domains,
+            timestamp=request_context.timestamp,
+            user_list_page=request_context.user_list_page,
+            include_edited_pages=request_context.include_edited_pages,
         )
     except ValueError as exc:
         return _json_error(str(exc), status=400)
-    except incubator_service.PetscanServiceError as exc:
+    except newpages_service.PetscanServiceError as exc:
         return _json_error(_public_service_error_message(exc, request.path), status=502)
 
     return JsonResponse(
         {
-            "source": "incubator",
+            "source": "newpages",
             "limit": request_context.limit,
-            "namespaces": request_context.namespaces,
-            "page_latest": request_context.page_latest,
-            "page_prefixes": request_context.page_prefixes,
-            "recentchanges_only": request_context.recentchanges_only,
+            "wiki_domains": request_context.wiki_domains,
+            "timestamp": request_context.timestamp,
+            "user_list_page": request_context.user_list_page,
+            "include_edited_pages": request_context.include_edited_pages,
             "meta": meta,
         }
     )
@@ -268,18 +257,18 @@ def sparql_endpoint(request: HttpRequest, service_params: str = "") -> HttpRespo
 
     try:
         parsed_request = _parse_sparql_request(request, service_params=service_params)
-        execution = incubator_service.execute_query(
+        execution = newpages_service.execute_query(
             parsed_request.query,
             refresh=parsed_request.refresh,
             limit=parsed_request.limit,
-            namespaces=parsed_request.namespaces,
-            page_latest=parsed_request.page_latest,
-            page_prefixes=parsed_request.page_prefixes,
-            recentchanges_only=parsed_request.recentchanges_only,
+            wiki_domains=parsed_request.wiki_domains,
+            timestamp=parsed_request.timestamp,
+            user_list_page=parsed_request.user_list_page,
+            include_edited_pages=parsed_request.include_edited_pages,
         )
     except ValueError as exc:
         return _add_cors_headers(_text_error(str(exc), status=400))
-    except incubator_service.PetscanServiceError as exc:
+    except newpages_service.PetscanServiceError as exc:
         return _add_cors_headers(_text_error(_public_service_error_message(exc, request.path), status=502))
 
     if execution["result_format"] == "sparql-json":

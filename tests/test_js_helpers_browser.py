@@ -201,6 +201,28 @@ def test_js_helper_build_quarry_urls(page: Page, live_server: Any) -> None:
     assert json_url == "https://quarry.wmcloud.org/run/1084251/output/0/json"
 
 
+def test_js_helper_normalize_newpages_user_list_page_from_direct_url(page: Page, live_server: Any) -> None:
+    result = _call_js_helper(
+        page,
+        live_server,
+        "normalizeNewpagesUserListPage",
+        ["https://fi.wikipedia.org/wiki/Wikipedia:Viikon_kilpailu/Viikon_kilpailu_2026-15"],
+    )
+
+    assert result == ":w:fi:Wikipedia:Viikon_kilpailu/Viikon_kilpailu_2026-15"
+
+
+def test_js_helper_normalize_newpages_user_list_page_keeps_interwiki_shape(page: Page, live_server: Any) -> None:
+    result = _call_js_helper(
+        page,
+        live_server,
+        "normalizeNewpagesUserListPage",
+        [":meta:Steward_requests/Permissions"],
+    )
+
+    assert result == ":meta:Steward_requests/Permissions"
+
+
 def test_js_helper_safe_external_href_only_allows_http_and_https(page: Page, live_server: Any) -> None:
     assert (
         _call_js_helper(page, live_server, "safeExternalHref", ["https://example.org/resource"])

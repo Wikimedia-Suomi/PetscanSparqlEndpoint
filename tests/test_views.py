@@ -46,9 +46,11 @@ class ApiViewTests(SimpleTestCase):
         self.assertContains(response, "<h1>SPARQL Bridge</h1>", html=True)
         self.assertContains(response, "PetScan")
         self.assertContains(response, "Incubator")
+        self.assertContains(response, "New Pages")
         self.assertContains(response, "Quarry")
         self.assertContains(response, 'href="/petscan/"', html=False)
         self.assertContains(response, 'href="/incubator/"', html=False)
+        self.assertContains(response, 'href="/newpages/"', html=False)
         self.assertContains(response, 'href="/quarry/"', html=False)
         self.assertContains(response, 'href="https://meta.wikimedia.org/wiki/PetScan"', html=False)
         self.assertContains(response, 'href="https://incubator.wikimedia.org"', html=False)
@@ -81,6 +83,11 @@ class ApiViewTests(SimpleTestCase):
         self.assertContains(
             response,
             "https%3A//sparqlbridge.toolforge.org/incubator/sparql/namespace%3D0%26page_prefix%3DWp/sms",
+            html=False,
+        )
+        self.assertContains(
+            response,
+            "https%3A//sparqlbridge.toolforge.org/newpages/sparql/wiki%3Dfi.wikipedia.org%26timestamp%3D20260401000000",
             html=False,
         )
         self.assertContains(
@@ -248,6 +255,21 @@ class ApiViewTests(SimpleTestCase):
         self.assertEqual(
             response.content.decode("utf-8"),
             "SPARQL query body must be valid UTF-8.",
+        )
+        execute_query.assert_not_called()
+
+    @patch("petscan.views.petscan_service.execute_query")
+    def test_sparql_endpoint_rejects_oversized_protocol_post(self, execute_query):
+        response = self.client.post(
+            SPARQL_PATH,
+            data="A" * (500 * 1024 + 1),
+            content_type="application/sparql-query",
+        )
+
+        self.assertEqual(response.status_code, 400)
+        self.assertEqual(
+            response.content.decode("utf-8"),
+            "SPARQL query must be at most 500 KB.",
         )
         execute_query.assert_not_called()
 

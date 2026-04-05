@@ -15,6 +15,8 @@ from . import service_source as quarry_source
 
 logger = logging.getLogger(__name__)
 _ViewFunc = TypeVar("_ViewFunc", bound=Callable[..., HttpResponse])
+_MAX_SPARQL_QUERY_BYTES = 500 * 1024
+_SPARQL_QUERY_SIZE_ERROR = "SPARQL query must be at most 500 KB."
 
 
 def _csrf_exempt(view_func: _ViewFunc) -> _ViewFunc:
@@ -88,6 +90,12 @@ def _public_service_error_message(exc: Exception, path: str) -> str:
     return str(exc)
 
 
+def _validate_sparql_query_size(query: str) -> str:
+    if len(query.encode("utf-8")) > _MAX_SPARQL_QUERY_BYTES:
+        raise ValueError(_SPARQL_QUERY_SIZE_ERROR)
+    return query
+
+
 def _parse_request_context(request: HttpRequest) -> RequestContext:
     return RequestContext(
         quarry_id=_parse_quarry_id(request.GET.get("quarry_id")),
@@ -119,17 +127,24 @@ def _parse_path_request_context(service_params: str) -> RequestContext:
 def _parse_sparql_query(request: HttpRequest) -> str:
     if request.method == "GET":
         query = request.GET.get("query")
-        return str(query).strip() if query is not None else ""
+        text = str(query) if query is not None else ""
+        return _validate_sparql_query_size(text).strip()
 
     raw_content_type = str(request.headers.get("Content-Type", "") or request.META.get("CONTENT_TYPE", "")).strip()
     content_type = (request.content_type or "").split(";", 1)[0].strip().lower()
     if content_type == "application/sparql-query":
         body = bytes(request.body)
-        return body.decode("utf-8").strip()
+        if len(body) > _MAX_SPARQL_QUERY_BYTES:
+            raise ValueError(_SPARQL_QUERY_SIZE_ERROR)
+        try:
+            return body.decode("utf-8").strip()
+        except UnicodeDecodeError as exc:
+            raise ValueError("SPARQL query body must be valid UTF-8.") from exc
 
     if content_type == "application/x-www-form-urlencoded":
         query = request.POST.get("query")
-        return str(query).strip() if query is not None else ""
+        text = str(query) if query is not None else ""
+        return _validate_sparql_query_size(text).strip()
 
     logger.warning(
         (

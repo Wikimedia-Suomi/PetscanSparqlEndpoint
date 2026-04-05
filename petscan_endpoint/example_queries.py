@@ -113,12 +113,33 @@ SELECT * WHERE {
   }
 }
 """
+_NEWPAGES_EXAMPLE_QUERY = """# This query fetches newly created pages from one or more Wikimedia wikis.
+# The result graph follows the same sitelink-style RDF shape as the Incubator source.
+PREFIX schema: <http://schema.org/>
+PREFIX wikibase: <http://wikiba.se/ontology#>
+PREFIX newpages: <https://sparqlbridge.toolforge.org/newpages/ontology/>
+
+SELECT * WHERE {
+  SERVICE <https://sparqlbridge.toolforge.org/newpages/sparql/wiki=fi.wikipedia.org&timestamp=20260401000000> {
+    ?page schema:about ?wikidata_entity .
+    ?page schema:name ?page_label .
+    ?page newpages:created_timestamp ?created_timestamp .
+    ?page schema:isPartOf ?site_url .
+    ?site_url wikibase:wikiGroup ?wiki_group .
+  }
+}
+LIMIT 50
+"""
 _QLEVER_WIKIDATA_BASE_URL = "https://qlever.wikidata.dbis.rwth-aachen.de/wikidata/?query="
 _QLEVER_COMMONS_BASE_URL = "https://qlever.dev/wikimedia-commons?query="
 
 
 def build_incubator_example_query_url() -> str:
     return "{}{}".format(_QLEVER_WIKIDATA_BASE_URL, quote(_INCUBATOR_EXAMPLE_QUERY))
+
+
+def build_newpages_example_query_url() -> str:
+    return "{}{}".format(_QLEVER_WIKIDATA_BASE_URL, quote(_NEWPAGES_EXAMPLE_QUERY))
 
 
 def build_petscan_example_query_url() -> str:
