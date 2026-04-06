@@ -1602,8 +1602,8 @@ def _fetch_revision_rows_for_wiki(
         sql = (
             "SELECT p.page_id AS page_id, p.page_title, p.page_namespace, pp.pp_value, "
             "MAX(rev.rev_timestamp) AS matched_timestamp "
-            "FROM actor_revision AS rev "
-            "JOIN actor AS a ON rev.rev_actor = a.actor_id "
+            "FROM actor_revision AS a "
+            "JOIN revision_userindex AS rev ON rev.rev_actor = a.actor_id "
             "JOIN page AS p ON p.page_id = rev.rev_page "
             "JOIN page_props AS pp ON pp.pp_page = p.page_id "
             "AND pp.pp_propname = %s"
@@ -1613,8 +1613,8 @@ def _fetch_revision_rows_for_wiki(
         primary_sql = (
             "SELECT p.page_id AS page_id, p.page_title, p.page_namespace, pp.pp_value, "
             "MAX(rev.rev_timestamp) AS matched_timestamp "
-            "FROM actor_revision AS rev "
-            "JOIN actor AS a ON rev.rev_actor = a.actor_id "
+            "FROM actor_revision AS a "
+            "JOIN revision_userindex AS rev ON rev.rev_actor = a.actor_id "
             "JOIN page AS p ON p.page_id = rev.rev_page "
             "JOIN page_props AS pp ON pp.pp_page = p.page_id "
             "AND pp.pp_propname = %s"
@@ -1624,8 +1624,8 @@ def _fetch_revision_rows_for_wiki(
         fallback_sql = (
             "SELECT p.page_id AS page_id, p.page_title, p.page_namespace, cl.cl_sortkey_prefix AS qid, "
             "MAX(rev.rev_timestamp) AS matched_timestamp "
-            "FROM actor_revision AS rev "
-            "JOIN actor AS a ON rev.rev_actor = a.actor_id "
+            "FROM actor_revision AS a "
+            "JOIN revision_userindex AS rev ON rev.rev_actor = a.actor_id "
             "JOIN page AS p ON p.page_id = rev.rev_page "
             "LEFT JOIN page_props AS pp ON pp.pp_page = p.page_id "
             "AND pp.pp_propname = %s "

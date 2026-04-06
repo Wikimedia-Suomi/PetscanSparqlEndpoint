@@ -2772,7 +2772,8 @@ class NewpagesServiceSourceTests(SimpleTestCase):
         self.assertEqual(records[0]["current_timestamp"], "2026-04-03T01:02:03Z")
         self.assertNotIn("created_timestamp", records[0])
         fi_sql, fi_params = fi_connection.cursor.return_value.__enter__.return_value.execute.call_args.args
-        self.assertIn("FROM actor_revision AS rev", fi_sql)
+        self.assertIn("FROM actor_revision AS a", fi_sql)
+        self.assertIn("JOIN revision_userindex AS rev ON rev.rev_actor = a.actor_id", fi_sql)
         self.assertIn("MAX(rev.rev_timestamp) AS matched_timestamp", fi_sql)
         self.assertIn("a.actor_name IN (%s)", fi_sql)
         self.assertIn("rev.rev_timestamp >= %s", fi_sql)
