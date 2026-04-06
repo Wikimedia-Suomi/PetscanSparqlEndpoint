@@ -290,6 +290,16 @@ def _canonical_wiki_token_for_descriptor(descriptor: _WikiDescriptor) -> str:
     return descriptor.domain
 
 
+@lru_cache(maxsize=1)
+def _known_wiki_domains_by_token() -> Dict[str, str]:
+    token_to_domain: Dict[str, str] = {}
+    for descriptor in _known_wikis_by_domain().values():
+        token = _canonical_wiki_token_for_descriptor(descriptor)
+        if token and token not in token_to_domain:
+            token_to_domain[token] = descriptor.domain
+    return token_to_domain
+
+
 def _normalize_single_wiki_token(token: str) -> str:
     normalized = str(token or "").strip().lower().rstrip(".")
     if not normalized:
@@ -879,19 +889,30 @@ def _user_list_source_domain_for_prefix(prefix: str) -> Optional[str]:
 
 def _selected_wiki_descriptors(wiki_tokens: List[str]) -> List[_WikiDescriptor]:
     known_wikis = _known_wikis_by_domain()
+    known_domains_by_token = _known_wiki_domains_by_token()
     selected: List[_WikiDescriptor] = []
     unknown: List[str] = []
     unsupported: List[str] = []
+    seen_domains: set[str] = set()
 
     for token in wiki_tokens:
         lookup_domain = _wiki_domain_for_token(token)
         descriptor = known_wikis.get(lookup_domain)
+        if descriptor is None:
+            resolved_domain = known_domains_by_token.get(str(token or "").strip().lower())
+            if resolved_domain is not None:
+                descriptor = known_wikis.get(resolved_domain)
+                if descriptor is not None:
+                    lookup_domain = resolved_domain
         if descriptor is None:
             unknown.append(lookup_domain)
             continue
         if not _is_supported_wiki_descriptor(descriptor):
             unsupported.append(lookup_domain)
             continue
+        if descriptor.domain in seen_domains:
+            continue
+        seen_domains.add(descriptor.domain)
         selected.append(descriptor)
 
     if unknown:

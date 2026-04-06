@@ -61,6 +61,7 @@ class NewpagesServiceSourceTests(SimpleTestCase):
             test_snapshot_path.unlink()
         service_source._SITEINFO_SNAPSHOT_PATH = test_snapshot_path
         service_source._known_wikis_by_domain.cache_clear()
+        service_source._known_wiki_domains_by_token.cache_clear()
         service_source._user_list_source_domain_for_prefix.cache_clear()
         service_source._siteinfo_snapshot_by_domain.cache_clear()
         service_source._siteinfo_for_domain.cache_clear()
@@ -70,6 +71,7 @@ class NewpagesServiceSourceTests(SimpleTestCase):
 
     def tearDown(self) -> None:
         service_source._SITEINFO_SNAPSHOT_PATH = self._original_siteinfo_snapshot_path
+        service_source._known_wiki_domains_by_token.cache_clear()
         service_source._siteinfo_snapshot_by_domain.cache_clear()
         service_source._siteinfo_for_domain.cache_clear()
         super().tearDown()
@@ -343,6 +345,21 @@ class NewpagesServiceSourceTests(SimpleTestCase):
                 service_source.normalize_wikis("*.wikipedia.org, fi.wikipedia.org"),
                 ["fi", "sv"],
             )
+
+    def test_selected_wiki_descriptors_resolves_legacy_short_wikipedia_token_via_sitematrix(self) -> None:
+        descriptor = service_source._WikiDescriptor(
+            domain="zh-yue.wikipedia.org",
+            dbname="zh_yuewiki",
+            lang_code="yue",
+            wiki_group="wikipedia",
+            site_url="https://zh-yue.wikipedia.org/",
+            site_code="wiki",
+        )
+        with patch("newpages.service_source._known_wikis_by_domain", return_value={"zh-yue.wikipedia.org": descriptor}):
+            service_source._known_wiki_domains_by_token.cache_clear()
+            selected = service_source._selected_wiki_descriptors(["yue"])
+
+        self.assertEqual(selected, [descriptor])
 
     def test_normalize_wikis_rejects_unknown_wildcard(self) -> None:
         with patch("newpages.service_source.urlopen") as urlopen_mock:
