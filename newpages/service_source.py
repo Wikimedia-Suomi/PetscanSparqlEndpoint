@@ -6,6 +6,7 @@ import re
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from functools import lru_cache
+from pathlib import Path
 from time import perf_counter
 from typing import Any, Dict, List, Mapping, Optional, Tuple, cast
 from urllib.parse import parse_qs, quote, unquote, urlencode, urlsplit
@@ -39,6 +40,7 @@ SITEMATRIX_SOURCE_URL = "https://meta.wikimedia.org/wiki/Special:SiteMatrix"
 _DEFAULT_SITEMATRIX_API_URL = "https://meta.wikimedia.org/w/api.php"
 _NEWPAGES_FETCH_PUBLIC_MESSAGE = "Failed to load new pages data from the upstream service."
 _SOURCE_PARAM_KEYS = frozenset({"include_edited_pages", "limit", "timestamp", "user_list_page", "wiki"})
+_SITEINFO_SNAPSHOT_PATH = Path(__file__).resolve().with_name("siteinfo_snapshot.json")
 _TIMESTAMP_LENGTHS = frozenset({4, 6, 8, 10, 12, 14})
 _HOST_LABEL_RE = re.compile(r"^(?!-)[a-z0-9-]{1,63}(?<!-)$")
 _URL_SAFE_CHARS = "/:()-,._"
@@ -792,18 +794,7 @@ def _selected_wiki_descriptors(wiki_domains: List[str]) -> List[_WikiDescriptor]
     return selected
 
 
-@lru_cache(maxsize=128)
-def _siteinfo_for_domain(domain: str) -> _SiteInfo:
-    request_url = (
-        "https://{}/w/api.php?action=query&meta=siteinfo&siprop=general|namespaces|namespacealiases&format=json"
-    ).format(
-        domain
-    )
-    payload = _request_json(request_url)
-    query_payload = payload.get("query")
-    if not isinstance(query_payload, Mapping):
-        raise PetscanServiceError("Siteinfo API returned no query payload.")
-
+def _siteinfo_from_query_payload(query_payload: Mapping[str, Any]) -> _SiteInfo:
     general = query_payload.get("general")
     article_path = "/wiki/$1"
     lang_code = ""
@@ -859,6 +850,116 @@ def _siteinfo_for_domain(domain: str) -> _SiteInfo:
         namespace_names=namespace_names,
         namespace_aliases=normalized_namespace_aliases,
     )
+
+
+def _siteinfo_to_snapshot_entry(siteinfo: _SiteInfo) -> Dict[str, Any]:
+    return {
+        "article_path": siteinfo.article_path,
+        "lang_code": siteinfo.lang_code,
+        "namespace_names": {
+            str(namespace_id): namespace_name
+            for namespace_id, namespace_name in sorted(siteinfo.namespace_names.items())
+        },
+        "namespace_aliases": {
+            str(namespace_id): list(alias_values)
+            for namespace_id, alias_values in sorted(siteinfo.namespace_aliases.items())
+        },
+    }
+
+
+def _siteinfo_from_snapshot_entry(payload: Mapping[str, Any]) -> Optional[_SiteInfo]:
+    article_path = str(payload.get("article_path", "") or "").strip() or "/wiki/$1"
+    lang_code = str(payload.get("lang_code", "") or "").strip().lower()
+
+    namespace_names_payload = payload.get("namespace_names")
+    namespace_names: Dict[int, str] = {}
+    if isinstance(namespace_names_payload, Mapping):
+        for raw_id, raw_name in namespace_names_payload.items():
+            try:
+                namespace_id = int(str(raw_id).strip())
+            except (TypeError, ValueError):
+                continue
+            namespace_names[namespace_id] = normalize_page_title(raw_name)
+
+    namespace_aliases_payload = payload.get("namespace_aliases")
+    namespace_aliases: Dict[int, Tuple[str, ...]] = {}
+    if isinstance(namespace_aliases_payload, Mapping):
+        for raw_id, raw_values in namespace_aliases_payload.items():
+            try:
+                namespace_id = int(str(raw_id).strip())
+            except (TypeError, ValueError):
+                continue
+            if not isinstance(raw_values, list):
+                continue
+            normalized_aliases = sorted(
+                {
+                    normalize_page_title(raw_value)
+                    for raw_value in raw_values
+                    if normalize_page_title(raw_value)
+                }
+            )
+            namespace_aliases[namespace_id] = tuple(normalized_aliases)
+
+    return _SiteInfo(
+        article_path=article_path,
+        lang_code=lang_code,
+        namespace_names=namespace_names,
+        namespace_aliases=namespace_aliases,
+    )
+
+
+@lru_cache(maxsize=1)
+def _siteinfo_snapshot_by_domain() -> Dict[str, _SiteInfo]:
+    if not _SITEINFO_SNAPSHOT_PATH.exists():
+        return {}
+
+    try:
+        payload = json.loads(_SITEINFO_SNAPSHOT_PATH.read_text(encoding="utf-8"))
+    except Exception as exc:
+        raise PetscanServiceError(
+            "Failed to load siteinfo snapshot from {}: {}".format(_SITEINFO_SNAPSHOT_PATH, exc),
+            public_message=_NEWPAGES_FETCH_PUBLIC_MESSAGE,
+        ) from exc
+
+    if not isinstance(payload, Mapping):
+        return {}
+
+    raw_siteinfo_by_domain = payload.get("siteinfo", payload)
+    if not isinstance(raw_siteinfo_by_domain, Mapping):
+        return {}
+
+    siteinfo_by_domain: Dict[str, _SiteInfo] = {}
+    for raw_domain, raw_siteinfo in raw_siteinfo_by_domain.items():
+        domain = str(raw_domain or "").strip().lower()
+        if not _is_valid_hostname(domain):
+            continue
+        if not isinstance(raw_siteinfo, Mapping):
+            continue
+        siteinfo = _siteinfo_from_snapshot_entry(raw_siteinfo)
+        if siteinfo is not None:
+            siteinfo_by_domain[domain] = siteinfo
+    return siteinfo_by_domain
+
+
+def _fetch_siteinfo_from_api(domain: str) -> _SiteInfo:
+    request_url = (
+        "https://{}/w/api.php?action=query&meta=siteinfo&siprop=general|namespaces|namespacealiases&format=json"
+    ).format(
+        domain
+    )
+    payload = _request_json(request_url)
+    query_payload = payload.get("query")
+    if not isinstance(query_payload, Mapping):
+        raise PetscanServiceError("Siteinfo API returned no query payload.")
+    return _siteinfo_from_query_payload(query_payload)
+
+
+@lru_cache(maxsize=128)
+def _siteinfo_for_domain(domain: str) -> _SiteInfo:
+    snapshot_siteinfo = _siteinfo_snapshot_by_domain().get(domain)
+    if snapshot_siteinfo is not None:
+        return snapshot_siteinfo
+    return _fetch_siteinfo_from_api(domain)
 
 
 @lru_cache(maxsize=256)
@@ -950,6 +1051,181 @@ def _append_unique_user_name(user_names: List[str], seen_user_names: set[str], c
         return
     seen_user_names.add(lookup_key)
     user_names.append(normalized_candidate)
+
+
+def _normalized_text_value(value: Any) -> str:
+    if isinstance(value, (bytes, bytearray)):
+        return value.decode("utf-8", errors="replace")
+    return str(value or "")
+
+
+def _namespace_and_db_title_for_full_title(full_title: str, siteinfo: _SiteInfo) -> Tuple[int, str]:
+    normalized_title = normalize_page_title(full_title)
+    if ":" not in normalized_title:
+        return 0, normalized_title
+
+    namespace_prefix, remainder = normalized_title.split(":", 1)
+    normalized_remainder = normalize_page_title(remainder)
+    if not namespace_prefix or not normalized_remainder:
+        return 0, normalized_title
+
+    normalized_prefix = namespace_prefix.strip().lower()
+    for namespace_id, aliases in siteinfo.namespace_aliases.items():
+        alias_values = {
+            str(alias).strip().lower()
+            for alias in aliases
+            if str(alias).strip()
+        }
+        if normalized_prefix in alias_values:
+            return namespace_id, normalized_remainder
+
+    return 0, normalized_title
+
+
+def _interwiki_target_url(iw_url: Any, page_title: str) -> Optional[str]:
+    template = _normalized_text_value(iw_url).strip()
+    normalized_title = normalize_page_title(page_title)
+    if not template or not normalized_title:
+        return None
+
+    encoded_title = quote(normalized_title, safe=_URL_SAFE_CHARS)
+    target_url = template.replace("$1", encoded_title)
+    if target_url.startswith("//"):
+        target_url = "https:{}".format(target_url)
+    if target_url.startswith("http://") or target_url.startswith("https://"):
+        return target_url
+    return None
+
+
+def _user_name_from_local_user_linktarget(title: Any) -> Optional[str]:
+    normalized_title = _normalize_db_page_title(title)
+    if not normalized_title:
+        return None
+    return _normalize_user_name(normalized_title.split("/", 1)[0])
+
+
+def _fetch_user_names_for_page_sql(ref: _UserListPageRef) -> List[str]:
+    if pymysql is None:
+        raise PetscanServiceError(
+            "PyMySQL is not installed. Install dependencies from requirements.txt first.",
+            public_message=_NEWPAGES_FETCH_PUBLIC_MESSAGE,
+        )
+
+    descriptor = _known_wikis_by_domain().get(ref.domain)
+    if descriptor is None:
+        raise ValueError("user_list_page could not be resolved to an existing Wikimedia page.")
+
+    source_siteinfo = _siteinfo_for_domain(ref.domain)
+    initial_namespace_id, initial_db_title = _namespace_and_db_title_for_full_title(ref.page_title, source_siteinfo)
+    if not initial_db_title:
+        raise ValueError("user_list_page could not be resolved to an existing Wikimedia page.")
+
+    user_names: List[str] = []
+    seen_user_names: set[str] = set()
+    connection = None
+
+    try:
+        connection = pymysql.connect(**_replica_connect_kwargs(descriptor.dbname))
+        with connection.cursor() as cursor:
+            page_namespace = initial_namespace_id
+            page_db_title = initial_db_title
+            resolved_page_id: Optional[int] = None
+
+            for _ in range(5):
+                cursor.execute(
+                    (
+                        "SELECT p.page_id, rd.rd_namespace, rd.rd_title "
+                        "FROM page AS p "
+                        "LEFT JOIN redirect AS rd ON rd.rd_from = p.page_id "
+                        "WHERE p.page_namespace = %s AND p.page_title = %s "
+                        "LIMIT 1"
+                    ),
+                    [page_namespace, page_db_title],
+                )
+                rows = cursor.fetchall()
+                if not isinstance(rows, list) or not rows:
+                    break
+
+                row = rows[0]
+                try:
+                    resolved_page_id = int(row[0])
+                except (TypeError, ValueError, IndexError):
+                    resolved_page_id = None
+                    break
+
+                redirect_namespace = row[1] if len(row) > 1 else None
+                redirect_title = row[2] if len(row) > 2 else None
+                if redirect_namespace is None or redirect_title in {None, ""}:
+                    break
+
+                try:
+                    page_namespace = int(redirect_namespace)
+                except (TypeError, ValueError):
+                    break
+                page_db_title = _normalize_db_page_title(redirect_title)
+                if not page_db_title:
+                    break
+
+            if resolved_page_id is None:
+                raise ValueError("user_list_page could not be resolved to an existing Wikimedia page.")
+
+            cursor.execute(
+                (
+                    "SELECT lt.lt_title "
+                    "FROM pagelinks AS pl "
+                    "JOIN linktarget AS lt ON lt.lt_id = pl.pl_target_id "
+                    "WHERE pl.pl_from = %s AND lt.lt_namespace = 2"
+                ),
+                [resolved_page_id],
+            )
+            local_rows = cursor.fetchall()
+            if isinstance(local_rows, list):
+                for row in local_rows:
+                    if not isinstance(row, (tuple, list)) or not row:
+                        continue
+                    _append_unique_user_name(
+                        user_names,
+                        seen_user_names,
+                        _user_name_from_local_user_linktarget(row[0]),
+                    )
+
+            cursor.execute(
+                (
+                    "SELECT iwl.iwl_prefix, iwl.iwl_title, iw.iw_url "
+                    "FROM iwlinks AS iwl "
+                    "LEFT JOIN interwiki AS iw ON iw.iw_prefix = iwl.iwl_prefix "
+                    "WHERE iwl.iwl_from = %s"
+                ),
+                [resolved_page_id],
+            )
+            interwiki_rows = cursor.fetchall()
+            if isinstance(interwiki_rows, list):
+                for row in interwiki_rows:
+                    if not isinstance(row, (tuple, list)) or len(row) < 2:
+                        continue
+                    interwiki_title = _normalize_db_page_title(row[1])
+                    if not interwiki_title:
+                        continue
+
+                    interwiki_url = _interwiki_target_url(row[2] if len(row) > 2 else None, interwiki_title)
+                    candidate_user_name = (
+                        _user_name_from_user_page_url(interwiki_url) if interwiki_url is not None else None
+                    )
+                    _append_unique_user_name(user_names, seen_user_names, candidate_user_name)
+    except ValueError:
+        raise
+    except Exception as exc:
+        raise PetscanServiceError(
+            "Failed to fetch user list page replica data for {}: {}".format(ref.domain, exc),
+            public_message=_NEWPAGES_FETCH_PUBLIC_MESSAGE,
+        ) from exc
+    finally:
+        if connection is not None:
+            connection.close()
+
+    if not user_names:
+        raise ValueError("user_list_page must link to at least one Wikimedia user page.")
+    return user_names
 
 
 def _fetch_user_names_for_page(ref: _UserListPageRef) -> List[str]:
@@ -1089,9 +1365,151 @@ def _centralauth_user_exists(user_name: str) -> bool:
     return _centralauth_user_summary(user_name)[0]
 
 
+def _centralauth_localuser_summary_sql(user_names: List[str]) -> Tuple[List[str], Dict[str, Tuple[str, ...]]]:
+    if pymysql is None:
+        raise PetscanServiceError(
+            "PyMySQL is not installed. Install dependencies from requirements.txt first.",
+            public_message=_NEWPAGES_FETCH_PUBLIC_MESSAGE,
+        )
+
+    normalized_user_names = _actor_user_names(user_names)
+    if not normalized_user_names:
+        return [], {}
+
+    connection = None
+    user_name_by_casefold = {user_name.casefold(): user_name for user_name in normalized_user_names}
+    dbnames_by_user: Dict[str, set[str]] = {}
+
+    try:
+        connection = pymysql.connect(**_replica_connect_kwargs("centralauth"))
+        with connection.cursor() as cursor:
+            placeholders = ", ".join(["%s"] * len(normalized_user_names))
+            cursor.execute(
+                "SELECT lu_name, lu_wiki FROM localuser WHERE lu_name IN ({})".format(placeholders),
+                normalized_user_names,
+            )
+            rows = cursor.fetchall()
+    except Exception as exc:
+        raise PetscanServiceError(
+            "Failed to fetch CentralAuth localuser data: {}".format(exc),
+            public_message=_NEWPAGES_FETCH_PUBLIC_MESSAGE,
+        ) from exc
+    finally:
+        if connection is not None:
+            connection.close()
+
+    if not isinstance(rows, list):
+        return [], {}
+
+    for row in rows:
+        if not isinstance(row, (tuple, list)) or len(row) < 2:
+            continue
+        normalized_user_name = _normalize_user_name(_normalized_text_value(row[0]))
+        dbname = _normalized_text_value(row[1]).strip().lower()
+        if normalized_user_name is None or not dbname:
+            continue
+        canonical_user_name = user_name_by_casefold.get(normalized_user_name.casefold(), normalized_user_name)
+        dbnames_by_user.setdefault(canonical_user_name, set()).add(dbname)
+
+    existing_user_names = [
+        user_name for user_name in normalized_user_names if user_name in dbnames_by_user and dbnames_by_user[user_name]
+    ]
+    return existing_user_names, {
+        user_name: tuple(sorted(dbnames))
+        for user_name, dbnames in dbnames_by_user.items()
+        if dbnames
+    }
+
+
 @lru_cache(maxsize=512)
 def _active_user_wiki_dbnames_for_user(user_name: str) -> Tuple[str, ...]:
     return _centralauth_user_summary(user_name)[1]
+
+
+def _registered_user_names_for_descriptor(
+    descriptor: _WikiDescriptor,
+    user_names: List[str],
+    dbnames_by_user: Mapping[str, Tuple[str, ...]],
+) -> List[str]:
+    return [
+        user_name
+        for user_name in user_names
+        if descriptor.dbname in set(dbnames_by_user.get(user_name, ()))
+    ]
+
+
+def _recent_user_activity_threshold(timestamp: Optional[str]) -> str:
+    replica_window_floor = (datetime.now(timezone.utc) - timedelta(days=60)).strftime("%Y%m%d%H%M%S")
+    if timestamp is None:
+        return replica_window_floor
+    return timestamp if timestamp > replica_window_floor else replica_window_floor
+
+
+def _filter_user_names_for_recent_activity_sql(
+    descriptor: _WikiDescriptor,
+    user_names: List[str],
+    activity_threshold: str,
+) -> List[str]:
+    if pymysql is None:
+        raise PetscanServiceError(
+            "PyMySQL is not installed. Install dependencies from requirements.txt first.",
+            public_message=_NEWPAGES_FETCH_PUBLIC_MESSAGE,
+        )
+
+    normalized_user_names = _actor_user_names(user_names)
+    if not normalized_user_names:
+        return []
+
+    connection = None
+    recently_active_user_names: List[str] = []
+    user_name_by_casefold = {user_name.casefold(): user_name for user_name in normalized_user_names}
+
+    try:
+        connection = pymysql.connect(**_replica_connect_kwargs(descriptor.dbname))
+        with connection.cursor() as cursor:
+            placeholders = ", ".join(["%s"] * len(normalized_user_names))
+            cursor.execute(
+                (
+                    "SELECT u.user_name "
+                    "FROM user AS u "
+                    "WHERE u.user_name IN ({}) "
+                    "AND EXISTS ("
+                    "SELECT 1 "
+                    "FROM actor_revision AS a "
+                    "JOIN revision_userindex AS r ON r.rev_actor = a.actor_id "
+                    "WHERE a.actor_user = u.user_id "
+                    "AND r.rev_timestamp >= %s"
+                    ")"
+                ).format(placeholders),
+                normalized_user_names + [activity_threshold],
+            )
+            rows = cursor.fetchall()
+    except Exception as exc:
+        raise PetscanServiceError(
+            "Failed to fetch recent user activity for {}: {}".format(descriptor.domain, exc),
+            public_message=_NEWPAGES_FETCH_PUBLIC_MESSAGE,
+        ) from exc
+    finally:
+        if connection is not None:
+            connection.close()
+
+    if not isinstance(rows, list):
+        return []
+
+    seen_recently_active: set[str] = set()
+    for row in rows:
+        if not isinstance(row, (tuple, list)) or not row:
+            continue
+        normalized_user_name = _normalize_user_name(_normalized_text_value(row[0]))
+        if normalized_user_name is None:
+            continue
+        canonical_user_name = user_name_by_casefold.get(normalized_user_name.casefold(), normalized_user_name)
+        if canonical_user_name in seen_recently_active:
+            continue
+        seen_recently_active.add(canonical_user_name)
+        recently_active_user_names.append(canonical_user_name)
+
+    return recently_active_user_names
 
 
 def _filter_descriptors_for_active_user_wikis(
@@ -1899,13 +2317,41 @@ def fetch_newpage_records(
 
     descriptors = _selected_wiki_descriptors(normalized_wikis)
     filtered_user_names = None  # type: Optional[List[str]]
+    descriptor_user_names_by_dbname: Dict[str, List[str]] = {}
     if normalized_user_list_page is not None:
         resolved_user_list_page = _resolve_user_list_page(normalized_user_list_page)
         if resolved_user_list_page is None:
             raise ValueError("user_list_page must be a Wikimedia wiki page reference.")
-        filtered_user_names = _fetch_user_names_for_page(resolved_user_list_page)
-    if filtered_user_names is not None:
-        descriptors = _filter_descriptors_for_active_user_wikis(descriptors, filtered_user_names)
+        if backend == LOOKUP_BACKEND_TOOLFORGE_SQL:
+            filtered_user_names = _fetch_user_names_for_page_sql(resolved_user_list_page)
+            filtered_user_names, dbnames_by_user = _centralauth_localuser_summary_sql(filtered_user_names)
+            if not filtered_user_names:
+                raise ValueError("user_list_page must link to at least one CentralAuth user page.")
+
+            filtered_descriptors: List[_WikiDescriptor] = []
+            for descriptor in descriptors:
+                registered_user_names = _registered_user_names_for_descriptor(
+                    descriptor,
+                    filtered_user_names,
+                    dbnames_by_user,
+                )
+                if not registered_user_names:
+                    continue
+                if normalized_include_edited_pages:
+                    activity_threshold = _recent_user_activity_threshold(normalized_timestamp)
+                    registered_user_names = _filter_user_names_for_recent_activity_sql(
+                        descriptor,
+                        registered_user_names,
+                        activity_threshold,
+                    )
+                    if not registered_user_names:
+                        continue
+                descriptor_user_names_by_dbname[descriptor.dbname] = registered_user_names
+                filtered_descriptors.append(descriptor)
+            descriptors = filtered_descriptors
+        else:
+            filtered_user_names = _fetch_user_names_for_page(resolved_user_list_page)
+            descriptors = _filter_descriptors_for_active_user_wikis(descriptors, filtered_user_names)
     _console_log(
         "backend={} limit={} timestamp={} user_list_page={} include_edited_pages={} wikis={}".format(
             backend,
@@ -1930,11 +2376,12 @@ def fetch_newpage_records(
         edited_records: List[Dict[str, Any]] = []
         for descriptor in descriptors:
             siteinfo = _siteinfo_for_domain(descriptor.domain)
+            descriptor_user_names = descriptor_user_names_by_dbname.get(descriptor.dbname, filtered_user_names or [])
             for replica_row in _fetch_rows_for_wiki(
                 descriptor,
                 normalized_timestamp,
                 normalized_limit,
-                user_names=filtered_user_names,
+                user_names=descriptor_user_names,
                 include_edited_pages=True,
             ):
                 record = _build_record(descriptor, siteinfo, replica_row, timestamp_key="current_timestamp")
@@ -1957,11 +2404,12 @@ def fetch_newpage_records(
     per_wiki_limit = normalized_limit
     for descriptor in descriptors:
         siteinfo = _siteinfo_for_domain(descriptor.domain)
+        descriptor_user_names = descriptor_user_names_by_dbname.get(descriptor.dbname, filtered_user_names or [])
         for replica_row in _fetch_rows_for_wiki(
             descriptor,
             normalized_timestamp,
             per_wiki_limit,
-            user_names=filtered_user_names,
+            user_names=descriptor_user_names,
         ):
             record = _build_record(descriptor, siteinfo, replica_row)
             if record is not None:

@@ -1,4 +1,6 @@
 import json
+from datetime import datetime, timezone
+from pathlib import Path
 from types import TracebackType
 from unittest.mock import MagicMock, patch
 
@@ -53,12 +55,24 @@ def _fake_connection_batches(row_batches: list[list[tuple[object, ...]]]) -> Mag
 class NewpagesServiceSourceTests(SimpleTestCase):
     def setUp(self) -> None:
         super().setUp()
+        self._original_siteinfo_snapshot_path = service_source._SITEINFO_SNAPSHOT_PATH
+        test_snapshot_path = Path(__file__).resolve().with_name("_missing_siteinfo_snapshot.json")
+        if test_snapshot_path.exists():
+            test_snapshot_path.unlink()
+        service_source._SITEINFO_SNAPSHOT_PATH = test_snapshot_path
         service_source._known_wikis_by_domain.cache_clear()
         service_source._user_list_source_domain_for_prefix.cache_clear()
+        service_source._siteinfo_snapshot_by_domain.cache_clear()
         service_source._siteinfo_for_domain.cache_clear()
         service_source._centralauth_user_summary.cache_clear()
         service_source._active_user_wiki_dbnames_for_user.cache_clear()
         service_source._quote_page_path.cache_clear()
+
+    def tearDown(self) -> None:
+        service_source._SITEINFO_SNAPSHOT_PATH = self._original_siteinfo_snapshot_path
+        service_source._siteinfo_snapshot_by_domain.cache_clear()
+        service_source._siteinfo_for_domain.cache_clear()
+        super().tearDown()
 
     def test_newpages_lookup_backend_follows_explicit_setting(self) -> None:
         with self.settings(WIKIDATA_LOOKUP_BACKEND="toolforge_sql"):
@@ -90,6 +104,78 @@ class NewpagesServiceSourceTests(SimpleTestCase):
             "timestamp must use YYYY, YYYYMM, YYYYMMDD, YYYYMMDDHH, YYYYMMDDHHMM, or YYYYMMDDHHMMSS.",
         ):
             service_source.normalize_timestamp("20260")
+
+    def test_recent_user_activity_threshold_uses_60_day_floor(self) -> None:
+        fake_now = datetime(2026, 4, 6, 0, 0, 0, tzinfo=timezone.utc)
+        with patch("newpages.service_source.datetime") as datetime_mock:
+            datetime_mock.now.return_value = fake_now
+
+            self.assertEqual(service_source._recent_user_activity_threshold(None), "20260205000000")
+            self.assertEqual(
+                service_source._recent_user_activity_threshold("20260201000000"),
+                "20260205000000",
+            )
+            self.assertEqual(
+                service_source._recent_user_activity_threshold("20260301000000"),
+                "20260301000000",
+            )
+
+    def test_filter_user_names_for_recent_activity_sql_uses_actor_revision(self) -> None:
+        descriptor = service_source._WikiDescriptor(
+            domain="fi.wikipedia.org",
+            dbname="fiwiki",
+            lang_code="fi",
+            wiki_group="wikipedia",
+            site_url="https://fi.wikipedia.org",
+        )
+        with patch("newpages.service_source.pymysql") as pymysql_mock:
+            connection = _fake_connection([("Alice A",)])
+            pymysql_mock.connect.return_value = connection
+
+            user_names = service_source._filter_user_names_for_recent_activity_sql(
+                descriptor,
+                ["Alice A", "Bob B"],
+                "20260401000000",
+            )
+
+        self.assertEqual(user_names, ["Alice A"])
+        sql, params = connection.cursor.return_value.__enter__.return_value.execute.call_args.args
+        self.assertIn("FROM actor_revision AS a", sql)
+        self.assertNotIn("FROM actor AS a ", sql)
+        self.assertIn("JOIN revision_userindex AS r", sql)
+        self.assertIn("a.actor_user = u.user_id", sql)
+        self.assertEqual(params, ["Alice A", "Bob B", "20260401000000"])
+
+    def test_siteinfo_for_domain_prefers_local_snapshot(self) -> None:
+        snapshot_siteinfo = service_source._SiteInfo(
+            article_path="/w/$1",
+            lang_code="fi",
+            namespace_names={0: "", 2: "Käyttäjä"},
+            namespace_aliases={2: ("Käyttäjä", "User")},
+        )
+        with patch(
+            "newpages.service_source._siteinfo_snapshot_by_domain",
+            return_value={"fi.wikipedia.org": snapshot_siteinfo},
+        ):
+            with patch("newpages.service_source._fetch_siteinfo_from_api") as fetch_siteinfo_mock:
+                siteinfo = service_source._siteinfo_for_domain("fi.wikipedia.org")
+
+        self.assertEqual(siteinfo, snapshot_siteinfo)
+        fetch_siteinfo_mock.assert_not_called()
+
+    def test_siteinfo_for_domain_falls_back_to_api_when_snapshot_missing(self) -> None:
+        api_siteinfo = service_source._SiteInfo(
+            article_path="/wiki/$1",
+            lang_code="sv",
+            namespace_names={0: "", 2: "Användare"},
+            namespace_aliases={2: ("Användare", "User")},
+        )
+        with patch("newpages.service_source._siteinfo_snapshot_by_domain", return_value={}):
+            with patch("newpages.service_source._fetch_siteinfo_from_api", return_value=api_siteinfo) as fetch_siteinfo_mock:
+                siteinfo = service_source._siteinfo_for_domain("sv.wikipedia.org")
+
+        self.assertEqual(siteinfo, api_siteinfo)
+        fetch_siteinfo_mock.assert_called_once_with("sv.wikipedia.org")
 
     def test_fetch_newpage_records_rejects_include_edited_pages_without_user_list_page(self) -> None:
         with self.assertRaisesMessage(ValueError, "include_edited_pages requires user_list_page."):
@@ -2483,9 +2569,8 @@ class NewpagesServiceSourceTests(SimpleTestCase):
 
     def test_fetch_newpage_records_via_replica_filters_by_user_list_page_with_local_and_interwiki_users(self) -> None:
         with self.settings(WIKIDATA_LOOKUP_BACKEND="toolforge_sql"):
-            with patch("newpages.service_source._centralauth_user_exists", return_value=True):
-                with patch("newpages.service_source.urlopen") as urlopen_mock:
-                    urlopen_mock.side_effect = [
+            with patch("newpages.service_source.urlopen") as urlopen_mock:
+                urlopen_mock.side_effect = [
                     _FakeHttpResponse(
                         json.dumps(
                             {
@@ -2533,23 +2618,6 @@ class NewpagesServiceSourceTests(SimpleTestCase):
                         json.dumps(
                             {
                                 "query": {
-                                    "pages": [
-                                        {
-                                            "pageid": 901,
-                                            "links": [{"title": "Käyttäjä:Alice_A/sandbox"}],
-                                            "iwlinks": [
-                                                {"url": "https://sv.wikipedia.org/wiki/Anv%C3%A4ndare:Charlie_C/common.js"}
-                                            ],
-                                        }
-                                    ]
-                                }
-                            }
-                        ).encode("utf-8")
-                    ),
-                    _FakeHttpResponse(
-                        json.dumps(
-                            {
-                                "query": {
                                     "general": {"articlepath": "/wiki/$1", "lang": "sv"},
                                     "namespaces": {
                                         "2": {"*": "Användare", "canonical": "User"},
@@ -2559,21 +2627,39 @@ class NewpagesServiceSourceTests(SimpleTestCase):
                             }
                         ).encode("utf-8")
                     ),
+                ]
+
+                with patch("newpages.service_source.pymysql") as pymysql_mock:
+                    user_list_connection = _fake_connection_batches(
+                        [
+                            [(901, None, None)],
+                            [(b"Alice_A/sandbox",)],
+                            [("sv", "Användare:Charlie_C/common.js", "https://sv.wikipedia.org/wiki/$1")],
+                        ]
+                    )
+                    centralauth_connection = _fake_connection(
+                        [
+                            ("Alice A", "fiwiki"),
+                            ("Charlie C", "fiwiki"),
+                            ("Charlie C", "svwiki"),
+                        ]
+                    )
+                    fi_connection = _fake_connection(
+                        [
+                            (123, b"Turku", 0, "Q1757", "20260403010203"),
+                        ]
+                    )
+                    pymysql_mock.connect.side_effect = [
+                        user_list_connection,
+                        centralauth_connection,
+                        fi_connection,
                     ]
 
-                    with patch("newpages.service_source.pymysql") as pymysql_mock:
-                        fi_connection = _fake_connection(
-                            [
-                                (123, b"Turku", 0, "Q1757", "20260403010203"),
-                            ]
-                        )
-                        pymysql_mock.connect.return_value = fi_connection
-
-                        records, _source_url = service_source.fetch_newpage_records(
-                            wiki_domains=["fi.wikipedia.org"],
-                            timestamp="202604",
-                            user_list_page=":w:fi:Wikipedia:Users",
-                        )
+                    records, _source_url = service_source.fetch_newpage_records(
+                        wiki_domains=["fi.wikipedia.org"],
+                        timestamp="202604",
+                        user_list_page=":w:fi:Wikipedia:Users",
+                    )
 
         self.assertEqual(len(records), 1)
         fi_sql, fi_params = fi_connection.cursor.return_value.__enter__.return_value.execute.call_args.args
@@ -2594,85 +2680,91 @@ class NewpagesServiceSourceTests(SimpleTestCase):
 
     def test_fetch_newpage_records_via_replica_can_include_edited_pages_for_user_list_page(self) -> None:
         with self.settings(WIKIDATA_LOOKUP_BACKEND="toolforge_sql"):
-            with patch("newpages.service_source._centralauth_user_exists", return_value=True):
-                with patch("newpages.service_source.urlopen") as urlopen_mock:
-                    urlopen_mock.side_effect = [
-                        _FakeHttpResponse(
-                            json.dumps(
-                                {
-                                    "sitematrix": {
-                                        "count": 1,
-                                        "0": {
-                                            "code": "fi",
-                                            "site": [
-                                                {
-                                                    "url": "https://fi.wikipedia.org",
-                                                    "dbname": "fiwiki",
-                                                    "code": "wiki",
-                                                }
-                                            ],
-                                        },
-                                    }
-                                }
-                            ).encode("utf-8")
-                        ),
-                        _FakeHttpResponse(
-                            json.dumps(
-                                {
-                                    "query": {
-                                        "general": {"articlepath": "/wiki/$1", "lang": "fi"},
-                                        "namespaces": {
-                                            "0": {"*": ""},
-                                            "2": {"*": "Käyttäjä", "canonical": "User"},
-                                        },
-                                        "namespacealiases": [{"id": 2, "*": "User"}],
-                                    }
-                                }
-                            ).encode("utf-8")
-                        ),
-                        _FakeHttpResponse(
-                            json.dumps(
-                                {
-                                    "query": {
-                                        "pages": [
+            with patch("newpages.service_source.urlopen") as urlopen_mock:
+                urlopen_mock.side_effect = [
+                    _FakeHttpResponse(
+                        json.dumps(
+                            {
+                                "sitematrix": {
+                                    "count": 1,
+                                    "0": {
+                                        "code": "fi",
+                                        "site": [
                                             {
-                                                "pageid": 901,
-                                                "links": [{"title": "Käyttäjä:Alice_A"}],
-                                                "iwlinks": [],
+                                                "url": "https://fi.wikipedia.org",
+                                                "dbname": "fiwiki",
+                                                "code": "wiki",
                                             }
-                                        ]
-                                    }
+                                        ],
+                                    },
                                 }
-                            ).encode("utf-8")
-                        ),
-                        _FakeHttpResponse(
-                            json.dumps(
-                                {
-                                    "query": {
-                                        "general": {"articlepath": "/wiki/$1", "lang": "fi"},
-                                        "namespaces": {
-                                            "0": {"*": ""},
-                                        },
-                                    }
+                            }
+                        ).encode("utf-8")
+                    ),
+                    _FakeHttpResponse(
+                        json.dumps(
+                            {
+                                "query": {
+                                    "general": {"articlepath": "/wiki/$1", "lang": "fi"},
+                                    "namespaces": {
+                                        "0": {"*": ""},
+                                        "2": {"*": "Käyttäjä", "canonical": "User"},
+                                    },
+                                    "namespacealiases": [{"id": 2, "*": "User"}],
                                 }
-                            ).encode("utf-8")
-                        ),
+                            }
+                        ).encode("utf-8")
+                    ),
+                    _FakeHttpResponse(
+                        json.dumps(
+                            {
+                                "query": {
+                                    "general": {"articlepath": "/wiki/$1", "lang": "fi"},
+                                    "namespaces": {
+                                        "0": {"*": ""},
+                                    },
+                                }
+                            }
+                        ).encode("utf-8")
+                    ),
+                ]
+
+                with patch("newpages.service_source.pymysql") as pymysql_mock:
+                    user_list_connection = _fake_connection_batches(
+                        [
+                            [(901, None, None)],
+                            [(b"Alice_A",)],
+                            [],
+                        ]
+                    )
+                    centralauth_connection = _fake_connection(
+                        [
+                            ("Alice A", "fiwiki"),
+                        ]
+                    )
+                    fi_activity_connection = _fake_connection(
+                        [
+                            ("Alice A",),
+                        ]
+                    )
+                    fi_connection = _fake_connection(
+                        [
+                            (123, b"Turku", 0, "Q1757", "20260403010203"),
+                        ]
+                    )
+                    pymysql_mock.connect.side_effect = [
+                        user_list_connection,
+                        centralauth_connection,
+                        fi_activity_connection,
+                        fi_connection,
                     ]
 
-                    with patch("newpages.service_source.pymysql") as pymysql_mock:
-                        fi_connection = _fake_connection(
-                            [
-                                (123, b"Turku", 0, "Q1757", "20260403010203"),
-                            ]
-                        )
-                        pymysql_mock.connect.return_value = fi_connection
-
-                        records, source_url = service_source.fetch_newpage_records(
-                            wiki_domains=["fi.wikipedia.org"],
-                            timestamp="202604",
-                            user_list_page=":w:fi:Wikipedia:Users",
-                            include_edited_pages=True,
-                        )
+                    records, source_url = service_source.fetch_newpage_records(
+                        wiki_domains=["fi.wikipedia.org"],
+                        timestamp="202604",
+                        user_list_page=":w:fi:Wikipedia:Users",
+                        include_edited_pages=True,
+                    )
 
         self.assertEqual(source_url, "https://fi.wikipedia.org/wiki/Special:Contributions")
         self.assertEqual(len(records), 1)
@@ -2696,11 +2788,10 @@ class NewpagesServiceSourceTests(SimpleTestCase):
             ],
         )
 
-    def test_fetch_newpage_records_via_replica_user_list_page_skips_wikis_without_user_activity(self) -> None:
+    def test_fetch_newpage_records_via_replica_user_list_page_limits_to_wikis_with_registered_users(self) -> None:
         with self.settings(WIKIDATA_LOOKUP_BACKEND="toolforge_sql"):
-            with patch("newpages.service_source._centralauth_user_exists", return_value=True):
-                with patch("newpages.service_source.urlopen") as urlopen_mock:
-                    urlopen_mock.side_effect = [
+            with patch("newpages.service_source.urlopen") as urlopen_mock:
+                urlopen_mock.side_effect = [
                     _FakeHttpResponse(
                         json.dumps(
                             {
@@ -2828,23 +2919,6 @@ class NewpagesServiceSourceTests(SimpleTestCase):
                         json.dumps(
                             {
                                 "query": {
-                                    "pages": [
-                                        {
-                                            "pageid": 901,
-                                            "links": [{"title": "Käyttäjä:Alice_A/sandbox"}],
-                                            "iwlinks": [
-                                                {"url": "https://sv.wikipedia.org/wiki/Anv%C3%A4ndare:Charlie_C/common.js"}
-                                            ],
-                                        }
-                                    ]
-                                }
-                            }
-                        ).encode("utf-8")
-                    ),
-                    _FakeHttpResponse(
-                        json.dumps(
-                            {
-                                "query": {
                                     "general": {"articlepath": "/wiki/$1", "lang": "sv"},
                                     "namespaces": {
                                         "2": {"*": "Användare", "canonical": "User"},
@@ -2854,46 +2928,66 @@ class NewpagesServiceSourceTests(SimpleTestCase):
                             }
                         ).encode("utf-8")
                     ),
+                ]
+
+                with patch("newpages.service_source.pymysql") as pymysql_mock:
+                    user_list_connection = _fake_connection_batches(
+                        [
+                            [(901, None, None)],
+                            [(b"Alice_A/sandbox",)],
+                            [("sv", "Användare:Charlie_C/common.js", "https://sv.wikipedia.org/wiki/$1")],
+                        ]
+                    )
+                    centralauth_connection = _fake_connection(
+                        [
+                            ("Alice A", "fiwiki"),
+                            ("Charlie C", "svwiki"),
+                        ]
+                    )
+                    fi_connection = _fake_connection(
+                        [
+                            (123, b"Turku", 0, "Q1757", "20260403010203"),
+                        ]
+                    )
+                    sv_connection = _fake_connection(
+                        [
+                            (321, b"Esimerkki", 0, "Q42", "20260404020304"),
+                        ]
+                    )
+                    pymysql_mock.connect.side_effect = [
+                        user_list_connection,
+                        centralauth_connection,
+                        fi_connection,
+                        sv_connection,
                     ]
 
-                    with patch("newpages.service_source._active_user_wiki_dbnames_for_user") as active_wikis_mock:
-                        active_wikis_mock.side_effect = [("fiwiki",), ("svwiki",)]
-                        with patch("newpages.service_source.pymysql") as pymysql_mock:
-                            fi_connection = _fake_connection(
-                                [
-                                    (123, b"Turku", 0, "Q1757", "20260403010203"),
-                                ]
-                            )
-                            sv_connection = _fake_connection(
-                                [
-                                    (321, b"Esimerkki", 0, "Q42", "20260404020304"),
-                                ]
-                            )
-                            pymysql_mock.connect.side_effect = [fi_connection, sv_connection]
-
-                            records, _source_url = service_source.fetch_newpage_records(
-                                wiki_domains=[
-                                    "cs.wikipedia.org",
-                                    "de.wikipedia.org",
-                                    "en.wikipedia.org",
-                                    "es.wikipedia.org",
-                                    "fi.wikipedia.org",
-                                    "fr.wikipedia.org",
-                                    "it.wikipedia.org",
-                                    "nl.wikipedia.org",
-                                    "pl.wikipedia.org",
-                                    "sv.wikipedia.org",
-                                ],
-                                timestamp="202604",
-                                user_list_page=":w:fi:Wikipedia:Users",
-                            )
+                    records, _source_url = service_source.fetch_newpage_records(
+                        wiki_domains=[
+                            "cs.wikipedia.org",
+                            "de.wikipedia.org",
+                            "en.wikipedia.org",
+                            "es.wikipedia.org",
+                            "fi.wikipedia.org",
+                            "fr.wikipedia.org",
+                            "it.wikipedia.org",
+                            "nl.wikipedia.org",
+                            "pl.wikipedia.org",
+                            "sv.wikipedia.org",
+                        ],
+                        timestamp="202604",
+                        user_list_page=":w:fi:Wikipedia:Users",
+                    )
 
         self.assertEqual([record["wiki_domain"] for record in records], ["sv.wikipedia.org", "fi.wikipedia.org"])
-        self.assertEqual(active_wikis_mock.call_count, 2)
-        self.assertEqual(len(pymysql_mock.connect.call_args_list), 2)
+        self.assertEqual(len(pymysql_mock.connect.call_args_list), 4)
         self.assertEqual(
             [call.kwargs.get("database") for call in pymysql_mock.connect.call_args_list],
-            ["fiwiki_p", "svwiki_p"],
+            [
+                "fiwiki_p",
+                "centralauth_p",
+                "fiwiki_p",
+                "svwiki_p",
+            ],
         )
 
     def test_fetch_newpage_records_for_commons_excludes_file_namespace(self) -> None:
