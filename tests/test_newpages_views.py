@@ -292,7 +292,10 @@ class NewpagesViewTests(SimpleTestCase):
     def test_sparql_endpoint_returns_validation_error_when_user_list_page_cannot_be_resolved(
         self, execute_query: Any
     ) -> None:
-        execute_query.side_effect = ValueError("user_list_page could not be resolved to an existing Wikimedia page.")
+        execute_query.side_effect = ValueError(
+            "user_list_page could not be resolved to an existing Wikimedia page "
+            "(ref=:w:fi:Wikipedia:Users, domain=fi.wikipedia.org, namespace=4, db_title=Users)."
+        )
 
         response = self.client.get(
             NEWPAGES_FILTERED_WITH_USER_LIST_SPARQL_PATH,
@@ -302,7 +305,10 @@ class NewpagesViewTests(SimpleTestCase):
         self.assertEqual(response.status_code, 400)
         self.assertEqual(
             response.content.decode("utf-8"),
-            "user_list_page could not be resolved to an existing Wikimedia page.",
+            (
+                "user_list_page could not be resolved to an existing Wikimedia page "
+                "(ref=:w:fi:Wikipedia:Users, domain=fi.wikipedia.org, namespace=4, db_title=Users)."
+            ),
         )
         self.assertEqual(response["Access-Control-Allow-Origin"], "*")
 

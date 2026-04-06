@@ -1167,7 +1167,15 @@ def _fetch_user_names_for_page_sql(ref: _UserListPageRef) -> List[str]:
                     break
 
             if resolved_page_id is None:
-                raise ValueError("user_list_page could not be resolved to an existing Wikimedia page.")
+                raise ValueError(
+                    "user_list_page could not be resolved to an existing Wikimedia page "
+                    "(ref={}, domain={}, namespace={}, db_title={}).".format(
+                        ref.canonical_ref,
+                        descriptor.domain,
+                        initial_namespace_id,
+                        initial_db_title,
+                    )
+                )
 
             cursor.execute(
                 (
