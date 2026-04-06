@@ -169,8 +169,8 @@ class CheckNewpagesSqlUserNameMatchingCommandTests(SimpleTestCase):
 
         self.assertIn("SELECT actor_name FROM actor", actor_exact_sql)
         self.assertEqual(actor_exact_params, ["Alice A"])
-        self.assertIn("FROM actor_recentchanges AS rc", rc_exact_sql)
-        self.assertIn("JOIN actor AS a ON rc.rc_actor = a.actor_id", rc_exact_sql)
+        self.assertIn("FROM recentchanges_userindex AS rc", rc_exact_sql)
+        self.assertIn("JOIN actor_recentchanges AS a ON rc.rc_actor = a.actor_id", rc_exact_sql)
         self.assertIn("SELECT a.actor_name, COUNT(*), MAX(rc.rc_timestamp)", rc_exact_sql)
         self.assertEqual(rc_exact_params, ["20260306000000", "Alice A"])
 

@@ -1527,6 +1527,10 @@ def _filter_user_names_for_recent_activity_sql(
     try:
         connection = pymysql.connect(**_replica_connect_kwargs(descriptor.dbname))
         with connection.cursor() as cursor:
+            # Toolforge note:
+            # - actor_revision is an actor-shaped table/view limited to actors that appear in revision rows.
+            # - revision_userindex is the revision event table that contains rev_timestamp and rev_actor.
+            # So actor_revision is only used to shrink the actor side; it is not a replacement for revision_userindex.
             placeholders = ", ".join(["%s"] * len(normalized_user_names))
             cursor.execute(
                 (
@@ -1662,6 +1666,9 @@ def _fetch_revision_rows_for_wiki(
         sql = (
             "SELECT p.page_id AS page_id, p.page_title, p.page_namespace, pp.pp_value, "
             "MAX(rev.rev_timestamp) AS matched_timestamp "
+            # Toolforge note:
+            # - actor_revision is actor-table shaped and only narrows the actor rows to users who appear in revision.
+            # - revision_userindex is still the real revision event source with rev_page/rev_timestamp.
             "FROM actor_revision AS a "
             "JOIN revision_userindex AS rev ON rev.rev_actor = a.actor_id "
             "JOIN page AS p ON p.page_id = rev.rev_page "
@@ -1764,7 +1771,11 @@ def _fetch_rows_for_wiki(
 
     effective_limit = _DEFAULT_SQL_LIMIT if limit is None else min(limit, _DEFAULT_SQL_LIMIT)
     actor_user_names = _actor_user_names(user_names)
-    rc_table_name = "actor_recentchanges" if actor_user_names else "recentchanges_userindex"
+    # Toolforge note:
+    # - recentchanges_userindex is the recentchanges event table we actually query for rc_* fields.
+    # - actor_recentchanges is not a recentchanges table; it is actor-table shaped and only contains
+    #   actor rows referenced by recentchanges. We join it only to filter actor_name efficiently.
+    rc_table_name = "recentchanges_userindex"
 
     def _finalize_sql(sql: str, params: List[object]) -> Tuple[str, List[object]]:
         finalized_params = list(params)
@@ -1786,7 +1797,7 @@ def _fetch_rows_for_wiki(
         sql = (
             "SELECT rc.rc_cur_id AS page_id, p.page_title, p.page_namespace, pp.pp_value, rc.rc_timestamp "
             + "FROM {} AS rc ".format(rc_table_name)
-            + ("JOIN actor AS a ON rc.rc_actor = a.actor_id " if actor_user_names else "")
+            + ("JOIN actor_recentchanges AS a ON rc.rc_actor = a.actor_id " if actor_user_names else "")
             + "JOIN page AS p ON p.page_id = rc.rc_cur_id "
             + "JOIN page_props AS pp ON pp.pp_page = rc.rc_cur_id "
             + "AND pp.pp_propname = %s "
@@ -1797,7 +1808,7 @@ def _fetch_rows_for_wiki(
         primary_sql = (
             "SELECT rc.rc_cur_id AS page_id, p.page_title, p.page_namespace, pp.pp_value, rc.rc_timestamp "
             + "FROM {} AS rc ".format(rc_table_name)
-            + ("JOIN actor AS a ON rc.rc_actor = a.actor_id " if actor_user_names else "")
+            + ("JOIN actor_recentchanges AS a ON rc.rc_actor = a.actor_id " if actor_user_names else "")
             + "JOIN page AS p ON p.page_id = rc.rc_cur_id "
             + "JOIN page_props AS pp ON pp.pp_page = rc.rc_cur_id "
             + "AND pp.pp_propname = %s "
@@ -1808,7 +1819,7 @@ def _fetch_rows_for_wiki(
         fallback_sql = (
             "SELECT rc.rc_cur_id AS page_id, p.page_title, p.page_namespace, cl.cl_sortkey_prefix AS qid, rc.rc_timestamp "
             + "FROM {} AS rc ".format(rc_table_name)
-            + ("JOIN actor AS a ON rc.rc_actor = a.actor_id " if actor_user_names else "")
+            + ("JOIN actor_recentchanges AS a ON rc.rc_actor = a.actor_id " if actor_user_names else "")
             + "JOIN page AS p ON p.page_id = rc.rc_cur_id "
             + "LEFT JOIN page_props AS pp ON pp.pp_page = rc.rc_cur_id "
             + "AND pp.pp_propname = %s "

@@ -2705,8 +2705,8 @@ class NewpagesServiceSourceTests(SimpleTestCase):
 
         self.assertEqual(len(records), 1)
         fi_sql, fi_params = fi_connection.cursor.return_value.__enter__.return_value.execute.call_args.args
-        self.assertIn("FROM actor_recentchanges AS rc", fi_sql)
-        self.assertIn("JOIN actor AS a ON rc.rc_actor = a.actor_id", fi_sql)
+        self.assertIn("FROM recentchanges_userindex AS rc", fi_sql)
+        self.assertIn("JOIN actor_recentchanges AS a ON rc.rc_actor = a.actor_id", fi_sql)
         self.assertIn("a.actor_name IN (%s, %s)", fi_sql)
         self.assertEqual(
             fi_params,

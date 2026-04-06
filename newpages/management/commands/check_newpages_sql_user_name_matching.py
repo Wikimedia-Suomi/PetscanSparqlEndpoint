@@ -106,14 +106,18 @@ def _fetch_recentchange_match_rows(
 ) -> List[Tuple[str, int, str]]:
     if not search_values:
         return []
+    # Toolforge note:
+    # - recentchanges_userindex is the rc_* event table.
+    # - actor_recentchanges only provides the actor rows for users seen in recentchanges.
+    # So we must start from recentchanges_userindex and join actor_recentchanges for actor_name.
     sql = """
-SELECT a.actor_name, COUNT(*), MAX(rc.rc_timestamp)
-FROM actor_recentchanges AS rc
-JOIN actor AS a ON rc.rc_actor = a.actor_id
-WHERE rc.rc_timestamp >= %s
-  AND a.actor_name IN ({})
-GROUP BY a.actor_name
-""".strip().format(", ".join(["%s"] * len(search_values)))
+	SELECT a.actor_name, COUNT(*), MAX(rc.rc_timestamp)
+	FROM recentchanges_userindex AS rc
+	JOIN actor_recentchanges AS a ON rc.rc_actor = a.actor_id
+	WHERE rc.rc_timestamp >= %s
+	  AND a.actor_name IN ({})
+	GROUP BY a.actor_name
+	""".strip().format(", ".join(["%s"] * len(search_values)))
     cursor.execute(sql, [threshold_timestamp] + list(search_values))
     rows = cursor.fetchall()
     if not isinstance(rows, list):
