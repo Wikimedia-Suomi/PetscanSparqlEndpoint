@@ -1059,6 +1059,12 @@ def _normalized_text_value(value: Any) -> str:
     return str(value or "")
 
 
+def _fetched_row_list(value: Any) -> List[Tuple[Any, ...] | List[Any]]:
+    if not isinstance(value, (list, tuple)):
+        return []
+    return [row for row in value if isinstance(row, (tuple, list))]
+
+
 def _namespace_and_db_title_for_full_title(full_title: str, siteinfo: _SiteInfo) -> Tuple[int, str]:
     normalized_title = normalize_page_title(full_title)
     if ":" not in normalized_title:
@@ -1142,8 +1148,8 @@ def _fetch_user_names_for_page_sql(ref: _UserListPageRef) -> List[str]:
                     ),
                     [page_namespace, page_db_title],
                 )
-                rows = cursor.fetchall()
-                if not isinstance(rows, list) or not rows:
+                rows = _fetched_row_list(cursor.fetchall())
+                if not rows:
                     break
 
                 row = rows[0]
@@ -1186,16 +1192,15 @@ def _fetch_user_names_for_page_sql(ref: _UserListPageRef) -> List[str]:
                 ),
                 [resolved_page_id],
             )
-            local_rows = cursor.fetchall()
-            if isinstance(local_rows, list):
-                for row in local_rows:
-                    if not isinstance(row, (tuple, list)) or not row:
-                        continue
-                    _append_unique_user_name(
-                        user_names,
-                        seen_user_names,
-                        _user_name_from_local_user_linktarget(row[0]),
-                    )
+            local_rows = _fetched_row_list(cursor.fetchall())
+            for row in local_rows:
+                if not row:
+                    continue
+                _append_unique_user_name(
+                    user_names,
+                    seen_user_names,
+                    _user_name_from_local_user_linktarget(row[0]),
+                )
 
             cursor.execute(
                 (
@@ -1206,20 +1211,17 @@ def _fetch_user_names_for_page_sql(ref: _UserListPageRef) -> List[str]:
                 ),
                 [resolved_page_id],
             )
-            interwiki_rows = cursor.fetchall()
-            if isinstance(interwiki_rows, list):
-                for row in interwiki_rows:
-                    if not isinstance(row, (tuple, list)) or len(row) < 2:
-                        continue
-                    interwiki_title = _normalize_db_page_title(row[1])
-                    if not interwiki_title:
-                        continue
+            interwiki_rows = _fetched_row_list(cursor.fetchall())
+            for row in interwiki_rows:
+                if len(row) < 2:
+                    continue
+                interwiki_title = _normalize_db_page_title(row[1])
+                if not interwiki_title:
+                    continue
 
-                    interwiki_url = _interwiki_target_url(row[2] if len(row) > 2 else None, interwiki_title)
-                    candidate_user_name = (
-                        _user_name_from_user_page_url(interwiki_url) if interwiki_url is not None else None
-                    )
-                    _append_unique_user_name(user_names, seen_user_names, candidate_user_name)
+                interwiki_url = _interwiki_target_url(row[2] if len(row) > 2 else None, interwiki_title)
+                candidate_user_name = _user_name_from_user_page_url(interwiki_url) if interwiki_url is not None else None
+                _append_unique_user_name(user_names, seen_user_names, candidate_user_name)
     except ValueError:
         raise
     except Exception as exc:
@@ -1396,7 +1398,7 @@ def _centralauth_localuser_summary_sql(user_names: List[str]) -> Tuple[List[str]
                 "SELECT lu_name, lu_wiki FROM localuser WHERE lu_name IN ({})".format(placeholders),
                 normalized_user_names,
             )
-            rows = cursor.fetchall()
+            rows = _fetched_row_list(cursor.fetchall())
     except Exception as exc:
         raise PetscanServiceError(
             "Failed to fetch CentralAuth localuser data: {}".format(exc),
@@ -1406,11 +1408,11 @@ def _centralauth_localuser_summary_sql(user_names: List[str]) -> Tuple[List[str]
         if connection is not None:
             connection.close()
 
-    if not isinstance(rows, list):
+    if not rows:
         return [], {}
 
     for row in rows:
-        if not isinstance(row, (tuple, list)) or len(row) < 2:
+        if len(row) < 2:
             continue
         normalized_user_name = _normalize_user_name(_normalized_text_value(row[0]))
         dbname = _normalized_text_value(row[1]).strip().lower()
@@ -1491,7 +1493,7 @@ def _filter_user_names_for_recent_activity_sql(
                 ).format(placeholders),
                 normalized_user_names + [activity_threshold],
             )
-            rows = cursor.fetchall()
+            rows = _fetched_row_list(cursor.fetchall())
     except Exception as exc:
         raise PetscanServiceError(
             "Failed to fetch recent user activity for {}: {}".format(descriptor.domain, exc),
@@ -1501,12 +1503,12 @@ def _filter_user_names_for_recent_activity_sql(
         if connection is not None:
             connection.close()
 
-    if not isinstance(rows, list):
+    if not rows:
         return []
 
     seen_recently_active: set[str] = set()
     for row in rows:
-        if not isinstance(row, (tuple, list)) or not row:
+        if not row:
             continue
         normalized_user_name = _normalize_user_name(_normalized_text_value(row[0]))
         if normalized_user_name is None:
@@ -1659,17 +1661,15 @@ def _fetch_revision_rows_for_wiki(
         with connection.cursor() as cursor:
             if descriptor.domain != _INCUBATOR_DOMAIN:
                 cursor.execute(sql, params)
-                rows = cursor.fetchall()
+                rows = _fetched_row_list(cursor.fetchall())
             else:
                 cursor.execute(primary_sql, primary_params)
-                primary_rows = cursor.fetchall()
+                primary_rows = _fetched_row_list(cursor.fetchall())
                 cursor.execute(fallback_sql, fallback_params)
-                fallback_rows = cursor.fetchall()
+                fallback_rows = _fetched_row_list(cursor.fetchall())
                 rows = []
-                if isinstance(primary_rows, list):
-                    rows.extend(primary_rows)
-                if isinstance(fallback_rows, list):
-                    rows.extend(fallback_rows)
+                rows.extend(primary_rows)
+                rows.extend(fallback_rows)
                 rows.sort(
                     key=lambda row: (
                         -int(_numeric_timestamp(row[4]) or 0),
@@ -1686,9 +1686,7 @@ def _fetch_revision_rows_for_wiki(
         if connection is not None:
             connection.close()
 
-    if not isinstance(rows, list):
-        return []
-    return [cast(Tuple[Any, Any, Any, Any, Any], row) for row in rows if isinstance(row, (tuple, list))]
+    return [cast(Tuple[Any, Any, Any, Any, Any], row) for row in rows]
 
 
 def _fetch_rows_for_wiki(
@@ -1787,17 +1785,15 @@ def _fetch_rows_for_wiki(
         with connection.cursor() as cursor:
             if descriptor.domain != _INCUBATOR_DOMAIN:
                 cursor.execute(sql, params)
-                rows = cursor.fetchall()
+                rows = _fetched_row_list(cursor.fetchall())
             else:
                 cursor.execute(primary_sql, primary_params)
-                primary_rows = cursor.fetchall()
+                primary_rows = _fetched_row_list(cursor.fetchall())
                 cursor.execute(fallback_sql, fallback_params)
-                fallback_rows = cursor.fetchall()
+                fallback_rows = _fetched_row_list(cursor.fetchall())
                 rows = []
-                if isinstance(primary_rows, list):
-                    rows.extend(primary_rows)
-                if isinstance(fallback_rows, list):
-                    rows.extend(fallback_rows)
+                rows.extend(primary_rows)
+                rows.extend(fallback_rows)
                 rows.sort(
                     key=lambda row: (
                         -int(_numeric_timestamp(row[4]) or 0),
@@ -1814,9 +1810,7 @@ def _fetch_rows_for_wiki(
         if connection is not None:
             connection.close()
 
-    if not isinstance(rows, list):
-        return []
-    return [cast(Tuple[Any, Any, Any, Any, Any], row) for row in rows if isinstance(row, (tuple, list))]
+    return [cast(Tuple[Any, Any, Any, Any, Any], row) for row in rows]
 
 
 def _fetch_creation_log_entries_api(

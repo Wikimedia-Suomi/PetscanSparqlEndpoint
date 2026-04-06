@@ -798,6 +798,48 @@ class NewpagesServiceSourceTests(SimpleTestCase):
         self.assertIn("plcontinue=900%7C2%7CUser%3ABob_B", request_urls[2])
         self.assertIn("iwcontinue=900%7C0%7Csv%3AUser%3ACharlie_C", request_urls[2])
 
+    def test_fetch_user_names_for_page_sql_accepts_tuple_fetchall_results(self) -> None:
+        descriptor_by_domain = {
+            "fi.wikipedia.org": service_source._WikiDescriptor(
+                domain="fi.wikipedia.org",
+                dbname="fiwiki",
+                lang_code="fi",
+                wiki_group="wikipedia",
+                site_url="https://fi.wikipedia.org",
+            )
+        }
+        siteinfo = service_source._SiteInfo(
+            article_path="/wiki/$1",
+            lang_code="fi",
+            namespace_names={0: "", 2: "Käyttäjä", 4: "Wikipedia"},
+            namespace_aliases={2: ("Käyttäjä", "User"), 4: ("Project", "Wikipedia")},
+        )
+        cursor = MagicMock()
+        cursor.fetchall.side_effect = [
+            ((1900518, None, None),),
+            ((b"Alice_A",),),
+            tuple(),
+        ]
+        connection = MagicMock()
+        cursor_cm = MagicMock()
+        cursor_cm.__enter__.return_value = cursor
+        cursor_cm.__exit__.return_value = None
+        connection.cursor.return_value = cursor_cm
+        ref = service_source._UserListPageRef(
+            domain="fi.wikipedia.org",
+            page_title="Wikipedia:Viikon_kilpailu/Viikon_kilpailu_2026-15",
+            canonical_ref=":w:fi:Wikipedia:Viikon_kilpailu/Viikon_kilpailu_2026-15",
+        )
+
+        with patch("newpages.service_source._known_wikis_by_domain", return_value=descriptor_by_domain):
+            with patch("newpages.service_source._siteinfo_for_domain", return_value=siteinfo):
+                with patch("newpages.service_source.pymysql") as pymysql_mock:
+                    pymysql_mock.connect.return_value = connection
+
+                    user_names = service_source._fetch_user_names_for_page_sql(ref)
+
+        self.assertEqual(user_names, ["Alice A"])
+
     def test_active_user_wiki_dbnames_for_user_filters_to_accounts_with_edits(self) -> None:
         with patch("newpages.service_source.urlopen") as urlopen_mock:
             urlopen_mock.return_value = _FakeHttpResponse(
