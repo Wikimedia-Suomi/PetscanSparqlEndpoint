@@ -354,14 +354,27 @@ def _normalize_start_wiki(value: Optional[str]) -> Optional[str]:
     normalized = source.normalize_wikis([text])
     if len(normalized) != 1:
         raise CommandError("--start-wiki must contain exactly one wiki hostname.")
-    return normalized[0]
+    return source._wiki_domain_for_token(normalized[0])
+
+
+def _wiki_domains_for_values(wiki_values: Sequence[str]) -> List[str]:
+    normalized_tokens = source.normalize_wikis(list(wiki_values))
+    seen: set[str] = set()
+    domains: List[str] = []
+    for token in normalized_tokens:
+        domain = source._wiki_domain_for_token(token)
+        if domain in seen:
+            continue
+        seen.add(domain)
+        domains.append(domain)
+    return domains
 
 
 def _resolve_target_wikis(wiki_values: Sequence[str], start_wiki: Optional[str]) -> List[str]:
     normalized_start_wiki = _normalize_start_wiki(start_wiki)
 
     if wiki_values:
-        target_wikis = source.normalize_wikis(list(wiki_values))
+        target_wikis = _wiki_domains_for_values(wiki_values)
     else:
         try:
             target_wikis = sorted(
@@ -465,13 +478,13 @@ class Command(BaseCommand):  # type: ignore[misc]
         parser.add_argument(
             "--wiki",
             action="append",
-            help="One or more wiki hostnames. Accepts comma-separated values and repeated flags.",
+            help="One or more wiki identifiers or hostnames. Accepts comma-separated values and repeated flags.",
         )
         parser.add_argument(
             "--start-wiki",
             default="",
             help=(
-                "Optional wiki hostname to resume from. When --wiki is omitted, the command "
+                "Optional wiki identifier or hostname to resume from. When --wiki is omitted, the command "
                 "iterates SiteMatrix Wikipedia and Wikivoyage wikis starting from this wiki (inclusive)."
             ),
         )

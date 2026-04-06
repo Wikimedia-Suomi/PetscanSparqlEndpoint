@@ -17,7 +17,7 @@ class NewpagesServiceModuleTests(SimpleTestCase):
             "records": 1,
             "source_url": "https://fi.wikipedia.org/wiki/Special:Log/create",
             "source_params": {
-                "wiki": ["fi.wikipedia.org"],
+                "wiki": ["fi"],
             },
             "loaded_at": "2026-04-04T09:00:00+00:00",
             "structure": {"row_count": 1, "field_count": 1, "fields": []},
@@ -96,7 +96,7 @@ class NewpagesServiceModuleTests(SimpleTestCase):
                 "source_url": "https://meta.wikimedia.org/wiki/Special:SiteMatrix",
                 "source_params": {
                     "limit": ["25"],
-                    "wiki": ["fi.wikipedia.org", "sv.wikipedia.org"],
+                    "wiki": ["fi", "sv"],
                     "timestamp": ["20260400000000"],
                     "user_list_page": [":w:fi:Wikipedia:Users"],
                 },
@@ -149,7 +149,7 @@ class NewpagesServiceModuleTests(SimpleTestCase):
                 "source_url": "https://fi.wikipedia.org/wiki/Special:Log/create",
                 "source_params": {
                     "limit": ["25"],
-                    "wiki": ["fi.wikipedia.org"],
+                    "wiki": ["fi"],
                     "timestamp": ["20260400000000"],
                     "user_list_page": [":w:fi:Wikipedia:Users"],
                 },
@@ -213,7 +213,7 @@ class NewpagesServiceModuleTests(SimpleTestCase):
             source_url="https://fi.wikipedia.org/wiki/Special:Log/create",
             source_params={
                 "limit": ["25"],
-                "wiki": ["fi.wikipedia.org"],
+                "wiki": ["fi"],
                 "timestamp": ["20260400000000"],
                 "user_list_page": [":w:fi:Wikipedia:Users"],
             },

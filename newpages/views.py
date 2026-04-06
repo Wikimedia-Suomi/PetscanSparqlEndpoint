@@ -45,8 +45,8 @@ def index(request: HttpRequest) -> HttpResponse:
         {
             "newpages_example_query_url": build_newpages_example_query_url(),
             "wiki_help_text": (
-                "Use one or more comma-separated Wikimedia wiki hostnames such as "
-                "fi.wikipedia.org, sv.wikipedia.org, incubator.wikimedia.org."
+                "Use one or more comma-separated Wikimedia wiki identifiers such as "
+                "fi, b:fi, commons, wikidata, meta, or incubator."
             ),
             "timestamp_help_text": (
                 "Accepts YYYYMMDDHHMMSS prefixes. Shorter values are right-padded with zeros, "

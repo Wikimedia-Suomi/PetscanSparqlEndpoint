@@ -10,14 +10,14 @@ from petscan.service_errors import PetscanServiceError
 NEWPAGES_API_STRUCTURE_PATH = "/newpages/api/structure"
 NEWPAGES_SPARQL_PATH = "/newpages/sparql"
 NEWPAGES_FILTERED_SPARQL_PATH = (
-    "/newpages/sparql/limit=25&wiki=fi.wikipedia.org%2Csv.wikipedia.org&timestamp=202604"
+    "/newpages/sparql/limit=25&wiki=fi%2Csv&timestamp=202604"
 )
 NEWPAGES_FILTERED_WITH_USER_LIST_SPARQL_PATH = (
-    "/newpages/sparql/limit=25&wiki=fi.wikipedia.org&timestamp=202604"
+    "/newpages/sparql/limit=25&wiki=fi&timestamp=202604"
     "&user_list_page=%3Aw%3Afi%3AWikipedia%3AUsers"
 )
 NEWPAGES_FILTERED_WITH_EDITS_SPARQL_PATH = (
-    "/newpages/sparql/limit=25&wiki=fi.wikipedia.org&timestamp=202604"
+    "/newpages/sparql/limit=25&wiki=fi&timestamp=202604"
     "&user_list_page=%3Aw%3Afi%3AWikipedia%3AUsers&include_edited_pages=1"
 )
 
@@ -56,17 +56,19 @@ class NewpagesViewTests(SimpleTestCase):
         self.assertContains(response, "Open SiteMatrix", html=False)
         self.assertContains(response, "recentchanges", html=False)
         self.assertContains(response, "Supported projects:", html=False)
-        self.assertContains(response, "commons.wikimedia.org", html=False)
-        self.assertContains(response, "www.wikidata.org", html=False)
-        self.assertContains(response, "incubator.wikimedia.org", html=False)
-        self.assertContains(response, "meta.wikimedia.org", html=False)
+        self.assertContains(response, "b:fi", html=False)
+        self.assertContains(response, "commons", html=False)
+        self.assertContains(response, "wikidata", html=False)
+        self.assertContains(response, "incubator", html=False)
+        self.assertContains(response, "meta", html=False)
+        self.assertContains(response, "Full hostnames such as", html=False)
         self.assertContains(response, "*.wikipedia.org", html=False)
         self.assertContains(response, "API mode scans up to", html=False)
         self.assertContains(response, "SQL mode is capped at", html=False)
         self.assertNotContains(response, "{% verbatim %}", html=False)
         self.assertContains(
             response,
-            "https%3A//sparqlbridge.toolforge.org/newpages/sparql/wiki%3Dfi.wikipedia.org%26timestamp%3D20260401000000",
+            "https%3A//sparqlbridge.toolforge.org/newpages/sparql/wiki%3Dfi%26timestamp%3D20260401000000",
             html=False,
         )
 
@@ -79,7 +81,7 @@ class NewpagesViewTests(SimpleTestCase):
             "loaded_at": "2026-04-04T08:00:00+00:00",
             "source_params": {
                 "limit": ["10"],
-                "wiki": ["fi.wikipedia.org", "sv.wikipedia.org"],
+                "wiki": ["fi", "sv"],
                 "timestamp": ["20260400000000"],
                 "user_list_page": [":w:fi:Wikipedia:Users"],
             },
@@ -102,14 +104,14 @@ class NewpagesViewTests(SimpleTestCase):
         payload = response.json()
         self.assertEqual(payload["source"], "newpages")
         self.assertEqual(payload["limit"], 10)
-        self.assertEqual(payload["wiki_domains"], ["fi.wikipedia.org", "sv.wikipedia.org"])
+        self.assertEqual(payload["wiki_domains"], ["fi", "sv"])
         self.assertEqual(payload["timestamp"], "20260400000000")
         self.assertEqual(payload["user_list_page"], ":w:fi:Wikipedia:Users")
         self.assertEqual(payload["include_edited_pages"], True)
         ensure_loaded.assert_called_once_with(
             refresh=True,
             limit=10,
-            wiki_domains=["fi.wikipedia.org", "sv.wikipedia.org"],
+            wiki_domains=["fi", "sv"],
             timestamp="20260400000000",
             user_list_page=":w:fi:Wikipedia:Users",
             include_edited_pages=True,
@@ -194,7 +196,7 @@ class NewpagesViewTests(SimpleTestCase):
             ASK_QUERY,
             refresh=False,
             limit=25,
-            wiki_domains=["fi.wikipedia.org"],
+            wiki_domains=["fi"],
             timestamp="20260400000000",
             user_list_page=":w:fi:Wikipedia:Users",
             include_edited_pages=False,
@@ -214,7 +216,7 @@ class NewpagesViewTests(SimpleTestCase):
             ASK_QUERY,
             refresh=False,
             limit=25,
-            wiki_domains=["fi.wikipedia.org"],
+            wiki_domains=["fi"],
             timestamp="20260400000000",
             user_list_page=":w:fi:Wikipedia:Users",
             include_edited_pages=True,

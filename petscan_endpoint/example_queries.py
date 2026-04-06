@@ -120,7 +120,7 @@ PREFIX wikibase: <http://wikiba.se/ontology#>
 PREFIX newpages: <https://sparqlbridge.toolforge.org/newpages/ontology/>
 
 SELECT * WHERE {
-  SERVICE <https://sparqlbridge.toolforge.org/newpages/sparql/wiki=fi.wikipedia.org&timestamp=20260401000000> {
+  SERVICE <https://sparqlbridge.toolforge.org/newpages/sparql/wiki=fi&timestamp=20260401000000> {
     ?page schema:about ?wikidata_entity .
     ?page schema:name ?page_label .
     ?page newpages:created_timestamp ?created_timestamp .

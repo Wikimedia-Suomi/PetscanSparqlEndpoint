@@ -276,7 +276,13 @@ class NewpagesServiceSourceTests(SimpleTestCase):
     def test_normalize_wikis_supports_commas_and_deduplicates(self) -> None:
         self.assertEqual(
             service_source.normalize_wikis(" fi.wikipedia.org,sv.wikipedia.org, fi.wikipedia.org "),
-            ["fi.wikipedia.org", "sv.wikipedia.org"],
+            ["fi", "sv"],
+        )
+
+    def test_normalize_wikis_accepts_short_forms_and_defaults_bare_codes_to_wikipedia(self) -> None:
+        self.assertEqual(
+            service_source.normalize_wikis("w:fi,w:se,b:fi,incubator,commons,meta,wikidata,smn,olo"),
+            ["b:fi", "commons", "fi", "incubator", "meta", "olo", "se", "smn", "wikidata"],
         )
 
     def test_normalize_wikis_expands_wildcards_via_sitematrix(self) -> None:
@@ -335,7 +341,7 @@ class NewpagesServiceSourceTests(SimpleTestCase):
 
             self.assertEqual(
                 service_source.normalize_wikis("*.wikipedia.org, fi.wikipedia.org"),
-                ["fi.wikipedia.org", "sv.wikipedia.org"],
+                ["fi", "sv"],
             )
 
     def test_normalize_wikis_rejects_unknown_wildcard(self) -> None:

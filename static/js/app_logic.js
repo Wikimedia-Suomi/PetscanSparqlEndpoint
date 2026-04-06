@@ -39,6 +39,14 @@ const NEWPAGES_SPECIAL_INTERWIKI_PREFIX_BY_HOST = {
   "meta.wikimedia.org": "meta",
 };
 
+const NEWPAGES_WIKI_SPECIAL_TOKEN_BY_HOST = {
+  "commons.wikimedia.org": "commons",
+  "www.wikidata.org": "wikidata",
+  "wikidata.org": "wikidata",
+  "incubator.wikimedia.org": "incubator",
+  "meta.wikimedia.org": "meta",
+};
+
 const NEWPAGES_INTERWIKI_CANONICAL_PREFIX = {
   w: "w",
   wikipedia: "w",
@@ -64,6 +72,52 @@ const NEWPAGES_INTERWIKI_CANONICAL_PREFIX = {
   meta: "meta",
   m: "meta",
 };
+
+const NEWPAGES_WIKI_CANONICAL_PREFIX = {
+  w: "w",
+  wikipedia: "w",
+  wikt: "wikt",
+  wiktionary: "wikt",
+  b: "b",
+  wikibooks: "b",
+  n: "n",
+  wikinews: "n",
+  q: "q",
+  wikiquote: "q",
+  s: "s",
+  wikisource: "s",
+  v: "v",
+  wikiversity: "v",
+  voy: "voy",
+  wikivoyage: "voy",
+};
+
+function isValidShortWikiCode(rawValue) {
+  return /^(?!-)[a-z0-9-]{1,63}(?<!-)$/.test(String(rawValue || "").trim().toLowerCase());
+}
+
+function canonicalWikiTokenFromHost(host) {
+  var normalizedHost = String(host || "").trim().toLowerCase().replace(/\.$/, "");
+  var specialToken = NEWPAGES_WIKI_SPECIAL_TOKEN_BY_HOST[normalizedHost];
+  if (specialToken) {
+    return specialToken;
+  }
+  for (var suffix in NEWPAGES_STANDARD_INTERWIKI_PREFIX_BY_SUFFIX) {
+    if (!Object.prototype.hasOwnProperty.call(NEWPAGES_STANDARD_INTERWIKI_PREFIX_BY_SUFFIX, suffix)) {
+      continue;
+    }
+    if (!normalizedHost.endsWith(suffix)) {
+      continue;
+    }
+    var langCode = normalizedHost.slice(0, normalizedHost.length - suffix.length);
+    if (!isValidShortWikiCode(langCode) || langCode === "www") {
+      return normalizedHost;
+    }
+    var canonicalPrefix = NEWPAGES_STANDARD_INTERWIKI_PREFIX_BY_SUFFIX[suffix];
+    return canonicalPrefix === "w" ? langCode : canonicalPrefix + ":" + langCode;
+  }
+  return normalizedHost;
+}
 
 function normalizeInterwikiPageTitle(rawValue) {
   return String(rawValue || "").trim().replace(/^:+/, "").replace(/ /g, "_");
@@ -131,6 +185,61 @@ export function normalizeNewpagesUserListPage(rawValue) {
     return raw;
   }
   return ":" + canonicalPrefix + ":" + langCode + ":" + title;
+}
+
+export function normalizeNewpagesWikis(rawValue) {
+  var values = Array.isArray(rawValue) ? rawValue : [rawValue];
+  var normalizedValues = [];
+  var seen = Object.create(null);
+
+  values.forEach(function (value) {
+    String(value || "")
+      .split(",")
+      .forEach(function (part) {
+        var token = String(part || "").trim().toLowerCase().replace(/\.$/, "");
+        if (!token) {
+          return;
+        }
+        if (token.indexOf("*.") === 0) {
+          if (!seen[token]) {
+            seen[token] = true;
+            normalizedValues.push(token);
+          }
+          return;
+        }
+
+        var canonical = NEWPAGES_INTERWIKI_CANONICAL_PREFIX[token];
+        if (canonical === "commons") {
+          token = "commons";
+        } else if (canonical === "d") {
+          token = "wikidata";
+        } else if (canonical === "meta") {
+          token = "meta";
+        } else if (canonical === "incubator") {
+          token = "incubator";
+        } else if (isValidShortWikiCode(token)) {
+          token = token;
+        } else if (token.indexOf(":") !== -1) {
+          var segments = token.split(":");
+          if (segments.length === 2) {
+            var prefix = NEWPAGES_WIKI_CANONICAL_PREFIX[String(segments[0] || "").trim().toLowerCase()];
+            var langCode = String(segments[1] || "").trim().toLowerCase();
+            if (prefix && isValidShortWikiCode(langCode)) {
+              token = prefix === "w" ? langCode : prefix + ":" + langCode;
+            }
+          }
+        } else {
+          token = canonicalWikiTokenFromHost(token);
+        }
+
+        if (!seen[token]) {
+          seen[token] = true;
+          normalizedValues.push(token);
+        }
+      });
+  });
+
+  return normalizedValues.join(", ");
 }
 
 export function buildDefaultQueryText(prefixName, ontologyBase, subjectVariableName, extraPrefixEntries) {

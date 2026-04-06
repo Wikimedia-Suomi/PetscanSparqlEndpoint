@@ -8,6 +8,7 @@ import {
   formatUriText as formatUriTextHelper,
   inferQueryType as inferQueryTypeHelper,
   normalizeNewpagesUserListPage as normalizeNewpagesUserListPageHelper,
+  normalizeNewpagesWikis as normalizeNewpagesWikisHelper,
   normalizeFieldVariableName as normalizeFieldVariableNameHelper,
   normalizeSelectedQueryFieldKeys as normalizeSelectedQueryFieldKeysHelper,
   safeExternalHref as safeExternalHrefHelper,
@@ -100,7 +101,7 @@ import {
         return String(this.newpagesLimit || "").trim();
       },
       newpagesWikisValue: function () {
-        return String(this.newpagesWikis || "").trim();
+        return normalizeNewpagesWikisHelper(this.newpagesWikis);
       },
       newpagesTimestampValue: function () {
         return String(this.newpagesTimestamp || "").trim();
@@ -243,6 +244,12 @@ import {
         var normalized = normalizeNewpagesUserListPageHelper(this.newpagesUserListPage);
         if (normalized && normalized !== this.newpagesUserListPage) {
           this.newpagesUserListPage = normalized;
+        }
+      },
+      resolveWikiInput: function () {
+        var normalized = normalizeNewpagesWikisHelper(this.newpagesWikis);
+        if (normalized && normalized !== this.newpagesWikis) {
+          this.newpagesWikis = normalized;
         }
       },
       inferQueryType: function (query) {

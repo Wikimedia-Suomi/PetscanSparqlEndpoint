@@ -87,7 +87,7 @@ class ApiViewTests(SimpleTestCase):
         )
         self.assertContains(
             response,
-            "https%3A//sparqlbridge.toolforge.org/newpages/sparql/wiki%3Dfi.wikipedia.org%26timestamp%3D20260401000000",
+            "https%3A//sparqlbridge.toolforge.org/newpages/sparql/wiki%3Dfi%26timestamp%3D20260401000000",
             html=False,
         )
         self.assertContains(

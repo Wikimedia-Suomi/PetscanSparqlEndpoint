@@ -30,22 +30,25 @@
           <h2 id="query-heading">Data Loading</h2>
 
           <form class="query-form">
-            <label for="newpages-wikis">Wiki domains</label>
+            <label for="newpages-wikis">Wikis</label>
             <input
               id="newpages-wikis"
               type="text"
               spellcheck="false"
-              placeholder="fi.wikipedia.org, sv.wikipedia.org"
+              placeholder="fi, se, smn, olo, incubator"
               v-model.trim="newpagesWikis"
+              @blur="resolveWikiInput"
               aria-describedby="newpages-wikis-help"
             />
             <p id="newpages-wikis-help" class="help">
-              Use one or more comma-separated Wikimedia wiki hostnames such as
-              <code>fi.wikipedia.org</code>, <code>en.wikivoyage.org</code>, <code>commons.wikimedia.org</code>,
-              <code>www.wikidata.org</code>, <code>incubator.wikimedia.org</code>, or
-              <code>meta.wikimedia.org</code>. Supported projects: Wikipedia, Wiktionary, Wikibooks, Wikinews,
-              Wikiquote, Wikisource, Wikiversity, Wikivoyage, Wikidata, Commons, Incubator, and Meta-Wiki.
-              Wildcards such as <code>*.wikipedia.org</code> are also supported.
+              Use one or more comma-separated Wikimedia wiki identifiers such as
+              <code>fi</code>, <code>se</code>, <code>smn</code>, <code>olo</code>, <code>b:fi</code>,
+              <code>commons</code>, <code>wikidata</code>, <code>incubator</code>, or <code>meta</code>.
+              Bare language codes default to Wikipedia, so <code>fi</code> means <code>fi.wikipedia.org</code>.
+              Full hostnames such as <code>fi.wikipedia.org</code> are still accepted and normalized automatically.
+              Supported projects: Wikipedia, Wiktionary, Wikibooks, Wikinews, Wikiquote, Wikisource, Wikiversity,
+              Wikivoyage, Wikidata, Commons, Incubator, and Meta-Wiki. Wildcards such as
+              <code>*.wikipedia.org</code> are also supported.
             </p>
 
             <label for="newpages-timestamp">Created after <code>timestamp</code></label>
@@ -137,10 +140,11 @@
           <h2 id="newpages-info-heading">About New Pages</h2>
           <p class="help">
             This source reads <code>recentchanges</code> rows where <code>rc_source="mw.new"</code> from one or more
-            Wikimedia wikis validated against SiteMatrix. With <code>User list page</code> plus the edited-pages option,
-            SQL mode switches to revision-based matching for the last <code>60</code> days. The result graph uses
-            schema.org sitelink-style triples, so the returned pages can be joined into federated Wikidata queries in
-            the same way as the Incubator source.
+            Wikimedia wikis validated against SiteMatrix. The wiki filter accepts short identifiers such as
+            <code>fi</code>, <code>b:fi</code>, <code>commons</code>, and <code>wikidata</code>. With
+            <code>User list page</code> plus the edited-pages option, SQL mode switches to revision-based matching for
+            the last <code>60</code> days. The result graph uses schema.org sitelink-style triples, so the returned
+            pages can be joined into federated Wikidata queries in the same way as the Incubator source.
           </p>
           {% endverbatim %}
           <div class="actions">
@@ -361,7 +365,7 @@
         </p>
         <p>
           For federated queries, use path parameters in the endpoint URL, for example
-          <code>/newpages/sparql/wiki=fi.wikipedia.org&timestamp=20260401000000</code>.
+          <code>/newpages/sparql/wiki=fi&timestamp=20260401000000</code>.
         </p>
       </section>
 

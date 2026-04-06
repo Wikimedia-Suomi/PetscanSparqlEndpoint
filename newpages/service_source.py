@@ -48,6 +48,8 @@ _DEFAULT_SQL_LIMIT = 50_000
 _COMMONS_FILE_NAMESPACE = 6
 _INCUBATOR_DOMAIN = "incubator.wikimedia.org"
 _META_DOMAIN = "meta.wikimedia.org"
+_COMMONS_DOMAIN = "commons.wikimedia.org"
+_WIKIDATA_DOMAIN = "www.wikidata.org"
 _INCUBATOR_WIKIDATA_CATEGORY_PAGE = "Category:Maintenance:Wikidata_interwiki_links"
 _INCUBATOR_WIKIDATA_CATEGORY_DB_TITLE = "Maintenance:Wikidata_interwiki_links"
 _INCUBATOR_WIKI_GROUP_BY_CODE = {
@@ -138,6 +140,33 @@ _INTERWIKI_PREFIX_TO_SPECIAL_DOMAIN = {
     "m": _META_DOMAIN,
     "incubator": _INCUBATOR_DOMAIN,
 }
+_SPECIAL_WIKI_TOKEN_ALIASES = {
+    "commons": "commons",
+    "c": "commons",
+    "wikidata": "wikidata",
+    "d": "wikidata",
+    "meta": "meta",
+    "m": "meta",
+    "incubator": "incubator",
+}
+_SPECIAL_WIKI_TOKEN_TO_DOMAIN = {
+    "commons": _COMMONS_DOMAIN,
+    "wikidata": _WIKIDATA_DOMAIN,
+    "meta": _META_DOMAIN,
+    "incubator": _INCUBATOR_DOMAIN,
+}
+_SPECIAL_WIKI_TOKEN_BY_DOMAIN = {
+    _COMMONS_DOMAIN: "commons",
+    _WIKIDATA_DOMAIN: "wikidata",
+    "wikidata.org": "wikidata",
+    _META_DOMAIN: "meta",
+    _INCUBATOR_DOMAIN: "incubator",
+}
+_WIKI_INPUT_ERROR = (
+    "wiki must contain valid short Wikimedia wiki identifiers such as "
+    "fi, w:fi, b:fi, commons, wikidata, meta, or incubator, "
+    "full hostnames such as fi.wikipedia.org, or wildcard hostnames such as *.wikipedia.org."
+)
 _MAX_API_ROWS_PER_WIKI = 100
 _MAX_API_PAGEIDS_PER_BATCH = 50
 _MAX_API_FULL_SCAN_WIKI_COUNT = 10
@@ -241,6 +270,100 @@ def _is_supported_wiki_descriptor(descriptor: _WikiDescriptor) -> bool:
     return descriptor.wiki_group in _ALLOWED_WIKI_GROUPS or descriptor.domain in _ALLOWED_SPECIAL_DOMAINS
 
 
+def _is_valid_short_wiki_code(value: str) -> bool:
+    text = str(value or "").strip().lower()
+    return bool(text) and _HOST_LABEL_RE.fullmatch(text) is not None
+
+
+def _canonical_wiki_token_for_descriptor(descriptor: _WikiDescriptor) -> str:
+    special_token = _SPECIAL_WIKI_TOKEN_BY_DOMAIN.get(descriptor.domain)
+    if special_token is not None:
+        return special_token
+
+    lang_code = str(descriptor.lang_code or "").strip().lower()
+    if descriptor.wiki_group == "wikipedia" and _is_valid_short_wiki_code(lang_code):
+        return lang_code
+
+    interwiki_prefix = _WIKI_GROUP_TO_INTERWIKI_PREFIX.get(descriptor.wiki_group, "")
+    if interwiki_prefix and _is_valid_short_wiki_code(lang_code):
+        return "{}:{}".format(interwiki_prefix, lang_code)
+    return descriptor.domain
+
+
+def _normalize_single_wiki_token(token: str) -> str:
+    normalized = str(token or "").strip().lower().rstrip(".")
+    if not normalized:
+        raise ValueError(_WIKI_INPUT_ERROR)
+
+    special_token = _SPECIAL_WIKI_TOKEN_ALIASES.get(normalized)
+    if special_token is not None:
+        return special_token
+
+    if _is_valid_hostname(normalized):
+        special_domain_token = _SPECIAL_WIKI_TOKEN_BY_DOMAIN.get(normalized)
+        if special_domain_token is not None:
+            return special_domain_token
+        for wiki_group, domain_suffix in _WIKI_GROUP_TO_DOMAIN_SUFFIX.items():
+            if not normalized.endswith(domain_suffix):
+                continue
+            lang_code = normalized[: -len(domain_suffix)]
+            if not _is_valid_short_wiki_code(lang_code):
+                return normalized
+            if wiki_group == "wikipedia":
+                return lang_code
+            return "{}:{}".format(_WIKI_GROUP_TO_INTERWIKI_PREFIX[wiki_group], lang_code)
+        return normalized
+
+    if ":" in normalized:
+        parts = normalized.split(":")
+        if len(parts) != 2:
+            raise ValueError(_WIKI_INPUT_ERROR)
+        prefix = str(parts[0] or "").strip().lower()
+        lang_code = str(parts[1] or "").strip().lower()
+        prefix_wiki_group = _INTERWIKI_PREFIX_TO_WIKI_GROUP.get(prefix)
+        if prefix_wiki_group is None or prefix_wiki_group not in _WIKI_GROUP_TO_DOMAIN_SUFFIX:
+            raise ValueError(_WIKI_INPUT_ERROR)
+        if not _is_valid_short_wiki_code(lang_code):
+            raise ValueError(_WIKI_INPUT_ERROR)
+        if prefix_wiki_group == "wikipedia":
+            return lang_code
+        return "{}:{}".format(_WIKI_GROUP_TO_INTERWIKI_PREFIX[prefix_wiki_group], lang_code)
+
+    if _is_valid_short_wiki_code(normalized):
+        return normalized
+
+    raise ValueError(_WIKI_INPUT_ERROR)
+
+
+def _wiki_domain_for_token(token: str) -> str:
+    normalized = str(token or "").strip().lower().rstrip(".")
+    if not normalized:
+        return normalized
+
+    special_token = _SPECIAL_WIKI_TOKEN_ALIASES.get(normalized)
+    if special_token is not None:
+        return _SPECIAL_WIKI_TOKEN_TO_DOMAIN[special_token]
+
+    if _is_valid_hostname(normalized):
+        return _WIKIDATA_DOMAIN if normalized == "wikidata.org" else normalized
+
+    if ":" in normalized:
+        parts = normalized.split(":")
+        if len(parts) == 2:
+            prefix = str(parts[0] or "").strip().lower()
+            lang_code = str(parts[1] or "").strip().lower()
+            wiki_group = _INTERWIKI_PREFIX_TO_WIKI_GROUP.get(prefix)
+            if wiki_group is not None and wiki_group in _WIKI_GROUP_TO_DOMAIN_SUFFIX and _is_valid_short_wiki_code(
+                lang_code
+            ):
+                return "{}{}".format(lang_code, _WIKI_GROUP_TO_DOMAIN_SUFFIX[wiki_group])
+        return normalized
+
+    if _is_valid_short_wiki_code(normalized):
+        return "{}{}".format(normalized, _WIKI_GROUP_TO_DOMAIN_SUFFIX["wikipedia"])
+    return normalized
+
+
 def normalize_wikis(value: Any) -> List[str]:
     if value is None:
         return []
@@ -251,46 +374,43 @@ def normalize_wikis(value: Any) -> List[str]:
     else:
         raw_values = [str(value)]
 
-    wiki_domains: List[str] = []
+    known_wikis: Optional[Mapping[str, _WikiDescriptor]] = None
+    wiki_tokens: List[str] = []
     seen = set()
 
     for raw_value in raw_values:
         for part in raw_value.split(","):
-            domain = str(part).strip().lower().rstrip(".")
-            if not domain:
+            token = str(part).strip().lower().rstrip(".")
+            if not token:
                 continue
-            if domain.startswith("*."):
-                if not _is_valid_wiki_wildcard(domain):
-                    raise ValueError(
-                        "wiki must contain valid hostnames or wildcard hostnames such as "
-                        "fi.wikipedia.org, incubator.wikimedia.org, or *.wikipedia.org."
-                    )
-                suffix = domain[1:]
+            if token.startswith("*."):
+                if not _is_valid_wiki_wildcard(token):
+                    raise ValueError(_WIKI_INPUT_ERROR)
+                if known_wikis is None:
+                    known_wikis = _known_wikis_by_domain()
+                suffix = token[1:]
                 matched_domains = [
                     known_domain
-                    for known_domain, descriptor in _known_wikis_by_domain().items()
+                    for known_domain, descriptor in known_wikis.items()
                     if known_domain.endswith(suffix) and _is_supported_wiki_descriptor(descriptor)
                 ]
                 if not matched_domains:
-                    raise ValueError("Unknown wiki wildcard: {}.".format(domain))
+                    raise ValueError("Unknown wiki wildcard: {}.".format(token))
                 for matched_domain in sorted(matched_domains):
-                    if matched_domain in seen:
+                    canonical_token = _canonical_wiki_token_for_descriptor(known_wikis[matched_domain])
+                    if canonical_token in seen:
                         continue
-                    seen.add(matched_domain)
-                    wiki_domains.append(matched_domain)
+                    seen.add(canonical_token)
+                    wiki_tokens.append(canonical_token)
                 continue
-            if not _is_valid_hostname(domain):
-                raise ValueError(
-                    "wiki must contain valid hostnames or wildcard hostnames such as "
-                    "fi.wikipedia.org, incubator.wikimedia.org, or *.wikipedia.org."
-                )
-            if domain in seen:
+            canonical_token = _normalize_single_wiki_token(token)
+            if canonical_token in seen:
                 continue
-            seen.add(domain)
-            wiki_domains.append(domain)
+            seen.add(canonical_token)
+            wiki_tokens.append(canonical_token)
 
-    wiki_domains.sort()
-    return wiki_domains
+    wiki_tokens.sort()
+    return wiki_tokens
 
 
 def normalize_timestamp(value: Any) -> Optional[str]:
@@ -757,19 +877,20 @@ def _user_list_source_domain_for_prefix(prefix: str) -> Optional[str]:
     return None
 
 
-def _selected_wiki_descriptors(wiki_domains: List[str]) -> List[_WikiDescriptor]:
+def _selected_wiki_descriptors(wiki_tokens: List[str]) -> List[_WikiDescriptor]:
     known_wikis = _known_wikis_by_domain()
     selected: List[_WikiDescriptor] = []
     unknown: List[str] = []
     unsupported: List[str] = []
 
-    for domain in wiki_domains:
-        descriptor = known_wikis.get(domain)
+    for token in wiki_tokens:
+        lookup_domain = _wiki_domain_for_token(token)
+        descriptor = known_wikis.get(lookup_domain)
         if descriptor is None:
-            unknown.append(domain)
+            unknown.append(lookup_domain)
             continue
         if not _is_supported_wiki_descriptor(descriptor):
-            unsupported.append(domain)
+            unsupported.append(lookup_domain)
             continue
         selected.append(descriptor)
 
@@ -2371,7 +2492,7 @@ def fetch_newpage_records(
     backend = newpages_lookup_backend()
 
     if not normalized_wikis:
-        raise ValueError("wiki must include at least one known Wikimedia wiki domain.")
+        raise ValueError("wiki must include at least one known Wikimedia wiki.")
     _validate_include_edited_pages_request(
         normalized_include_edited_pages,
         normalized_timestamp,

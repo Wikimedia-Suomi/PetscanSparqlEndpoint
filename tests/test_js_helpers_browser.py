@@ -223,6 +223,17 @@ def test_js_helper_normalize_newpages_user_list_page_keeps_interwiki_shape(page:
     assert result == ":meta:Steward_requests/Permissions"
 
 
+def test_js_helper_normalize_newpages_wikis_prefers_short_canonical_tokens(page: Page, live_server: Any) -> None:
+    result = _call_js_helper(
+        page,
+        live_server,
+        "normalizeNewpagesWikis",
+        ["fi.wikipedia.org, w:se, b:fi, commons.wikimedia.org, www.wikidata.org, incubator, meta.wikimedia.org"],
+    )
+
+    assert result == "fi, se, b:fi, commons, wikidata, incubator, meta"
+
+
 def test_js_helper_safe_external_href_only_allows_http_and_https(page: Page, live_server: Any) -> None:
     assert (
         _call_js_helper(page, live_server, "safeExternalHref", ["https://example.org/resource"])
