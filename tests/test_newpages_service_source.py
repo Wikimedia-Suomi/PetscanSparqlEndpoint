@@ -2676,7 +2676,7 @@ class NewpagesServiceSourceTests(SimpleTestCase):
                         [
                             [(901, None, None)],
                             [(b"Alice_A/sandbox",)],
-                            [("sv", "Användare:Charlie_C/common.js", "https://sv.wikipedia.org/wiki/$1")],
+                            [("sv", "Användare:Charlie_C/common.js")],
                         ]
                     )
                     centralauth_connection = _fake_connection(
@@ -2978,7 +2978,7 @@ class NewpagesServiceSourceTests(SimpleTestCase):
                         [
                             [(901, None, None)],
                             [(b"Alice_A/sandbox",)],
-                            [("sv", "Användare:Charlie_C/common.js", "https://sv.wikipedia.org/wiki/$1")],
+                            [("sv", "Användare:Charlie_C/common.js")],
                         ]
                     )
                     centralauth_connection = _fake_connection(

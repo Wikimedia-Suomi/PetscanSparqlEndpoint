@@ -1103,6 +1103,58 @@ def _interwiki_target_url(iw_url: Any, page_title: str) -> Optional[str]:
     return None
 
 
+def _interwiki_target_domain_and_title(
+    prefix: Any, title: Any, source_descriptor: _WikiDescriptor
+) -> Optional[Tuple[str, str]]:
+    normalized_prefix = str(prefix or "").strip().lower()
+    normalized_title = _normalize_db_page_title(title)
+    if not normalized_prefix or not normalized_title:
+        return None
+
+    special_domain = _INTERWIKI_PREFIX_TO_SPECIAL_DOMAIN.get(normalized_prefix)
+    if special_domain is not None:
+        return special_domain, normalized_title
+
+    wiki_group = _INTERWIKI_PREFIX_TO_WIKI_GROUP.get(normalized_prefix)
+    if wiki_group is not None:
+        if wiki_group == "commons":
+            return "commons.wikimedia.org", normalized_title
+        if wiki_group == "wikidata":
+            for wikidata_domain in ("www.wikidata.org", "wikidata.org"):
+                if wikidata_domain in _known_wikis_by_domain():
+                    return wikidata_domain, normalized_title
+            return None
+
+        domain_suffix = _WIKI_GROUP_TO_DOMAIN_SUFFIX.get(wiki_group)
+        if domain_suffix is None or ":" not in normalized_title:
+            return None
+        lang_code, remainder = normalized_title.split(":", 1)
+        normalized_lang_code = str(lang_code or "").strip().lower()
+        normalized_remainder = normalize_page_title(remainder)
+        if not normalized_lang_code or not normalized_remainder:
+            return None
+        return "{}{}".format(normalized_lang_code, domain_suffix), normalized_remainder
+
+    dynamic_special_domain = _user_list_source_domain_for_prefix(normalized_prefix)
+    if dynamic_special_domain is not None:
+        return dynamic_special_domain, normalized_title
+
+    domain_suffix = _WIKI_GROUP_TO_DOMAIN_SUFFIX.get(source_descriptor.wiki_group)
+    if domain_suffix is None:
+        return None
+    return "{}{}".format(normalized_prefix, domain_suffix), normalized_title
+
+
+def _user_name_from_interwiki_link(prefix: Any, title: Any, source_descriptor: _WikiDescriptor) -> Optional[str]:
+    resolved_target = _interwiki_target_domain_and_title(prefix, title, source_descriptor)
+    if resolved_target is None:
+        return None
+    target_domain, target_title = resolved_target
+    if target_domain not in _known_wikis_by_domain():
+        return None
+    return _user_name_from_namespace_title(target_title, _siteinfo_for_domain(target_domain))
+
+
 def _user_name_from_local_user_linktarget(title: Any) -> Optional[str]:
     normalized_title = _normalize_db_page_title(title)
     if not normalized_title:
@@ -1204,9 +1256,8 @@ def _fetch_user_names_for_page_sql(ref: _UserListPageRef) -> List[str]:
 
             cursor.execute(
                 (
-                    "SELECT iwl.iwl_prefix, iwl.iwl_title, iw.iw_url "
+                    "SELECT iwl.iwl_prefix, iwl.iwl_title "
                     "FROM iwlinks AS iwl "
-                    "LEFT JOIN interwiki AS iw ON iw.iw_prefix = iwl.iwl_prefix "
                     "WHERE iwl.iwl_from = %s"
                 ),
                 [resolved_page_id],
@@ -1219,8 +1270,7 @@ def _fetch_user_names_for_page_sql(ref: _UserListPageRef) -> List[str]:
                 if not interwiki_title:
                     continue
 
-                interwiki_url = _interwiki_target_url(row[2] if len(row) > 2 else None, interwiki_title)
-                candidate_user_name = _user_name_from_user_page_url(interwiki_url) if interwiki_url is not None else None
+                candidate_user_name = _user_name_from_interwiki_link(row[0], interwiki_title, descriptor)
                 _append_unique_user_name(user_names, seen_user_names, candidate_user_name)
     except ValueError:
         raise
