@@ -148,6 +148,59 @@ class NewpagesServiceSourceTests(SimpleTestCase):
         self.assertIn("a.actor_user = u.user_id", sql)
         self.assertEqual(params, ["Alice A", "Bob B", "20260401000000"])
 
+    def test_descriptor_has_recentchanges_for_users_sql_uses_recentchanges_userindex(self) -> None:
+        descriptor = service_source._WikiDescriptor(
+            domain="fi.wikipedia.org",
+            dbname="fiwiki",
+            lang_code="fi",
+            wiki_group="wikipedia",
+            site_url="https://fi.wikipedia.org",
+        )
+        with patch("newpages.service_source.pymysql") as pymysql_mock:
+            connection = _fake_connection([(1,)])
+            pymysql_mock.connect.return_value = connection
+
+            has_matches = service_source._descriptor_has_recentchanges_for_users_sql(
+                descriptor,
+                ["Alice A", "Bob B"],
+                ["mw.new"],
+                "20260401000000",
+            )
+
+        self.assertTrue(has_matches)
+        sql, params = connection.cursor.return_value.__enter__.return_value.execute.call_args.args
+        self.assertIn("FROM recentchanges_userindex AS rc", sql)
+        self.assertIn("JOIN actor_recentchanges AS a ON rc.rc_actor = a.actor_id", sql)
+        self.assertIn("rc.rc_source = %s", sql)
+        self.assertIn("a.actor_name IN (%s, %s)", sql)
+        self.assertIn("rc.rc_timestamp >= %s", sql)
+        self.assertTrue(sql.strip().endswith("LIMIT 1"))
+        self.assertEqual(params, ["mw.new", "Alice A", "Bob B", "20260401000000"])
+
+    def test_descriptor_has_recentchanges_for_users_sql_supports_multiple_rc_sources(self) -> None:
+        descriptor = service_source._WikiDescriptor(
+            domain="fi.wikipedia.org",
+            dbname="fiwiki",
+            lang_code="fi",
+            wiki_group="wikipedia",
+            site_url="https://fi.wikipedia.org",
+        )
+        with patch("newpages.service_source.pymysql") as pymysql_mock:
+            connection = _fake_connection([(1,)])
+            pymysql_mock.connect.return_value = connection
+
+            has_matches = service_source._descriptor_has_recentchanges_for_users_sql(
+                descriptor,
+                ["Alice A"],
+                ["mw.new", "mw.edit"],
+                "20260401000000",
+            )
+
+        self.assertTrue(has_matches)
+        sql, params = connection.cursor.return_value.__enter__.return_value.execute.call_args.args
+        self.assertIn("rc.rc_source IN (%s, %s)", sql)
+        self.assertEqual(params, ["mw.new", "mw.edit", "Alice A", "20260401000000"])
+
     def test_siteinfo_for_domain_prefers_local_snapshot(self) -> None:
         snapshot_siteinfo = service_source._SiteInfo(
             article_path="/w/$1",
@@ -3010,6 +3063,8 @@ class NewpagesServiceSourceTests(SimpleTestCase):
                             ("Charlie C", "svwiki"),
                         ]
                     )
+                    fi_precheck_connection = _fake_connection([(1,)])
+                    sv_precheck_connection = _fake_connection([(1,)])
                     fi_connection = _fake_connection(
                         [
                             (123, b"Turku", 0, "Q1757", "20260403010203"),
@@ -3023,6 +3078,8 @@ class NewpagesServiceSourceTests(SimpleTestCase):
                     pymysql_mock.connect.side_effect = [
                         user_list_connection,
                         centralauth_connection,
+                        fi_precheck_connection,
+                        sv_precheck_connection,
                         fi_connection,
                         sv_connection,
                     ]
@@ -3045,7 +3102,7 @@ class NewpagesServiceSourceTests(SimpleTestCase):
                     )
 
         self.assertEqual([record["wiki_domain"] for record in records], ["sv.wikipedia.org", "fi.wikipedia.org"])
-        self.assertEqual(len(pymysql_mock.connect.call_args_list), 4)
+        self.assertEqual(len(pymysql_mock.connect.call_args_list), 6)
         self.assertEqual(
             [call.kwargs.get("database") for call in pymysql_mock.connect.call_args_list],
             [
@@ -3053,6 +3110,235 @@ class NewpagesServiceSourceTests(SimpleTestCase):
                 "centralauth_p",
                 "fiwiki_p",
                 "svwiki_p",
+                "fiwiki_p",
+                "svwiki_p",
+            ],
+        )
+        fi_precheck_sql, fi_precheck_params = (
+            fi_precheck_connection.cursor.return_value.__enter__.return_value.execute.call_args.args
+        )
+        self.assertIn("FROM recentchanges_userindex AS rc", fi_precheck_sql)
+        self.assertIn("JOIN actor_recentchanges AS a ON rc.rc_actor = a.actor_id", fi_precheck_sql)
+        self.assertIn("rc.rc_source = %s", fi_precheck_sql)
+        self.assertTrue(fi_precheck_sql.strip().endswith("LIMIT 1"))
+        self.assertEqual(fi_precheck_params, ["mw.new", "Alice A", "20260400000000"])
+        sv_precheck_sql, sv_precheck_params = (
+            sv_precheck_connection.cursor.return_value.__enter__.return_value.execute.call_args.args
+        )
+        self.assertIn("rc.rc_source = %s", sv_precheck_sql)
+        self.assertEqual(sv_precheck_params, ["mw.new", "Charlie C", "20260400000000"])
+
+    def test_fetch_newpage_records_via_replica_uses_recentchanges_precheck_for_recent_edited_pages(self) -> None:
+        fake_now = datetime(2026, 4, 7, 0, 0, 0, tzinfo=timezone.utc)
+        with patch("newpages.service_source.datetime") as datetime_mock:
+            datetime_mock.side_effect = lambda *args, **kwargs: datetime(*args, **kwargs)
+            datetime_mock.now.return_value = fake_now
+            datetime_mock.strptime = datetime.strptime
+            with self.settings(WIKIDATA_LOOKUP_BACKEND="toolforge_sql"):
+                with patch("newpages.service_source.urlopen") as urlopen_mock:
+                    urlopen_mock.side_effect = [
+                        _FakeHttpResponse(
+                            json.dumps(
+                                {
+                                    "sitematrix": {
+                                        "count": 10,
+                                        "0": {
+                                            "code": "de",
+                                            "site": [
+                                                {
+                                                    "url": "https://de.wikipedia.org",
+                                                    "dbname": "dewiki",
+                                                    "code": "wiki",
+                                                }
+                                            ],
+                                        },
+                                        "1": {
+                                            "code": "fi",
+                                            "site": [
+                                                {
+                                                    "url": "https://fi.wikipedia.org",
+                                                    "dbname": "fiwiki",
+                                                    "code": "wiki",
+                                                }
+                                            ],
+                                        },
+                                        "2": {
+                                            "code": "sv",
+                                            "site": [
+                                                {
+                                                    "url": "https://sv.wikipedia.org",
+                                                    "dbname": "svwiki",
+                                                    "code": "wiki",
+                                                }
+                                            ],
+                                        },
+                                        "3": {
+                                            "code": "en",
+                                            "site": [
+                                                {
+                                                    "url": "https://en.wikipedia.org",
+                                                    "dbname": "enwiki",
+                                                    "code": "wiki",
+                                                }
+                                            ],
+                                        },
+                                        "4": {
+                                            "code": "fr",
+                                            "site": [
+                                                {
+                                                    "url": "https://fr.wikipedia.org",
+                                                    "dbname": "frwiki",
+                                                    "code": "wiki",
+                                                }
+                                            ],
+                                        },
+                                        "5": {
+                                            "code": "es",
+                                            "site": [
+                                                {
+                                                    "url": "https://es.wikipedia.org",
+                                                    "dbname": "eswiki",
+                                                    "code": "wiki",
+                                                }
+                                            ],
+                                        },
+                                        "6": {
+                                            "code": "it",
+                                            "site": [
+                                                {
+                                                    "url": "https://it.wikipedia.org",
+                                                    "dbname": "itwiki",
+                                                    "code": "wiki",
+                                                }
+                                            ],
+                                        },
+                                        "7": {
+                                            "code": "nl",
+                                            "site": [
+                                                {
+                                                    "url": "https://nl.wikipedia.org",
+                                                    "dbname": "nlwiki",
+                                                    "code": "wiki",
+                                                }
+                                            ],
+                                        },
+                                        "8": {
+                                            "code": "pl",
+                                            "site": [
+                                                {
+                                                    "url": "https://pl.wikipedia.org",
+                                                    "dbname": "plwiki",
+                                                    "code": "wiki",
+                                                }
+                                            ],
+                                        },
+                                        "9": {
+                                            "code": "cs",
+                                            "site": [
+                                                {
+                                                    "url": "https://cs.wikipedia.org",
+                                                    "dbname": "cswiki",
+                                                    "code": "wiki",
+                                                }
+                                            ],
+                                        },
+                                    }
+                                }
+                            ).encode("utf-8")
+                        ),
+                        _FakeHttpResponse(
+                            json.dumps(
+                                {
+                                    "query": {
+                                        "general": {"articlepath": "/wiki/$1", "lang": "fi"},
+                                        "namespaces": {
+                                            "0": {"*": ""},
+                                            "2": {"*": "Käyttäjä", "canonical": "User"},
+                                        },
+                                        "namespacealiases": [{"id": 2, "*": "User"}],
+                                    }
+                                }
+                            ).encode("utf-8")
+                        ),
+                        _FakeHttpResponse(
+                            json.dumps(
+                                {
+                                    "query": {
+                                        "general": {"articlepath": "/wiki/$1", "lang": "fi"},
+                                        "namespaces": {
+                                            "0": {"*": ""},
+                                        },
+                                    }
+                                }
+                            ).encode("utf-8")
+                        ),
+                    ]
+
+                    with patch("newpages.service_source.pymysql") as pymysql_mock:
+                        user_list_connection = _fake_connection_batches(
+                            [
+                                [(901, None, None)],
+                                [(b"Alice_A",)],
+                                [],
+                            ]
+                        )
+                        centralauth_connection = _fake_connection(
+                            [
+                                ("Alice A", "fiwiki"),
+                            ]
+                        )
+                        fi_precheck_connection = _fake_connection([(1,)])
+                        fi_activity_connection = _fake_connection(
+                            [
+                                ("Alice A",),
+                            ]
+                        )
+                        fi_connection = _fake_connection(
+                            [
+                                (123, b"Turku", 0, "Q1757", "20260403010203"),
+                            ]
+                        )
+                        pymysql_mock.connect.side_effect = [
+                            user_list_connection,
+                            centralauth_connection,
+                            fi_precheck_connection,
+                            fi_activity_connection,
+                            fi_connection,
+                        ]
+
+                        records, _source_url = service_source.fetch_newpage_records(
+                            wiki_domains=[
+                                "cs.wikipedia.org",
+                                "de.wikipedia.org",
+                                "en.wikipedia.org",
+                                "es.wikipedia.org",
+                                "fi.wikipedia.org",
+                                "fr.wikipedia.org",
+                                "it.wikipedia.org",
+                                "nl.wikipedia.org",
+                                "pl.wikipedia.org",
+                                "sv.wikipedia.org",
+                            ],
+                            timestamp="202604",
+                            user_list_page=":w:fi:Wikipedia:Users",
+                            include_edited_pages=True,
+                        )
+
+        self.assertEqual(len(records), 1)
+        fi_precheck_sql, fi_precheck_params = (
+            fi_precheck_connection.cursor.return_value.__enter__.return_value.execute.call_args.args
+        )
+        self.assertIn("FROM recentchanges_userindex AS rc", fi_precheck_sql)
+        self.assertIn("JOIN actor_recentchanges AS a ON rc.rc_actor = a.actor_id", fi_precheck_sql)
+        self.assertIn("rc.rc_source IN (%s, %s)", fi_precheck_sql)
+        self.assertTrue(fi_precheck_sql.strip().endswith("LIMIT 1"))
+        self.assertEqual(
+            fi_precheck_params,
+            [
+                "mw.new",
+                "mw.edit",
+                "Alice A",
+                "20260400000000",
             ],
         )
 

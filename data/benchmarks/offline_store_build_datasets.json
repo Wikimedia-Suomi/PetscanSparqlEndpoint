@@ -1,0 +1,38 @@
+{
+  "datasets": [
+    {
+      "name": "gil_enriched_small",
+      "kind": "petscan",
+      "file_name": "petscan-43641756.json.gz",
+      "source_id": 43641756,
+      "expected_records": 2638,
+      "use_fake_api": true
+    },
+    {
+      "name": "parse_only_tiny",
+      "kind": "petscan",
+      "file_name": "petscan-43642782.json.gz",
+      "source_id": 43642782,
+      "expected_records": 23,
+      "use_fake_api": false
+    },
+    {
+      "name": "parse_only_large",
+      "kind": "petscan",
+      "file_name": "petscan-43706364.json.gz",
+      "source_id": 43706364,
+      "expected_records": 246380,
+      "use_fake_api": false
+    },
+    {
+      "name": "quarry_large",
+      "kind": "quarry",
+      "file_name": "quarry-103479-run-1084300.json.gz",
+      "source_id": 103479,
+      "store_id": 103479,
+      "query_db": "fiwiki_p",
+      "expected_records": 100000,
+      "use_fake_api": false
+    }
+  ]
+}

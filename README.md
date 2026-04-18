@@ -155,6 +155,30 @@ export PERFORMANCE_BASELINE_TESTS=1
 python manage.py test tests.test_performance_baseline
 ```
 
+### Run reproducible offline benchmark and save results
+
+This benchmark uses the bundled PetScan and Quarry example payloads, writes each
+run to a timestamped JSON file under `data/benchmarks/results/`, updates
+`latest.json`, and appends a compact summary row to `history.jsonl` so later
+runs are easy to compare.
+
+```bash
+./scripts/run_benchmark_example_datasets.sh --label pyoxigraph-0.5.6
+```
+
+Optional overrides:
+
+```bash
+./scripts/run_benchmark_example_datasets.sh \
+  --datasets parse_only_large,quarry_large \
+  --runs 3 \
+  --warmup 1 \
+  --output data/benchmarks/results/manual-large-run.json
+```
+
+The dataset list lives in `data/benchmarks/offline_store_build_datasets.json`,
+so adding or removing benchmark fixtures does not require command code changes.
+
 ## Environment Configuration
 
 Security-related Django settings are configured via environment variables:

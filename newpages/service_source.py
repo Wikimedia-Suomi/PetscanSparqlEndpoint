@@ -172,6 +172,7 @@ _MAX_API_PAGEIDS_PER_BATCH = 50
 _MAX_API_FULL_SCAN_WIKI_COUNT = 10
 _MIN_WIKI_COUNT_FOR_ACTIVE_USER_FILTER = 10
 _MAX_EDITED_PAGES_WINDOW = timedelta(days=60)
+_MAX_RECENTCHANGES_PRECHECK_WINDOW = timedelta(days=30)
 pymysql = cast(Any, enrichment_sql.pymysql)
 
 
@@ -1647,6 +1648,90 @@ def _recent_user_activity_threshold(timestamp: Optional[str]) -> str:
     return timestamp if timestamp > replica_window_floor else replica_window_floor
 
 
+def _timestamp_is_within_recentchanges_window(timestamp: str) -> bool:
+    return _lower_bound_datetime_for_timestamp(timestamp) >= (
+        datetime.now(timezone.utc) - _MAX_RECENTCHANGES_PRECHECK_WINDOW
+    )
+
+
+def _should_use_recentchanges_precheck_sql(
+    descriptor_count: int,
+    include_edited_pages: bool,
+    timestamp: Optional[str],
+) -> bool:
+    if descriptor_count < _MIN_WIKI_COUNT_FOR_ACTIVE_USER_FILTER:
+        return False
+    if not include_edited_pages:
+        return True
+    if timestamp is None:
+        return False
+    return _timestamp_is_within_recentchanges_window(timestamp)
+
+
+def _descriptor_has_recentchanges_for_users_sql(
+    descriptor: _WikiDescriptor,
+    user_names: List[str],
+    rc_sources: List[str],
+    timestamp: Optional[str],
+) -> bool:
+    if pymysql is None:
+        raise PetscanServiceError(
+            "PyMySQL is not installed. Install dependencies from requirements.txt first.",
+            public_message=_NEWPAGES_FETCH_PUBLIC_MESSAGE,
+        )
+
+    normalized_user_names = _actor_user_names(user_names)
+    normalized_rc_sources = [str(source or "").strip() for source in rc_sources if str(source or "").strip()]
+    if not normalized_user_names or not normalized_rc_sources:
+        return False
+
+    connection = None
+    try:
+        connection = pymysql.connect(**_replica_connect_kwargs(descriptor.dbname))
+        with connection.cursor() as cursor:
+            actor_placeholders = ", ".join(["%s"] * len(normalized_user_names))
+            if len(normalized_rc_sources) == 1:
+                sql = (
+                    "SELECT 1 "
+                    "FROM recentchanges_userindex AS rc "
+                    "JOIN actor_recentchanges AS a ON rc.rc_actor = a.actor_id "
+                    "WHERE rc.rc_source = %s "
+                    "AND a.actor_name IN ({})"
+                ).format(actor_placeholders)
+            else:
+                source_placeholders = ", ".join(["%s"] * len(normalized_rc_sources))
+                sql = (
+                    "SELECT 1 "
+                    "FROM recentchanges_userindex AS rc "
+                    "JOIN actor_recentchanges AS a ON rc.rc_actor = a.actor_id "
+                    "WHERE rc.rc_source IN ({}) "
+                    "AND a.actor_name IN ({})"
+                ).format(source_placeholders, actor_placeholders)
+
+            params: List[object] = list(normalized_rc_sources)
+            params.extend(normalized_user_names)
+            if descriptor.domain == _COMMONS_DOMAIN:
+                sql += " AND rc.rc_namespace <> %s"
+                params.append(_COMMONS_FILE_NAMESPACE)
+            if timestamp is not None:
+                sql += " AND rc.rc_timestamp >= %s"
+                params.append(timestamp)
+            sql += " LIMIT 1"
+
+            cursor.execute(sql, params)
+            rows = _fetched_row_list(cursor.fetchall())
+    except Exception as exc:
+        raise PetscanServiceError(
+            "Failed to precheck recentchanges activity for {}: {}".format(descriptor.domain, exc),
+            public_message=_NEWPAGES_FETCH_PUBLIC_MESSAGE,
+        ) from exc
+    finally:
+        if connection is not None:
+            connection.close()
+
+    return bool(rows)
+
+
 def _filter_user_names_for_recent_activity_sql(
     descriptor: _WikiDescriptor,
     user_names: List[str],
@@ -2533,6 +2618,12 @@ def fetch_newpage_records(
             if not filtered_user_names:
                 raise ValueError("user_list_page must link to at least one CentralAuth user page.")
 
+            use_recentchanges_precheck = _should_use_recentchanges_precheck_sql(
+                len(descriptors),
+                normalized_include_edited_pages,
+                normalized_timestamp,
+            )
+            precheck_sources = ["mw.new", "mw.edit"] if normalized_include_edited_pages else ["mw.new"]
             filtered_descriptors: List[_WikiDescriptor] = []
             for descriptor in descriptors:
                 registered_user_names = _registered_user_names_for_descriptor(
@@ -2541,6 +2632,13 @@ def fetch_newpage_records(
                     dbnames_by_user,
                 )
                 if not registered_user_names:
+                    continue
+                if use_recentchanges_precheck and not _descriptor_has_recentchanges_for_users_sql(
+                    descriptor,
+                    registered_user_names,
+                    precheck_sources,
+                    normalized_timestamp,
+                ):
                     continue
                 if normalized_include_edited_pages:
                     activity_threshold = _recent_user_activity_threshold(normalized_timestamp)
