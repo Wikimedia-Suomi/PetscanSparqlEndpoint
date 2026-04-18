@@ -783,18 +783,6 @@ def _incubator_wiki_group_for_title(page_title: str) -> str:
     return _INCUBATOR_WIKI_GROUP_BY_CODE.get(wiki_project, str(wiki_project).strip().lower() or "wikimedia")
 
 
-def _incubator_site_url_for_title(page_title: str) -> Optional[str]:
-    wiki_project, lang_code, _page_name = _split_incubator_title(page_title)
-    normalized_project = str(wiki_project or "").strip()
-    normalized_lang = str(lang_code or "").strip()
-    if not normalized_project or not normalized_lang:
-        return None
-    return "https://{}/wiki/{}".format(
-        _INCUBATOR_DOMAIN,
-        _quote_page_path("{}/{}/".format(normalized_project, normalized_lang)),
-    )
-
-
 def _normalize_api_page_title(title: Any, namespace_id: int, siteinfo: _SiteInfo) -> str:
     normalized_title = normalize_page_title(title)
     if not normalized_title or namespace_id <= 0:
@@ -2555,9 +2543,6 @@ def _build_record(
         incubator_project, incubator_lang_code, _page_name = _split_incubator_title(core_title)
         if incubator_lang_code:
             lang_code = incubator_lang_code
-        incubator_site_url = _incubator_site_url_for_title(core_title)
-        if incubator_site_url is not None:
-            site_url = incubator_site_url
         if incubator_project:
             wiki_group = _incubator_wiki_group_for_title(core_title)
     record: Dict[str, Any] = {

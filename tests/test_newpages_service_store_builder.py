@@ -73,6 +73,61 @@ class NewpagesServiceStoreBuilderTests(ServiceTestCase):
         self.assertEqual(field_map["site_url"]["predicate"], "http://schema.org/isPartOf")
         self.assertNotIn("page_url", field_map)
 
+    def test_store_uses_root_site_url_for_incubator_records(self) -> None:
+        if newpages_store_builder.Store is None:
+            self.skipTest("pyoxigraph is not installed")
+
+        store_id = NEWPAGES_TEST_STORE_ID + 2
+        self._cleanup_store(store_id)
+
+        newpages_store_builder.build_store(
+            store_id=store_id,
+            records=[
+                {
+                    "page_url": "https://incubator.wikimedia.org/wiki/Wp/sms/Uusi_sivu",
+                    "page_id": 702,
+                    "page_title": "Wp/sms/Uusi_sivu",
+                    "page_label": "Wp/sms/Uusi sivu",
+                    "namespace": 0,
+                    "created_timestamp": "2026-04-05T07:08:09Z",
+                    "site_url": "https://incubator.wikimedia.org/",
+                    "wiki_domain": "incubator.wikimedia.org",
+                    "wiki_dbname": "incubatorwiki",
+                    "wiki_group": "wikipedia",
+                    "lang_code": "sms",
+                    "wikidata_id": "Q123",
+                    "wikidata_entity": "http://www.wikidata.org/entity/Q123",
+                }
+            ],
+            source_url="https://incubator.wikimedia.org/wiki/Special:Log/create",
+        )
+        store_instance = newpages_store_builder.Store(str(store.store_path(store_id)))
+
+        self.assertTrue(
+            store_instance.query(
+                """
+                PREFIX schema: <http://schema.org/>
+                PREFIX wikibase: <http://wikiba.se/ontology#>
+                ASK {
+                  <https://incubator.wikimedia.org/wiki/Wp/sms/Uusi_sivu>
+                    schema:isPartOf <https://incubator.wikimedia.org/> .
+                  <https://incubator.wikimedia.org/> wikibase:wikiGroup "wikipedia" .
+                }
+                """
+            )
+        )
+        self.assertFalse(
+            store_instance.query(
+                """
+                PREFIX schema: <http://schema.org/>
+                ASK {
+                  <https://incubator.wikimedia.org/wiki/Wp/sms/Uusi_sivu>
+                    schema:isPartOf <https://incubator.wikimedia.org/wiki/Wp/sms/> .
+                }
+                """
+            )
+        )
+
     def test_store_writes_current_timestamp_for_edited_page_rows(self) -> None:
         if newpages_store_builder.Store is None:
             self.skipTest("pyoxigraph is not installed")

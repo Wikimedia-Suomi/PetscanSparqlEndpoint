@@ -2440,7 +2440,7 @@ class NewpagesServiceSourceTests(SimpleTestCase):
             "https://incubator.wikimedia.org/wiki/Wp/sms/Uusi_sivu",
         )
         self.assertEqual(records[0]["lang_code"], "sms")
-        self.assertEqual(records[0]["site_url"], "https://incubator.wikimedia.org/wiki/Wp/sms/")
+        self.assertEqual(records[0]["site_url"], "https://incubator.wikimedia.org/")
         self.assertEqual(records[0]["wiki_group"], "wikipedia")
         self.assertEqual(records[0]["wikidata_id"], "Q123")
 
@@ -3451,7 +3451,7 @@ class NewpagesServiceSourceTests(SimpleTestCase):
         self.assertEqual(len(records), 1)
         self.assertEqual(records[0]["page_title"], "Wp/sms/Uusi_sivu")
         self.assertEqual(records[0]["lang_code"], "sms")
-        self.assertEqual(records[0]["site_url"], "https://incubator.wikimedia.org/wiki/Wp/sms/")
+        self.assertEqual(records[0]["site_url"], "https://incubator.wikimedia.org/")
         self.assertEqual(records[0]["wiki_group"], "wikipedia")
         self.assertEqual(records[0]["wikidata_id"], "Q123")
 
