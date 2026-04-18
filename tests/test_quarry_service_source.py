@@ -158,6 +158,37 @@ class QuarryServiceSourceTests(ServiceTestCase):
             [{"Name_fi_": "Turku", "a_b": 1, "a_b_2": 2}],
         )
 
+    def test_extract_records_fills_missing_values_and_keeps_extra_columns(self) -> None:
+        payload = {
+            "headers": ["title", "namespace"],
+            "rows": [
+                ["Example"],
+                ["Second", 0, "Q123"],
+            ],
+        }
+
+        self.assertEqual(
+            service_source.extract_records(payload),
+            [
+                {"title": "Example", "namespace": None},
+                {"title": "Second", "namespace": 0, "column_3": "Q123"},
+            ],
+        )
+
+    def test_extract_records_applies_limit_before_converting_later_rows(self) -> None:
+        payload = {
+            "headers": ["title"],
+            "rows": [
+                ["Example"],
+                object(),
+            ],
+        }
+
+        self.assertEqual(
+            service_source.extract_records(payload, limit=1),
+            [{"title": "Example"}],
+        )
+
     def test_normalize_load_limit_supports_blank_and_positive_values(self) -> None:
         self.assertIsNone(service_source.normalize_load_limit(""))
         self.assertEqual(service_source.normalize_load_limit("25"), 25)

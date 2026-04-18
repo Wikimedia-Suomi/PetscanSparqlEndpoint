@@ -4,8 +4,9 @@ import gzip
 import html as html_lib
 import json
 import re
+from collections.abc import Mapping, Sequence
 from pathlib import Path
-from typing import Any, Dict, List, Mapping, Optional, Sequence, Tuple, TypedDict
+from typing import Any, Dict, List, Optional, Tuple, TypedDict
 from urllib.request import Request, urlopen
 
 from django.conf import settings
@@ -304,26 +305,41 @@ def _normalize_headers(headers: Sequence[Any]) -> List[str]:
     return _normalized_unique_names(headers)
 
 
+def _mapping_row_to_record(row: Mapping[Any, Any]) -> Dict[str, Any]:
+    items = list(row.items())
+    normalized_keys = _normalized_unique_names([key for key, _value in items])
+    return {
+        normalized_keys[index]: value
+        for index, (_key, value) in enumerate(items)
+    }
+
+
+def _sequence_row_to_record(
+    headers: Sequence[str],
+    header_count: int,
+    row: Sequence[Any],
+) -> Dict[str, Any]:
+    row_length = len(row)
+    record = dict(zip(headers, row))
+
+    if row_length < header_count:
+        for index in range(row_length, header_count):
+            record[headers[index]] = None
+        return record
+
+    for index in range(header_count, row_length):
+        record["column_{}".format(index + 1)] = row[index]
+    return record
+
+
 def _row_to_record(headers: Sequence[str], row: Any) -> Dict[str, Any]:
     if isinstance(row, Mapping):
-        items = list(row.items())
-        normalized_keys = _normalized_unique_names([key for key, _value in items])
-        return {
-            normalized_keys[index]: value
-            for index, (_key, value) in enumerate(items)
-        }
+        return _mapping_row_to_record(row)
 
-    if not isinstance(row, Sequence) or isinstance(row, (str, bytes, bytearray)):
+    if isinstance(row, (str, bytes, bytearray)) or not isinstance(row, Sequence):
         raise PetscanServiceError("Unexpected Quarry row format (expected array rows).")
 
-    record = {}  # type: Dict[str, Any]
-    for index, header in enumerate(headers):
-        record[header] = row[index] if index < len(row) else None
-
-    for index in range(len(headers), len(row)):
-        record["column_{}".format(index + 1)] = row[index]
-
-    return record
+    return _sequence_row_to_record(headers, len(headers), row)
 
 
 def extract_records(payload: Dict[str, Any], limit: Optional[int] = None) -> List[Dict[str, Any]]:
@@ -336,8 +352,17 @@ def extract_records(payload: Dict[str, Any], limit: Optional[int] = None) -> Lis
         raise PetscanServiceError("Unexpected Quarry JSON format (missing rows).")
 
     normalized_headers = _normalize_headers(headers)
-    records = [_row_to_record(normalized_headers, row) for row in rows]
+    header_count = len(normalized_headers)
 
-    if limit is not None:
-        return records[:limit]
+    if limit is not None and limit < len(rows):
+        rows = rows[:limit]
+
+    records = []  # type: List[Dict[str, Any]]
+    append_record = records.append
+    for row in rows:
+        row_type = type(row)
+        if row_type is list or row_type is tuple:
+            append_record(_sequence_row_to_record(normalized_headers, header_count, row))
+            continue
+        append_record(_row_to_record(normalized_headers, row))
     return records
