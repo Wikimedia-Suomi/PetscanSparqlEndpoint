@@ -28,17 +28,14 @@ import {
   }
 
   var createApp = window.Vue.createApp;
-  var hostname = window.location && window.location.hostname ? window.location.hostname.toLowerCase() : "";
-  var isLocalDevHost = hostname === "localhost" || hostname === "127.0.0.1";
   var petscanBasePath = "/petscan";
   var petscanStructurePath = petscanBasePath + "/api/structure";
   var petscanSparqlBasePath = petscanBasePath + "/sparql/";
-  var defaultPsid = isLocalDevHost ? "43641756" : "";
 
   var app = createApp({
     data: function () {
       return {
-        psid: defaultPsid,
+        psid: "",
         query: defaultQueryText(),
         refreshBeforeQuery: false,
         petscanGetParams: "",

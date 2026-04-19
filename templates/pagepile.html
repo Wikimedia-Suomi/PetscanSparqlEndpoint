@@ -36,6 +36,7 @@
               type="number"
               inputmode="numeric"
               min="1"
+              placeholder="112306"
               required
               v-model.trim="pagepileId"
               aria-describedby="pagepile-id-help"
@@ -68,6 +69,8 @@
 
             <p class="help help-links" v-if="pagepileId">
               Source data:
+              <a :href="pagepileHtmlUrl" target="_blank" rel="noopener noreferrer">Open PagePile [[ pagepileId ]]</a>
+              <span aria-hidden="true">|</span>
               <a :href="pagepileJsonUrl" target="_blank" rel="noopener noreferrer">Open PagePile [[ pagepileId ]] JSON</a>
             </p>
             <p class="help" v-if="jsonResultCount !== null">
@@ -92,7 +95,7 @@
           <div class="actions">
             <a
               class="button-link secondary"
-              href="{{ pagepile_example_query_url }}"
+              data-example-query-source="pagepile"
               target="_blank"
               rel="noopener noreferrer"
             >
@@ -352,6 +355,7 @@
     </main>
     {% endverbatim %}
 
+    <script type="module" src="{% static 'js/example_query_links.js' %}?v=20260419-01"></script>
     <script src="{% static 'vendor/vue.global.prod.min.js' %}?v=3.5.22"></script>
     <script type="module" src="{% static 'js/pagepile_app.js' %}?v=20260419-01"></script>
   </body>

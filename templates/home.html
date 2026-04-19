@@ -31,7 +31,7 @@
               <a class="button-link primary" href="/petscan/">Add PetScan query</a>
               <a
                 class="button-link secondary"
-                href="{{ petscan_example_query_url }}"
+                data-example-query-source="petscan"
                 target="_blank"
                 rel="noopener noreferrer"
               >
@@ -53,7 +53,7 @@
               <a class="button-link primary" href="/quarry/">Add Quarry query</a>
               <a
                 class="button-link secondary"
-                href="{{ quarry_example_query_url }}"
+                data-example-query-source="quarry"
                 target="_blank"
                 rel="noopener noreferrer"
               >
@@ -73,7 +73,7 @@
               <a class="button-link primary" href="/pagepile/">Add PagePile source</a>
               <a
                 class="button-link secondary"
-                href="{{ pagepile_example_query_url }}"
+                data-example-query-source="pagepile"
                 target="_blank"
                 rel="noopener noreferrer"
               >
@@ -94,7 +94,7 @@
               <a class="button-link primary" href="/incubator/">Add Incubator source</a>
               <a
                 class="button-link secondary"
-                href="{{ incubator_example_query_url }}"
+                data-example-query-source="incubator"
                 target="_blank"
                 rel="noopener noreferrer"
               >
@@ -114,7 +114,7 @@
               <a class="button-link primary" href="/newpages/">Add New Pages source</a>
               <a
                 class="button-link secondary"
-                href="{{ newpages_example_query_url }}"
+                data-example-query-source="newpages"
                 target="_blank"
                 rel="noopener noreferrer"
               >
@@ -129,5 +129,7 @@
         Source code: <a href="https://github.com/Wikimedia-Suomi/PetscanSparqlEndpoint" target="_blank" rel="noopener noreferrer">github.com/Wikimedia-Suomi/PetscanSparqlEndpoint</a>
       </p>
     </main>
+
+    <script type="module" src="{% static 'js/example_query_links.js' %}?v=20260419-01"></script>
   </body>
 </html>

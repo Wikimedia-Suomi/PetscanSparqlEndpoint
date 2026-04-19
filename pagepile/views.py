@@ -8,8 +8,6 @@ from django.http import HttpRequest, HttpResponse, JsonResponse
 from django.shortcuts import render
 from django.views.decorators.csrf import csrf_exempt
 
-from petscan_endpoint.example_queries import build_pagepile_example_query_url
-
 from . import service as pagepile_service
 from . import service_source
 
@@ -36,13 +34,7 @@ class SparqlRequest(RequestContext):
 
 
 def index(request: HttpRequest) -> HttpResponse:
-    return render(
-        request,
-        "pagepile.html",
-        {
-            "pagepile_example_query_url": build_pagepile_example_query_url(),
-        },
-    )
+    return render(request, "pagepile.html")
 
 
 def _parse_bool(value: Any, default: bool = False) -> bool:

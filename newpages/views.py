@@ -8,8 +8,6 @@ from django.http import HttpRequest, HttpResponse, JsonResponse
 from django.shortcuts import render
 from django.views.decorators.csrf import csrf_exempt
 
-from petscan_endpoint.example_queries import build_newpages_example_query_url
-
 from . import service as newpages_service
 from . import service_source
 
@@ -43,7 +41,6 @@ def index(request: HttpRequest) -> HttpResponse:
         request,
         "newpages.html",
         {
-            "newpages_example_query_url": build_newpages_example_query_url(),
             "wiki_help_text": (
                 "Use one or more comma-separated Wikimedia wiki identifiers such as "
                 "fi, b:fi, commons, wikidata, meta, or incubator."

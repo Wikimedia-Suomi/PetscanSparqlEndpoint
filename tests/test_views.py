@@ -58,44 +58,14 @@ class ApiViewTests(SimpleTestCase):
         self.assertContains(response, 'href="https://incubator.wikimedia.org"', html=False)
         self.assertContains(response, 'href="https://pagepile.toolforge.org"', html=False)
         self.assertContains(response, "Example query")
+        self.assertContains(response, 'data-example-query-source="petscan"', html=False)
+        self.assertContains(response, 'data-example-query-source="quarry"', html=False)
+        self.assertContains(response, 'data-example-query-source="pagepile"', html=False)
+        self.assertContains(response, 'data-example-query-source="incubator"', html=False)
+        self.assertContains(response, 'data-example-query-source="newpages"', html=False)
         self.assertContains(
             response,
-            'href="https://qlever.wikidata.dbis.rwth-aachen.de/wikidata/?query=',
-            html=False,
-        )
-        self.assertContains(
-            response,
-            'href="https://qlever.dev/wikimedia-commons?query=',
-            html=False,
-        )
-        self.assertContains(
-            response,
-            "https%3A//sparqlbridge.toolforge.org/petscan/sparql/psid%3D43641756",
-            html=False,
-        )
-        self.assertContains(
-            response,
-            "https%3A//sparqlbridge.toolforge.org/quarry/sparql/quarry_id%3D103960",
-            html=False,
-        )
-        self.assertContains(
-            response,
-            'href="https://qlever.dev/wikimedia-commons?query=',
-            html=False,
-        )
-        self.assertContains(
-            response,
-            "https%3A//sparqlbridge.toolforge.org/incubator/sparql/namespace%3D0%26page_prefix%3DWp/sms",
-            html=False,
-        )
-        self.assertContains(
-            response,
-            "https%3A//sparqlbridge.toolforge.org/newpages/sparql/wiki%3Dfi%26timestamp%3D20260401000000",
-            html=False,
-        )
-        self.assertContains(
-            response,
-            "https%3A//sparqlbridge.toolforge.org/pagepile/sparql/pagepile_id%3D112306%26limit%3D50",
+            "js/example_query_links.js",
             html=False,
         )
         self.assertContains(
@@ -117,6 +87,7 @@ class ApiViewTests(SimpleTestCase):
         self.assertContains(response, 'class="card source-info-card"', html=False)
         self.assertContains(response, 'aria-labelledby="petscan-info-heading"', html=False)
         self.assertContains(response, '<h2 id="petscan-info-heading">About PetScan</h2>', html=True)
+        self.assertContains(response, 'placeholder="43641756"', html=False)
         self.assertContains(response, '<th scope="col">Cardinality</th>', html=True)
         self.assertContains(
             response,
@@ -125,9 +96,10 @@ class ApiViewTests(SimpleTestCase):
         )
         self.assertContains(response, 'href="https://meta.wikimedia.org/wiki/PetScan"', html=False)
         self.assertContains(response, "Example query", html=False)
+        self.assertContains(response, 'data-example-query-source="petscan"', html=False)
         self.assertContains(
             response,
-            "https%3A//sparqlbridge.toolforge.org/petscan/sparql/psid%3D43641756",
+            "js/example_query_links.js",
             html=False,
         )
 
@@ -151,9 +123,10 @@ class ApiViewTests(SimpleTestCase):
         )
         self.assertContains(response, 'href="https://meta.wikimedia.org/wiki/Research:Quarry"', html=False)
         self.assertContains(response, "Example query", html=False)
+        self.assertContains(response, 'data-example-query-source="quarry"', html=False)
         self.assertContains(
             response,
-            "https%3A//sparqlbridge.toolforge.org/quarry/sparql/quarry_id%3D103960",
+            "js/example_query_links.js",
             html=False,
         )
 

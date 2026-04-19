@@ -8,8 +8,6 @@ from django.http import HttpRequest, HttpResponse, JsonResponse
 from django.shortcuts import render
 from django.views.decorators.csrf import csrf_exempt
 
-from petscan_endpoint.example_queries import build_petscan_example_query_url
-
 from . import service as petscan_service
 
 logger = logging.getLogger(__name__)
@@ -35,13 +33,7 @@ class SparqlRequest(RequestContext):
 
 
 def index(request: HttpRequest) -> HttpResponse:
-    return render(
-        request,
-        "index.html",
-        {
-            "petscan_example_query_url": build_petscan_example_query_url(),
-        },
-    )
+    return render(request, "index.html")
 
 
 def _parse_psid(value: Any) -> int:

@@ -41,18 +41,17 @@ class PagepileApiViewTests(SimpleTestCase):
         self.assertContains(response, '<li aria-current="page">PagePile</li>', html=True)
         self.assertContains(response, "<h1>PagePile SPARQL endpoint</h1>", html=True)
         self.assertContains(response, '<h2 id="pagepile-info-heading">About PagePile</h2>', html=True)
+        self.assertContains(response, 'placeholder="112306"', html=False)
         self.assertContains(response, "stores reusable lists of Wikimedia pages on a single wiki", html=False)
         self.assertContains(response, "up to <code>300000</code> PagePile pages", html=False)
+        self.assertContains(response, "Open PagePile [[ pagepileId ]]", html=False)
         self.assertContains(response, "Open PagePile [[ pagepileId ]] JSON", html=False)
+        self.assertContains(response, '<span aria-hidden="true">|</span>', html=True)
         self.assertContains(response, "Example query", html=False)
+        self.assertContains(response, 'data-example-query-source="pagepile"', html=False)
         self.assertContains(
             response,
-            'href="https://qlever.wikidata.dbis.rwth-aachen.de/wikidata/?query=',
-            html=False,
-        )
-        self.assertContains(
-            response,
-            "https%3A//sparqlbridge.toolforge.org/pagepile/sparql/pagepile_id%3D112306%26limit%3D50",
+            "js/example_query_links.js",
             html=False,
         )
 

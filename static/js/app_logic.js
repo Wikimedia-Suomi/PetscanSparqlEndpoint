@@ -451,6 +451,17 @@ export function buildPagepileJsonUrl(pagepileIdValue) {
   );
 }
 
+export function buildPagepileHtmlUrl(pagepileIdValue) {
+  var pagepileId = String(pagepileIdValue || "").trim();
+  if (!pagepileId) {
+    return "https://pagepile.toolforge.org/";
+  }
+  return (
+    "https://pagepile.toolforge.org/api.php?action=get_data&id="
+    + encodeURIComponent(pagepileId)
+  );
+}
+
 export function buildIncubatorCategoryUrl() {
   return "https://incubator.wikimedia.org/wiki/Category:Maintenance:Wikidata_interwiki_links";
 }

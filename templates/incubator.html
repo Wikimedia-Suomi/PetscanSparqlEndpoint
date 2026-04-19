@@ -146,7 +146,7 @@
           <div class="actions">
             <a
               class="button-link secondary"
-              href="{{ incubator_example_query_url }}"
+              data-example-query-source="incubator"
               target="_blank"
               rel="noopener noreferrer"
             >
@@ -402,6 +402,7 @@
     </main>
     {% endverbatim %}
 
+    <script type="module" src="{% static 'js/example_query_links.js' %}?v=20260419-01"></script>
     <script src="{% static 'vendor/vue.global.prod.min.js' %}?v=3.5.22"></script>
     <script type="module" src="{% static 'js/incubator_app.js' %}?v=20260402-01"></script>
   </body>

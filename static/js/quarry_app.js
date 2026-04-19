@@ -30,19 +30,16 @@ import {
   }
 
   var createApp = window.Vue.createApp;
-  var hostname = window.location && window.location.hostname ? window.location.hostname.toLowerCase() : "";
-  var isLocalDevHost = hostname === "localhost" || hostname === "127.0.0.1";
   var quarryBasePath = "/quarry";
   var quarryStructurePath = quarryBasePath + "/api/structure";
   var quarrySparqlBasePath = quarryBasePath + "/sparql/";
-  var defaultQuarryId = isLocalDevHost ? "103479" : "";
   var quarryRowIdVariableName = "quarry_row_id";
   var quarryExtraPrefixEntries = [[QUARRY_QUERY_PREFIX, QUARRY_QUERY_BASE]];
 
   var app = createApp({
     data: function () {
       return {
-        quarryId: defaultQuarryId,
+        quarryId: "",
         query: buildDefaultQueryTextHelper(
           QUARRY_ONTOLOGY_PREFIX,
           QUARRY_ONTOLOGY_BASE,

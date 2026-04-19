@@ -8,8 +8,6 @@ from django.http import HttpRequest, HttpResponse, JsonResponse
 from django.shortcuts import render
 from django.views.decorators.csrf import csrf_exempt
 
-from petscan_endpoint.example_queries import build_incubator_example_query_url
-
 from . import service as incubator_service
 from . import service_source
 
@@ -43,7 +41,6 @@ def index(request: HttpRequest) -> HttpResponse:
         request,
         "incubator.html",
         {
-            "incubator_example_query_url": build_incubator_example_query_url(),
             "namespace_options": service_source.available_incubator_namespace_options(),
             "namespace_help_text": _namespace_help_text(),
             "replica_only_filters_enabled": _replica_only_filters_enabled(),

@@ -59,14 +59,10 @@ class IncubatorApiViewTests(SimpleTestCase):
         self.assertContains(response, "hosts test wikis for new language editions", html=False)
         self.assertContains(response, "Open Incubator category", html=False)
         self.assertContains(response, "Example query", html=False)
+        self.assertContains(response, 'data-example-query-source="incubator"', html=False)
         self.assertContains(
             response,
-            'href="https://qlever.wikidata.dbis.rwth-aachen.de/wikidata/?query=',
-            html=False,
-        )
-        self.assertContains(
-            response,
-            "https%3A//sparqlbridge.toolforge.org/incubator/sparql/namespace%3D0%26page_prefix%3DWp/sms",
+            "js/example_query_links.js",
             html=False,
         )
         self.assertContains(response, "Namespaces", html=False)

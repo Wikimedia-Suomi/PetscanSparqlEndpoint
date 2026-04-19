@@ -8,8 +8,6 @@ from django.http import HttpRequest, HttpResponse, JsonResponse
 from django.shortcuts import render
 from django.views.decorators.csrf import csrf_exempt
 
-from petscan_endpoint.example_queries import build_quarry_example_query_url
-
 from . import service as quarry_service
 from . import service_source as quarry_source
 
@@ -36,13 +34,7 @@ class SparqlRequest(RequestContext):
 
 
 def index(request: HttpRequest) -> HttpResponse:
-    return render(
-        request,
-        "quarry.html",
-        {
-            "quarry_example_query_url": build_quarry_example_query_url(),
-        },
-    )
+    return render(request, "quarry.html")
 
 
 def _parse_quarry_id(value: Any) -> int:

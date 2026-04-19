@@ -66,9 +66,10 @@ class NewpagesViewTests(SimpleTestCase):
         self.assertContains(response, "API mode scans up to", html=False)
         self.assertContains(response, "SQL mode is capped at", html=False)
         self.assertNotContains(response, "{% verbatim %}", html=False)
+        self.assertContains(response, 'data-example-query-source="newpages"', html=False)
         self.assertContains(
             response,
-            "https%3A//sparqlbridge.toolforge.org/newpages/sparql/wiki%3Dfi%26timestamp%3D20260401000000",
+            "js/example_query_links.js",
             html=False,
         )
 

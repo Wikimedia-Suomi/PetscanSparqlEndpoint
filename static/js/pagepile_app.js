@@ -1,6 +1,7 @@
 import {
   OPEN_QUERY_TARGETS,
   buildFederatedQueryText as buildFederatedQueryTextHelper,
+  buildPagepileHtmlUrl as buildPagepileHtmlUrlHelper,
   buildNamedServiceParamPath as buildNamedServiceParamPathHelper,
   buildOpenQueryUrl as buildOpenQueryUrlHelper,
   buildPagepileDefaultQueryText as buildPagepileDefaultQueryTextHelper,
@@ -118,6 +119,9 @@ import {
       },
       pagepileJsonUrl: function () {
         return buildPagepileJsonUrlHelper(this.pagepileId);
+      },
+      pagepileHtmlUrl: function () {
+        return buildPagepileHtmlUrlHelper(this.pagepileId);
       },
       jsonResultCount: function () {
         var currentPagepileId = String(this.pagepileId || "").trim();

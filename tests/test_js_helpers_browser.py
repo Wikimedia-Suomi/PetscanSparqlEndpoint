@@ -9,7 +9,13 @@ from tests.playwright_support import goto_app, managed_page
 pytestmark = [pytest.mark.jshelpers]
 
 
-def _call_js_helper(page: Page, live_server: Any, export_name: str, args: Sequence[Any]) -> Any:
+def _call_js_module_export(
+    page: Page,
+    live_server: Any,
+    module_path: str,
+    export_name: str,
+    args: Sequence[Any],
+) -> Any:
     goto_app(page, live_server)
     return page.evaluate(
         """
@@ -19,10 +25,20 @@ def _call_js_helper(page: Page, live_server: Any, export_name: str, args: Sequen
         }
         """,
         {
-            "moduleUrl": "{}/static/js/app_logic.js?v=test".format(live_server.url),
+            "moduleUrl": "{}/{}".format(live_server.url, module_path.lstrip("/")),
             "exportName": export_name,
             "args": list(args),
         },
+    )
+
+
+def _call_js_helper(page: Page, live_server: Any, export_name: str, args: Sequence[Any]) -> Any:
+    return _call_js_module_export(
+        page,
+        live_server,
+        "/static/js/app_logic.js?v=test",
+        export_name,
+        args,
     )
 
 
@@ -199,6 +215,36 @@ def test_js_helper_build_quarry_urls(page: Page, live_server: Any) -> None:
 
     assert query_url == "https://quarry.wmcloud.org/query/103479"
     assert json_url == "https://quarry.wmcloud.org/run/1084251/output/0/json"
+
+
+def test_js_helper_build_pagepile_urls(page: Page, live_server: Any) -> None:
+    json_url = _call_js_helper(page, live_server, "buildPagepileJsonUrl", ["112306"])
+    html_url = _call_js_helper(page, live_server, "buildPagepileHtmlUrl", ["112306"])
+
+    assert json_url == "https://pagepile.toolforge.org/api.php?id=112306&action=get_data&doit&format=json"
+    assert html_url == "https://pagepile.toolforge.org/api.php?action=get_data&id=112306"
+
+
+def test_js_helper_build_example_query_urls(page: Page, live_server: Any) -> None:
+    petscan_url = _call_js_module_export(
+        page,
+        live_server,
+        "/static/js/example_query_urls.js?v=test",
+        "buildExampleQueryUrl",
+        ["petscan"],
+    )
+    quarry_url = _call_js_module_export(
+        page,
+        live_server,
+        "/static/js/example_query_urls.js?v=test",
+        "buildExampleQueryUrl",
+        ["quarry"],
+    )
+
+    assert str(petscan_url).startswith("https://qlever.wikidata.dbis.rwth-aachen.de/wikidata/?query=")
+    assert "psid%3D43641756" in str(petscan_url)
+    assert str(quarry_url).startswith("https://qlever.dev/wikimedia-commons?query=")
+    assert "quarry_id%3D103960" in str(quarry_url)
 
 
 def test_js_helper_normalize_newpages_user_list_page_from_direct_url(page: Page, live_server: Any) -> None:

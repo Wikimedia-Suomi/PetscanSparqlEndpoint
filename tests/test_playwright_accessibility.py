@@ -176,12 +176,14 @@ def _stub_quarry_select_query_success(page: Page) -> None:
 
 def _load_petscan_structure(page: Page, live_server: Any) -> None:
     goto_app(page, live_server)
+    page.get_by_label("PetScan ID (psid)").fill(str(PETSCAN_STRUCTURE_RESPONSE["psid"]))
     page.get_by_role("button", name="Load data").click()
     expect(page.locator(".status.is-success")).to_contain_text("Data structure loaded")
 
 
 def _load_quarry_structure(page: Page, live_server: Any) -> None:
     goto_quarry_app(page, live_server)
+    page.get_by_label("Quarry ID").fill(str(QUARRY_STRUCTURE_RESPONSE["quarry_id"]))
     page.get_by_role("button", name="Load data").click()
     expect(page.locator(".status.is-success")).to_contain_text("Quarry data loaded")
 

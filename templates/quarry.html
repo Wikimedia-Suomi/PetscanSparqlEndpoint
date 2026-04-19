@@ -36,6 +36,7 @@
               type="number"
               inputmode="numeric"
               min="1"
+              placeholder="103479"
               required
               v-model.trim="quarryId"
               aria-describedby="quarry-id-help"
@@ -96,7 +97,7 @@
           <div class="actions">
             <a
               class="button-link secondary"
-              href="{{ quarry_example_query_url }}"
+              data-example-query-source="quarry"
               target="_blank"
               rel="noopener noreferrer"
             >
@@ -356,6 +357,7 @@
     </main>
     {% endverbatim %}
 
+    <script type="module" src="{% static 'js/example_query_links.js' %}?v=20260419-01"></script>
     <script src="{% static 'vendor/vue.global.prod.min.js' %}?v=3.5.22"></script>
     <script type="module" src="{% static 'js/quarry_app.js' %}?v=20260321-01"></script>
   </body>

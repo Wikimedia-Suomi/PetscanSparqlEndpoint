@@ -83,6 +83,7 @@ def _stub_select_query_success(page: Page) -> None:
 
 def _load_structure_successfully(page: Page, live_server: Any) -> None:
     goto_app(page, live_server)
+    page.get_by_label("PetScan ID (psid)").fill(str(STRUCTURE_RESPONSE["psid"]))
     page.get_by_role("button", name="Load data").click()
     expect(page.locator(".status.is-success")).to_contain_text("Data structure loaded")
 
@@ -97,8 +98,10 @@ def test_playwright_smoke_can_load_structure(page: Page, live_server: Any) -> No
     _stub_structure_success(page)
 
     goto_app(page, live_server)
-    expect(page.get_by_label("PetScan ID (psid)")).to_have_value("43641756")
+    expect(page.get_by_label("PetScan ID (psid)")).to_have_value("")
+    expect(page.get_by_label("PetScan ID (psid)")).to_have_attribute("placeholder", "43641756")
 
+    page.get_by_label("PetScan ID (psid)").fill(str(STRUCTURE_RESPONSE["psid"]))
     page.get_by_role("button", name="Load data").click()
 
     expect(page.locator(".status.is-success")).to_contain_text("Data structure loaded")
@@ -127,6 +130,7 @@ def test_playwright_smoke_load_data_always_requests_refresh(page: Page, live_ser
     page.route("**/petscan/api/structure**", _fulfill_structure)
 
     goto_app(page, live_server)
+    page.get_by_label("PetScan ID (psid)").fill(str(STRUCTURE_RESPONSE["psid"]))
     page.get_by_role("button", name="Load data").click()
 
     expect(page.locator(".status.is-success")).to_contain_text("Data structure loaded")
@@ -174,6 +178,7 @@ def test_playwright_smoke_surfaces_load_errors(page: Page, live_server: Any) -> 
     )
 
     goto_app(page, live_server)
+    page.get_by_label("PetScan ID (psid)").fill(str(STRUCTURE_RESPONSE["psid"]))
     page.get_by_role("button", name="Load data").click()
 
     expect(page.locator(".status.is-error")).to_contain_text("PetScan upstream returned an error.")

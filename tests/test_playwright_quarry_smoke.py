@@ -75,6 +75,7 @@ def _goto_quarry_app(page: Page, live_server: Any) -> None:
 
 def _load_quarry_structure_successfully(page: Page, live_server: Any) -> None:
     _goto_quarry_app(page, live_server)
+    page.get_by_label("Quarry ID").fill(str(QUARRY_STRUCTURE_RESPONSE["quarry_id"]))
     page.get_by_role("button", name="Load data").click()
     expect(page.locator(".status.is-success")).to_contain_text("Quarry data loaded")
 
@@ -101,7 +102,9 @@ def test_playwright_quarry_smoke_can_load_structure_and_show_links(page: Page, l
 
     _goto_quarry_app(page, live_server)
 
-    expect(page.get_by_label("Quarry ID")).to_have_value("103479")
+    expect(page.get_by_label("Quarry ID")).to_have_value("")
+    expect(page.get_by_label("Quarry ID")).to_have_attribute("placeholder", "103479")
+    page.get_by_label("Quarry ID").fill(str(QUARRY_STRUCTURE_RESPONSE["quarry_id"]))
     expect(page.get_by_role("link", name="Open Quarry 103479")).to_have_attribute(
         "href",
         "https://quarry.wmcloud.org/query/103479",
@@ -158,6 +161,7 @@ def test_playwright_quarry_smoke_load_data_always_requests_refresh(page: Page, l
     page.route("**/quarry/api/structure**", _fulfill_structure)
 
     _goto_quarry_app(page, live_server)
+    page.get_by_label("Quarry ID").fill(str(QUARRY_STRUCTURE_RESPONSE["quarry_id"]))
     page.get_by_role("button", name="Load data").click()
 
     expect(page.locator(".status.is-success")).to_contain_text("Quarry data loaded")
