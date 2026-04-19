@@ -47,13 +47,16 @@ class ApiViewTests(SimpleTestCase):
         self.assertContains(response, "PetScan")
         self.assertContains(response, "Incubator")
         self.assertContains(response, "New Pages")
+        self.assertContains(response, "PagePile")
         self.assertContains(response, "Quarry")
         self.assertContains(response, 'href="/petscan/"', html=False)
         self.assertContains(response, 'href="/incubator/"', html=False)
         self.assertContains(response, 'href="/newpages/"', html=False)
+        self.assertContains(response, 'href="/pagepile/"', html=False)
         self.assertContains(response, 'href="/quarry/"', html=False)
         self.assertContains(response, 'href="https://meta.wikimedia.org/wiki/PetScan"', html=False)
         self.assertContains(response, 'href="https://incubator.wikimedia.org"', html=False)
+        self.assertContains(response, 'href="https://pagepile.toolforge.org"', html=False)
         self.assertContains(response, "Example query")
         self.assertContains(
             response,
@@ -88,6 +91,11 @@ class ApiViewTests(SimpleTestCase):
         self.assertContains(
             response,
             "https%3A//sparqlbridge.toolforge.org/newpages/sparql/wiki%3Dfi%26timestamp%3D20260401000000",
+            html=False,
+        )
+        self.assertContains(
+            response,
+            "https%3A//sparqlbridge.toolforge.org/pagepile/sparql/pagepile_id%3D112306%26limit%3D50",
             html=False,
         )
         self.assertContains(

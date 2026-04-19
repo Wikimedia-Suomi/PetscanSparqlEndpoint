@@ -113,6 +113,23 @@ SELECT * WHERE {
   }
 }
 """
+_PAGEPILE_EXAMPLE_QUERY = """# This query exposes a PagePile as schema.org sitelinks.
+# That makes the pile usable together with WDQS entity lookups and other sitelink-style sources.
+PREFIX schema: <http://schema.org/>
+PREFIX wikibase: <http://wikiba.se/ontology#>
+PREFIX pagepile: <https://pagepile.toolforge.org/ontology/>
+
+SELECT * WHERE {
+  SERVICE <https://sparqlbridge.toolforge.org/pagepile/sparql/pagepile_id=112306&limit=50> {
+    ?page schema:about ?wikidata_entity .
+    ?page schema:name ?page_label .
+    ?page pagepile:page_id ?page_id .
+    ?page schema:isPartOf ?site_url .
+    ?site_url wikibase:wikiGroup ?wiki_group .
+  }
+}
+LIMIT 50
+"""
 _NEWPAGES_EXAMPLE_QUERY = """# This query fetches newly created pages from one or more Wikimedia wikis.
 # The result graph follows the same sitelink-style RDF shape as the Incubator source.
 PREFIX schema: <http://schema.org/>
@@ -136,6 +153,10 @@ _QLEVER_COMMONS_BASE_URL = "https://qlever.dev/wikimedia-commons?query="
 
 def build_incubator_example_query_url() -> str:
     return "{}{}".format(_QLEVER_WIKIDATA_BASE_URL, quote(_INCUBATOR_EXAMPLE_QUERY))
+
+
+def build_pagepile_example_query_url() -> str:
+    return "{}{}".format(_QLEVER_WIKIDATA_BASE_URL, quote(_PAGEPILE_EXAMPLE_QUERY))
 
 
 def build_newpages_example_query_url() -> str:

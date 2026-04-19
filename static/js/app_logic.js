@@ -3,6 +3,8 @@ export const PETSCAN_ONTOLOGY_PREFIX = "petscan";
 export const PETSCAN_ONTOLOGY_BASE = "https://petscan.wmcloud.org/ontology/";
 export const INCUBATOR_ONTOLOGY_PREFIX = "incubator";
 export const INCUBATOR_ONTOLOGY_BASE = "https://incubator.wikimedia.org/ontology/";
+export const PAGEPILE_ONTOLOGY_PREFIX = "pagepile";
+export const PAGEPILE_ONTOLOGY_BASE = "https://pagepile.toolforge.org/ontology/";
 export const QUARRY_ONTOLOGY_PREFIX = "quarrycol";
 export const QUARRY_ONTOLOGY_BASE = "https://quarry.wmcloud.org/ontology/";
 export const QUARRY_QUERY_PREFIX = "quarry";
@@ -292,6 +294,10 @@ export function buildIncubatorDefaultQueryText(subjectVariableName) {
   ].join("\n");
 }
 
+export function buildPagepileDefaultQueryText(subjectVariableName) {
+  return buildIncubatorDefaultQueryText(subjectVariableName);
+}
+
 export function defaultQueryText() {
   return buildDefaultQueryText(PETSCAN_ONTOLOGY_PREFIX, PETSCAN_ONTOLOGY_BASE);
 }
@@ -431,6 +437,18 @@ export function buildQuarryJsonUrl(qrunIdValue) {
     return "";
   }
   return "https://quarry.wmcloud.org/run/" + encodeURIComponent(qrunId) + "/output/0/json";
+}
+
+export function buildPagepileJsonUrl(pagepileIdValue) {
+  var pagepileId = String(pagepileIdValue || "").trim();
+  if (!pagepileId) {
+    return "https://pagepile.toolforge.org/";
+  }
+  return (
+    "https://pagepile.toolforge.org/api.php?id="
+    + encodeURIComponent(pagepileId)
+    + "&action=get_data&doit&format=json"
+  );
 }
 
 export function buildIncubatorCategoryUrl() {
@@ -892,10 +910,18 @@ function fieldPredicateTerm(field, fallbackPrefix) {
   return normalizedPrefix + ":" + sourceKey;
 }
 
-export function buildIncubatorWizardQuery(structureFields, selectedQueryFieldKeys, subjectVariableName) {
+export function buildSitelinkWizardQuery(
+  structureFields,
+  selectedQueryFieldKeys,
+  subjectVariableName,
+  fallbackPrefix,
+  fallbackBase
+) {
   var normalizedStructureFields = Array.isArray(structureFields) ? structureFields : [];
   var normalizedSubjectVariableName = String(subjectVariableName || "").trim() || "sitelink";
   var subjectVariable = "?" + normalizedSubjectVariableName;
+  var normalizedFallbackPrefix = String(fallbackPrefix || "").trim() || INCUBATOR_ONTOLOGY_PREFIX;
+  var normalizedFallbackBase = String(fallbackBase || "").trim() || INCUBATOR_ONTOLOGY_BASE;
   var selected = {};
   (Array.isArray(selectedQueryFieldKeys) ? selectedQueryFieldKeys : []).forEach(function (key) {
     selected[String(key || "").trim()] = true;
@@ -940,7 +966,7 @@ export function buildIncubatorWizardQuery(structureFields, selectedQueryFieldKey
     pushSelectVar(variableName);
 
     whereLines.push(
-      "  OPTIONAL { " + subjectVariable + " " + fieldPredicateTerm(field, INCUBATOR_ONTOLOGY_PREFIX)
+      "  OPTIONAL { " + subjectVariable + " " + fieldPredicateTerm(field, normalizedFallbackPrefix)
       + " " + variableName + " . }"
     );
   });
@@ -948,7 +974,7 @@ export function buildIncubatorWizardQuery(structureFields, selectedQueryFieldKey
   var lines = [
     "PREFIX " + SCHEMA_PREFIX + ": <" + SCHEMA_BASE + ">",
     "PREFIX " + WIKIBASE_PREFIX + ": <" + WIKIBASE_BASE + ">",
-    "PREFIX " + INCUBATOR_ONTOLOGY_PREFIX + ": <" + INCUBATOR_ONTOLOGY_BASE + ">",
+    "PREFIX " + normalizedFallbackPrefix + ": <" + normalizedFallbackBase + ">",
     "SELECT " + selectVars.join(" "),
     "WHERE {",
   ];
@@ -958,4 +984,24 @@ export function buildIncubatorWizardQuery(structureFields, selectedQueryFieldKey
   lines.push("}");
   lines.push("LIMIT 50");
   return lines.join("\n");
+}
+
+export function buildIncubatorWizardQuery(structureFields, selectedQueryFieldKeys, subjectVariableName) {
+  return buildSitelinkWizardQuery(
+    structureFields,
+    selectedQueryFieldKeys,
+    subjectVariableName,
+    INCUBATOR_ONTOLOGY_PREFIX,
+    INCUBATOR_ONTOLOGY_BASE
+  );
+}
+
+export function buildPagepileWizardQuery(structureFields, selectedQueryFieldKeys, subjectVariableName) {
+  return buildSitelinkWizardQuery(
+    structureFields,
+    selectedQueryFieldKeys,
+    subjectVariableName,
+    PAGEPILE_ONTOLOGY_PREFIX,
+    PAGEPILE_ONTOLOGY_BASE
+  );
 }

@@ -39,6 +39,7 @@ INSTALLED_APPS = [
     "petscan.apps.PetscanConfig",
     "incubator.apps.IncubatorConfig",
     "newpages.apps.NewpagesConfig",
+    "pagepile.apps.PagepileConfig",
     "quarry.apps.QuarryConfig",
 ]
 
@@ -90,6 +91,7 @@ OXIGRAPH_BASE_DIR = _required_env("OXIGRAPH_BASE_DIR")
 
 WIKIDATA_LOOKUP_BACKEND = os.getenv("WIKIDATA_LOOKUP_BACKEND", "api")
 INCUBATOR_API_ENDPOINT = os.getenv("INCUBATOR_API_ENDPOINT", "https://incubator.wikimedia.org/w/api.php")
+PAGEPILE_API_ENDPOINT = os.getenv("PAGEPILE_API_ENDPOINT", "https://pagepile.toolforge.org/api.php")
 NEWPAGES_SITEMATRIX_API_ENDPOINT = os.getenv(
     "NEWPAGES_SITEMATRIX_API_ENDPOINT",
     "https://meta.wikimedia.org/w/api.php",

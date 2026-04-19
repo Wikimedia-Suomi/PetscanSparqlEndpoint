@@ -80,7 +80,7 @@ export OXIGRAPH_BASE_DIR="$PWD/data/oxigraph"
 
 This helper suite executes pure functions from `static/js/app_logic.js` in a real browser via Playwright Python, so no `node` or `npm` installation is required.
 
-### Run browser E2E tests against live PetScan and Quarry
+### Run browser E2E tests against live PetScan, Quarry, and PagePile
 
 ```bash
 source .venv/bin/activate
@@ -91,13 +91,16 @@ export OXIGRAPH_BASE_DIR="$PWD/data/oxigraph"
 # export PETSCAN_E2E_OUTPUT_LIMIT=5
 # export QUARRY_E2E_QUERY_ID=103479
 # export QUARRY_E2E_LIMIT=5
+# export PAGEPILE_E2E_ID=112306
+# export PAGEPILE_E2E_LIMIT=5
 # export PLAYWRIGHT_DEFAULT_TIMEOUT_MS=60000
 ./scripts/run_e2e_tests.sh
 ```
 
 This E2E script keeps its own temporary Oxigraph store under `OXIGRAPH_BASE_DIR`, so the initial
 load is not satisfied from a previous cached dataset. Unlike the smoke tests, it uses real network
-requests to PetScan and Quarry and is intentionally kept out of the default `run_tests.sh` path.
+requests to PetScan, Quarry, PagePile, and MediaWiki APIs, and is intentionally kept out of the
+default `run_tests.sh` path.
 
 ### Run app
 
@@ -403,6 +406,24 @@ stable sample titles. It is skipped by default and intended to be run manually.
 ```bash
 export LIVE_API_INTEGRATION_TESTS=1
 ./.venv/bin/python manage.py test tests.test_enrichment_api_integration
+```
+
+### Live PagePile API integration test
+
+This opt-in test uses a real PagePile JSON payload and real MediaWiki API lookups instead of mocks
+to verify that PagePile API-mode resolution still returns usable sitelink rows for a stable sample
+pile. It also includes a Commons-specific sample that verifies namespace-6 file pages get
+`https://commons.wikimedia.org/entity/M{page_id}` mediaitem entities. It is skipped by default
+and intended to be run manually.
+
+```bash
+export LIVE_API_INTEGRATION_TESTS=1
+# Optional overrides:
+# export PAGEPILE_LIVE_ID=112306
+# export PAGEPILE_LIVE_LIMIT=5
+# export PAGEPILE_LIVE_COMMONS_ID=112301
+# export PAGEPILE_LIVE_COMMONS_LIMIT=10
+./.venv/bin/python manage.py test tests.test_pagepile_api_integration
 ```
 
 ## License

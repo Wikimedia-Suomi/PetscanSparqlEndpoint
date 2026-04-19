@@ -1,0 +1,358 @@
+{% load static %}
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>PagePile SPARQL Endpoint</title>
+    <link rel="stylesheet" href="{% static 'css/app.css' %}" />
+  </head>
+  <body>
+    <noscript>
+      <p class="noscript">This interface needs JavaScript enabled.</p>
+    </noscript>
+
+    {% verbatim %}
+    <main id="app" class="page" v-cloak>
+      <nav class="breadcrumb-nav page-breadcrumb" aria-label="Breadcrumb">
+        <ol class="breadcrumb-list">
+          <li><a href="/">All data sources</a></li>
+          <li aria-current="page">PagePile</li>
+        </ol>
+      </nav>
+
+      <header class="hero">
+        <h1>PagePile SPARQL endpoint</h1>
+      </header>
+
+      <div class="source-layout">
+        <section class="card" aria-labelledby="query-heading">
+          <h2 id="query-heading">Data Loading</h2>
+
+          <form class="query-form">
+            <label for="pagepile-id">PagePile ID</label>
+            <input
+              id="pagepile-id"
+              type="number"
+              inputmode="numeric"
+              min="1"
+              required
+              v-model.trim="pagepileId"
+              aria-describedby="pagepile-id-help"
+            />
+            <p id="pagepile-id-help" class="help">
+              Example: 112306
+            </p>
+
+            <label for="pagepile-limit">Load data limit</label>
+            <input
+              id="pagepile-limit"
+              type="number"
+              inputmode="numeric"
+              min="1"
+              max="300000"
+              spellcheck="false"
+              placeholder="10"
+              v-model.trim="pagepileLimit"
+              aria-describedby="pagepile-limit-help"
+            />
+            <p id="pagepile-limit-help" class="help">
+              Default is <code>10</code>. Clear this field to load up to <code>300000</code> PagePile pages that can be resolved into Wikidata-style sitelinks.
+            </p>
+
+            <div class="actions">
+              <button type="button" class="primary" :disabled="isBusy" @click="loadStructure">
+                Load data
+              </button>
+            </div>
+
+            <p class="help help-links" v-if="pagepileId">
+              Source data:
+              <a :href="pagepileJsonUrl" target="_blank" rel="noopener noreferrer">Open PagePile [[ pagepileId ]] JSON</a>
+            </p>
+            <p class="help" v-if="jsonResultCount !== null">
+              Loaded PagePile pages: <strong>[[ jsonResultCount ]]</strong>
+            </p>
+            <p class="help" v-else>
+              PagePile pages: not loaded for this pile yet.
+            </p>
+          </form>
+
+          <p class="status" :class="'is-' + loadStatusLevel" role="status" aria-live="polite">[[ loadStatusMessage ]]</p>
+        </section>
+
+        <aside class="card source-info-card" aria-labelledby="pagepile-info-heading">
+          <h2 id="pagepile-info-heading">About PagePile</h2>
+          <p class="help">
+            <a href="https://pagepile.toolforge.org" target="_blank" rel="noopener noreferrer">PagePile</a>
+            stores reusable lists of Wikimedia pages on a single wiki. SPARQL Bridge resolves those titles into
+            schema.org sitelink-style RDF.
+          </p>
+          {% endverbatim %}
+          <div class="actions">
+            <a
+              class="button-link secondary"
+              href="{{ pagepile_example_query_url }}"
+              target="_blank"
+              rel="noopener noreferrer"
+            >
+              Example query
+            </a>
+          </div>
+          {% verbatim %}
+        </aside>
+      </div>
+
+      <section class="card" aria-labelledby="sparql-heading" v-if="querySectionReady">
+        <h2 id="sparql-heading">SPARQL Query</h2>
+
+        <form class="query-form" @submit.prevent="runQuery">
+          <section class="wizard-section">
+            <textarea
+              id="query"
+              rows="12"
+              required
+              spellcheck="false"
+              v-model="query"
+              aria-label="SPARQL query"
+            ></textarea>
+
+            <div class="query-run-row">
+              <button type="submit" class="primary" :disabled="isBusy">
+                Run query
+              </button>
+              <label class="checkbox-row query-refresh-toggle" for="refresh">
+                <input id="refresh" type="checkbox" v-model="refreshBeforeQuery" />
+                Refresh data from PagePile before running query
+              </label>
+              <button
+                type="button"
+                class="secondary open-query-trigger"
+                :disabled="!openQueryTargets.length"
+                @click="openQueryTargetDialog"
+              >
+                Open query as Federated query in...
+              </button>
+            </div>
+
+            <details ref="structureWizardDetails" class="structure-collapsible" open>
+              <summary>
+                <span class="summary-title">Select fields to include in the SPARQL query from loaded PagePile data (pile [[ loadedPagepileId || pagepileId ]]).</span>
+                <span class="summary-controls">
+                  <span class="help" v-if="canShowStructure">([[ selectedQueryFieldKeys.length ]] selected)</span>
+                  <span class="collapsible-hint">Collapse/expand</span>
+                  <span class="collapsible-indicator" aria-hidden="true">▾</span>
+                </span>
+              </summary>
+
+              <div class="structure-inline-body" v-if="canShowStructure">
+                <div class="wizard-actions">
+                  <button type="button" class="secondary" :disabled="!canShowStructure" @click="selectAllWizardFields">
+                    Select all
+                  </button>
+                  <button
+                    type="button"
+                    class="secondary"
+                    :disabled="!selectedQueryFieldKeys.length"
+                    @click="clearWizardSelections"
+                  >
+                    Clear selection
+                  </button>
+                </div>
+
+                <div class="table-wrap">
+                  <table>
+                    <caption class="sr-only">Loaded data structure</caption>
+                    <thead>
+                      <tr>
+                        <th scope="col">Include</th>
+                        <th scope="col">Field / relation</th>
+                        <th scope="col">Predicate</th>
+                        <th scope="col">Type</th>
+                        <th scope="col">Cardinality</th>
+                        <th scope="col">Present in rows</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      <tr v-for="field in structureFields" :key="field.source_key">
+                        <td class="checkbox-cell">
+                          <input
+                            type="checkbox"
+                            :id="'wizard-field-' + field.source_key"
+                            :checked="isWizardFieldSelected(field.source_key)"
+                            @change="toggleWizardField(field.source_key, $event.target.checked)"
+                          />
+                        </td>
+                        <td><label :for="'wizard-field-' + field.source_key"><code>[[ field.source_key ]]</code></label></td>
+                        <td class="predicate-cell"><code>[[ field.predicate ]]</code></td>
+                        <td>[[ formatFieldType(field) ]]</td>
+                        <td><code>[[ field.row_side_cardinality || "?" ]]</code></td>
+                        <td>[[ field.present_in_rows ]] / [[ structureRowCount ]]</td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+
+              <div class="structure-inline-body" v-else>
+                <p class="help">No loaded data structure available for the current PagePile source.</p>
+              </div>
+            </details>
+          </section>
+
+        </form>
+
+        <p
+          class="status status-query"
+          :class="'is-' + statusLevel"
+          :role="statusLevel === 'error' ? 'alert' : 'status'"
+          :aria-live="statusLevel === 'error' ? 'assertive' : 'polite'"
+        >
+          [[ statusMessage ]]
+        </p>
+      </section>
+
+      <section class="card" v-if="resultVisible" aria-labelledby="result-heading">
+        <h2 id="result-heading">SPARQL Query Result</h2>
+
+        <div class="meta" v-if="meta.loaded_at || queryExecutionLabel">
+          <span><strong>Loaded at:</strong> [[ meta.loaded_at ]]</span>
+          <span><strong>Records:</strong> [[ meta.records ]]</span>
+          <span v-if="queryExecutionLabel"><strong>Query time:</strong> [[ queryExecutionLabel ]]</span>
+        </div>
+
+        <div v-if="queryType === 'SELECT'" class="result-block">
+          <div class="result-view-toggle" v-if="selectRows.length">
+            <button
+              type="button"
+              class="secondary"
+              :class="{ 'is-active': resultViewMode === 'table' }"
+              :aria-pressed="resultViewMode === 'table' ? 'true' : 'false'"
+              @click="resultViewMode = 'table'"
+            >
+              Table
+            </button>
+            <button
+              type="button"
+              class="secondary"
+              :class="{ 'is-active': resultViewMode === 'cards' }"
+              :aria-pressed="resultViewMode === 'cards' ? 'true' : 'false'"
+              @click="resultViewMode = 'cards'"
+            >
+              Cards
+            </button>
+          </div>
+
+          <div class="table-wrap" v-if="selectRows.length && resultViewMode === 'table'">
+            <table>
+              <caption class="sr-only">SPARQL query results</caption>
+              <thead>
+                <tr>
+                  <th scope="col" v-for="v in selectVars" :key="v">[[ v ]]</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr v-for="(row, idx) in selectRows" :key="idx">
+                  <td v-for="v in selectVars" :key="v + '-' + idx">
+                    <a
+                      v-if="formatCellHref(row[v])"
+                      :href="formatCellHref(row[v])"
+                      target="_blank"
+                      rel="noopener noreferrer"
+                    >
+                      [[ formatCell(v, row[v]) ]]
+                    </a>
+                    <span v-else>[[ formatCell(v, row[v]) ]]</span>
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+          <div class="result-cards" v-else-if="selectRows.length && resultViewMode === 'cards'">
+            <article class="result-card" v-for="(row, idx) in selectRows" :key="'card-' + idx">
+              <h3 class="result-card-title">Row [[ idx + 1 ]]</h3>
+              <div class="result-card-fields">
+                <div class="result-card-field" v-for="v in selectVars" :key="v + '-card-' + idx">
+                  <div class="result-card-key">[[ v ]]</div>
+                  <div class="result-card-value">
+                    <a
+                      v-if="formatCellHref(row[v])"
+                      :href="formatCellHref(row[v])"
+                      target="_blank"
+                      rel="noopener noreferrer"
+                    >
+                      [[ formatCell(v, row[v]) ]]
+                    </a>
+                    <span v-else>[[ formatCell(v, row[v]) ]]</span>
+                  </div>
+                </div>
+              </div>
+            </article>
+          </div>
+          <p v-else>No rows returned.</p>
+        </div>
+
+        <div v-if="queryType === 'ASK'" class="result-block">
+          <p class="ask-answer">
+            ASK result: <strong>[[ askValue ? 'true' : 'false' ]]</strong>
+          </p>
+        </div>
+
+        <div v-if="queryType === 'CONSTRUCT' || queryType === 'DESCRIBE'" class="result-block">
+          <pre class="code-output">[[ textResult ]]</pre>
+        </div>
+      </section>
+
+      <section class="card" aria-labelledby="endpoint-heading">
+        <h2 id="endpoint-heading">SPARQL Endpoint</h2>
+        <p>
+          Endpoint URL:
+          <code>[[ endpointPreview ]]</code>
+        </p>
+        <p>
+          For federated queries, use path parameters in the endpoint URL, for example
+          <code>/pagepile/sparql/pagepile_id=112306&amp;limit=10</code>.
+        </p>
+      </section>
+
+      <dialog
+        ref="openQueryDialog"
+        class="query-target-dialog"
+        aria-labelledby="open-query-dialog-title"
+        @close="onOpenQueryDialogClose"
+      >
+        <div class="query-target-dialog-inner">
+          <header class="query-target-dialog-header">
+            <h2 id="open-query-dialog-title">Open Federated Query In</h2>
+            <button type="button" class="secondary" @click="closeQueryTargetDialog">Close</button>
+          </header>
+          <div class="query-target-dialog-body">
+            <p class="help">Choose the service where the federated query should open.</p>
+            <fieldset class="query-target-list">
+              <legend class="sr-only">Query target service</legend>
+              <label class="query-target-option" v-for="target in openQueryTargets" :key="target.value">
+                <input type="radio" name="open-query-target" :value="target.value" v-model="openQueryTarget" />
+                [[ target.label ]]
+              </label>
+            </fieldset>
+            <div class="actions">
+              <button type="button" class="secondary" @click="closeQueryTargetDialog">Cancel</button>
+              <button type="button" class="primary" :disabled="!openQueryTarget" @click="openFederatedQueryInTarget">
+                Open
+              </button>
+            </div>
+          </div>
+        </div>
+      </dialog>
+
+      <p class="help footer-source-link">
+        Source code: <a href="https://github.com/Wikimedia-Suomi/PetscanSparqlEndpoint" target="_blank" rel="noopener noreferrer">github.com/Wikimedia-Suomi/PetscanSparqlEndpoint</a>
+      </p>
+
+    </main>
+    {% endverbatim %}
+
+    <script src="{% static 'vendor/vue.global.prod.min.js' %}?v=3.5.22"></script>
+    <script type="module" src="{% static 'js/pagepile_app.js' %}?v=20260419-01"></script>
+  </body>
+</html>
