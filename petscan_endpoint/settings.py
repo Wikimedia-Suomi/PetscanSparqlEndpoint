@@ -102,6 +102,7 @@ INCUBATOR_NAMESPACE_OPTIONS = (
     {"id": 10, "label": "Template"},
     {"id": 14, "label": "Category"},
     {"id": 828, "label": "Module"},
+    {"id": 1728, "label": "Event"},
 )
 TOOLFORGE_USE_REPLICA = _env_bool("TOOLFORGE_USE_REPLICA", default=False)
 TOOLFORGE_REPLICA_CNF = os.getenv("TOOLFORGE_REPLICA_CNF", "")

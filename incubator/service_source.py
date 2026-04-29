@@ -48,6 +48,7 @@ _DEFAULT_INCUBATOR_NAMESPACE_OPTIONS = (
     {"id": 12, "label": "Help"},
     {"id": 14, "label": "Category"},
     {"id": 828, "label": "Module"},
+    {"id": 1728, "label": "Event"},
 )
 _WIKI_GROUP_BY_CODE = {
     "Wp": "wikipedia",
