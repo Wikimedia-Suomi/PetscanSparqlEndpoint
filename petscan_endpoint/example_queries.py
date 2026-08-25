@@ -147,6 +147,20 @@ SELECT * WHERE {
 }
 LIMIT 50
 """
+_PLACENAMES_EXAMPLE_QUERY = """# This query fetches Sámi place names from the static local dataset.
+PREFIX pn: <https://sparqlbridge.toolforge.org/ontology/placenames/>
+
+SELECT ?record ?place ?name ?municipality ?wkt WHERE {
+  SERVICE <https://sparqlbridge.toolforge.org/placenames/sparql/dataset=saami> {
+    ?record a pn:PlaceNameRecord ;
+            pn:place ?place ;
+            pn:spelling ?name ;
+            pn:municipality ?municipality ;
+            pn:wgs84WKT ?wkt .
+  }
+}
+LIMIT 100
+"""
 _QLEVER_WIKIDATA_BASE_URL = "https://qlever.wikidata.dbis.rwth-aachen.de/wikidata/?query="
 _QLEVER_COMMONS_BASE_URL = "https://qlever.dev/wikimedia-commons?query="
 
@@ -165,6 +179,10 @@ def build_newpages_example_query_url() -> str:
 
 def build_petscan_example_query_url() -> str:
     return "{}{}".format(_QLEVER_WIKIDATA_BASE_URL, quote(_PETSCAN_EXAMPLE_QUERY))
+
+
+def build_placenames_example_query_url() -> str:
+    return "{}{}".format(_QLEVER_WIKIDATA_BASE_URL, quote(_PLACENAMES_EXAMPLE_QUERY))
 
 
 def build_quarry_example_query_url() -> str:

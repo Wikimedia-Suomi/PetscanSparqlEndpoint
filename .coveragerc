@@ -5,6 +5,7 @@ relative_files = True
 source =
     petscan
     petscan_endpoint
+    placenames
 
 [report]
 show_missing = True

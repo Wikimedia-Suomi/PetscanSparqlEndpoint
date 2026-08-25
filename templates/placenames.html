@@ -1,0 +1,400 @@
+{% load static %}
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Sámi place names SPARQL endpoint</title>
+    <link rel="stylesheet" href="{% static 'css/app.css' %}" />
+  </head>
+  <body>
+    <noscript>
+      <p class="noscript">This interface needs JavaScript enabled.</p>
+    </noscript>
+
+    {% verbatim %}
+    <main id="app" class="page" v-cloak>
+      <nav class="breadcrumb-nav page-breadcrumb" aria-label="Breadcrumb">
+        <ol class="breadcrumb-list">
+          <li><a href="/">All data sources</a></li>
+          <li aria-current="page">Sámi place names</li>
+        </ol>
+      </nav>
+
+      <header class="hero">
+        <h1>Sámi place names SPARQL endpoint</h1>
+      </header>
+
+      <div class="source-layout">
+        <section class="card" aria-labelledby="data-loading-heading">
+          <h2 id="data-loading-heading">Data Loading</h2>
+          <div class="actions">
+            <button
+              id="load-dataset"
+              type="button"
+              class="primary"
+              :disabled="isBusy"
+              @click="loadStructure"
+            >
+              Load dataset
+            </button>
+          </div>
+          <div id="dataset-meta" class="meta" v-if="hasLoadedData">
+            <span><strong>Version:</strong> [[ meta.version ]]</span>
+            <span><strong>Name records:</strong> [[ formatNumber(meta.records) ]]</span>
+            <span><strong>Places:</strong> [[ formatNumber(meta.places) ]]</span>
+            <span><strong>Quads:</strong> [[ formatNumber(meta.quads) ]]</span>
+          </div>
+          <p
+            id="load-status"
+            class="status"
+            :class="'is-' + loadStatusLevel"
+            :role="loadStatusLevel === 'error' ? 'alert' : 'status'"
+            :aria-live="loadStatusLevel === 'error' ? 'assertive' : 'polite'"
+          >
+            [[ loadStatusMessage ]]
+          </p>
+        </section>
+
+        <aside class="card source-info-card" aria-labelledby="placenames-info-heading">
+          <h2 id="placenames-info-heading">About PlaceNames</h2>
+          <p class="help">
+            A versioned, local RDF dataset of North Sámi, Inari Sámi, and Skolt Sámi place
+            names from the National Land Survey of Finland. Source data:
+            <a
+              href="https://www.maanmittauslaitos.fi/en/maps-and-spatial-data/datasets-and-interfaces/product-descriptions/geographic-names"
+              target="_blank"
+              rel="noopener noreferrer"
+            >Geographic names, National Land Survey of Finland</a>
+            05/2026 dataset. License:
+            <a
+              href="https://creativecommons.org/licenses/by/4.0/"
+              target="_blank"
+              rel="noopener noreferrer"
+            >CC BY 4.0</a>
+          </p>
+          <div class="actions">
+            <a
+              class="button-link secondary"
+              data-example-query-source="placenames"
+              target="_blank"
+              rel="noopener noreferrer"
+            >
+              Example query
+            </a>
+          </div>
+        </aside>
+      </div>
+
+      <section
+        id="placenames-query-section"
+        class="card"
+        aria-labelledby="sparql-heading"
+        v-if="querySectionReady"
+      >
+        <h2 id="sparql-heading">SPARQL Query</h2>
+
+        <form class="query-form" @submit.prevent="runQuery">
+          <section class="wizard-section">
+            <textarea
+              id="query"
+              rows="12"
+              required
+              spellcheck="false"
+              v-model="query"
+              aria-label="SPARQL query"
+            ></textarea>
+
+            <div class="query-run-row">
+              <button id="run-query" type="submit" class="primary" :disabled="isBusy">
+                Run query
+              </button>
+              <button
+                type="button"
+                class="secondary open-query-trigger"
+                :disabled="!openQueryTargets.length"
+                @click="openQueryTargetDialog"
+              >
+                Open query as Federated query in...
+              </button>
+            </div>
+
+            <details ref="structureWizardDetails" class="structure-collapsible" open>
+              <summary>
+                <span class="summary-title">
+                  Select fields to include in the SPARQL query from loaded Sámi place-name data.
+                </span>
+                <span class="summary-controls">
+                  <span id="selected-field-count" class="help" v-if="canShowStructure">
+                    ([[ selectedQueryFieldKeys.length ]] selected)
+                  </span>
+                  <span class="collapsible-hint">Collapse/expand</span>
+                  <span class="collapsible-indicator" aria-hidden="true">▾</span>
+                </span>
+              </summary>
+
+              <div class="structure-inline-body" v-if="canShowStructure">
+                <div class="wizard-actions">
+                  <button
+                    id="select-all-fields"
+                    type="button"
+                    class="secondary"
+                    :disabled="!canShowStructure"
+                    @click="selectAllWizardFields"
+                  >
+                    Select all
+                  </button>
+                  <button
+                    id="clear-selected-fields"
+                    type="button"
+                    class="secondary"
+                    :disabled="!selectedQueryFieldKeys.length"
+                    @click="clearWizardSelections"
+                  >
+                    Clear selection
+                  </button>
+                </div>
+
+                <div class="table-wrap">
+                  <table>
+                    <caption class="sr-only">Loaded data structure</caption>
+                    <thead>
+                      <tr>
+                        <th scope="col">Include</th>
+                        <th scope="col">Field / relation</th>
+                        <th scope="col">Predicate</th>
+                        <th scope="col">Type</th>
+                        <th scope="col">Cardinality</th>
+                        <th scope="col">Present in rows</th>
+                      </tr>
+                    </thead>
+                    <tbody id="placenames-structure-field-rows">
+                      <tr v-for="field in structureFields" :key="field.source_key">
+                        <td class="checkbox-cell">
+                          <input
+                            type="checkbox"
+                            :id="'placenames-wizard-field-' + field.source_key"
+                            :checked="isWizardFieldSelected(field.source_key)"
+                            @change="toggleWizardField(field.source_key, $event.target.checked)"
+                          />
+                        </td>
+                        <td>
+                          <label :for="'placenames-wizard-field-' + field.source_key">
+                            <code>[[ field.source_key ]]</code>
+                          </label>
+                        </td>
+                        <td class="predicate-cell"><code>[[ field.predicate ]]</code></td>
+                        <td>[[ formatFieldType(field) ]]</td>
+                        <td><code>[[ field.row_side_cardinality || "?" ]]</code></td>
+                        <td>[[ field.present_in_rows ]] / [[ structureRowCount ]]</td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+
+              <div class="structure-inline-body" v-else>
+                <p class="help">No loaded data structure is available for this dataset.</p>
+              </div>
+            </details>
+          </section>
+        </form>
+
+        <p
+          id="query-status"
+          class="status status-query"
+          :class="'is-' + statusLevel"
+          :role="statusLevel === 'error' ? 'alert' : 'status'"
+          :aria-live="statusLevel === 'error' ? 'assertive' : 'polite'"
+        >
+          [[ statusMessage ]]
+        </p>
+      </section>
+
+      <section
+        id="placenames-result-section"
+        class="card"
+        v-if="resultVisible"
+        aria-labelledby="result-heading"
+      >
+        <h2 id="result-heading">SPARQL Query Result</h2>
+
+        <div id="query-result-meta" class="meta">
+          <span v-if="meta.version"><strong>Version:</strong> [[ meta.version ]]</span>
+          <span v-if="meta.records !== undefined">
+            <strong>Name records:</strong> [[ formatNumber(meta.records) ]]
+          </span>
+          <span v-if="queryExecutionLabel"><strong>Query time:</strong> [[ queryExecutionLabel ]]</span>
+        </div>
+
+        <div id="query-result">
+        <div v-if="queryType === 'SELECT'" class="result-block">
+          <div class="result-view-toggle" v-if="selectRows.length">
+            <button
+              type="button"
+              class="secondary"
+              :class="{ 'is-active': resultViewMode === 'table' }"
+              :aria-pressed="resultViewMode === 'table' ? 'true' : 'false'"
+              @click="resultViewMode = 'table'"
+            >
+              Table
+            </button>
+            <button
+              type="button"
+              class="secondary"
+              :class="{ 'is-active': resultViewMode === 'cards' }"
+              :aria-pressed="resultViewMode === 'cards' ? 'true' : 'false'"
+              @click="resultViewMode = 'cards'"
+            >
+              Cards
+            </button>
+          </div>
+
+          <div class="table-wrap" v-if="selectRows.length && resultViewMode === 'table'">
+            <table>
+              <caption class="sr-only">SPARQL query results</caption>
+              <thead>
+                <tr>
+                  <th scope="col" v-for="variable in selectVars" :key="variable">
+                    [[ variable ]]
+                  </th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr v-for="(row, rowIndex) in selectRows" :key="rowIndex">
+                  <td
+                    v-for="variable in selectVars"
+                    :key="variable + '-' + rowIndex"
+                  >
+                    <a
+                      v-if="formatCellHref(row[variable])"
+                      :href="formatCellHref(row[variable])"
+                      target="_blank"
+                      rel="noopener noreferrer"
+                    >
+                      [[ formatCell(row[variable]) ]]
+                    </a>
+                    <span v-else>[[ formatCell(row[variable]) ]]</span>
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+
+          <div class="result-cards" v-else-if="selectRows.length && resultViewMode === 'cards'">
+            <article
+              class="result-card"
+              v-for="(row, rowIndex) in selectRows"
+              :key="'card-' + rowIndex"
+            >
+              <h3 class="result-card-title">Row [[ rowIndex + 1 ]]</h3>
+              <div class="result-card-fields">
+                <div
+                  class="result-card-field"
+                  v-for="variable in selectVars"
+                  :key="variable + '-card-' + rowIndex"
+                >
+                  <div class="result-card-key">[[ variable ]]</div>
+                  <div class="result-card-value">
+                    <a
+                      v-if="formatCellHref(row[variable])"
+                      :href="formatCellHref(row[variable])"
+                      target="_blank"
+                      rel="noopener noreferrer"
+                    >
+                      [[ formatCell(row[variable]) ]]
+                    </a>
+                    <span v-else>[[ formatCell(row[variable]) ]]</span>
+                  </div>
+                </div>
+              </div>
+            </article>
+          </div>
+
+          <p v-else>No rows returned.</p>
+        </div>
+
+        <div v-else-if="queryType === 'ASK'" class="result-block">
+          <p class="ask-answer">
+            ASK result: <strong>[[ askValue ? "true" : "false" ]]</strong>
+          </p>
+        </div>
+
+        <div
+          v-else-if="queryType === 'CONSTRUCT' || queryType === 'DESCRIBE'"
+          class="result-block"
+        >
+          <pre class="code-output">[[ textResult ]]</pre>
+        </div>
+        </div>
+      </section>
+
+      <section class="card" aria-labelledby="endpoint-heading">
+        <h2 id="endpoint-heading">SPARQL Endpoint</h2>
+        <p>
+          Endpoint URL:
+          <code id="placenames-endpoint-preview">[[ endpointPreview ]]</code>
+        </p>
+        <p>
+          For federated queries, use the dataset path parameter in the endpoint URL:
+          <code>/placenames/sparql/dataset=saami</code>.
+        </p>
+      </section>
+
+      <dialog
+        ref="openQueryDialog"
+        class="query-target-dialog"
+        aria-labelledby="open-query-dialog-title"
+        @close="onOpenQueryDialogClose"
+      >
+        <div class="query-target-dialog-inner">
+          <header class="query-target-dialog-header">
+            <h2 id="open-query-dialog-title">Open Federated Query In</h2>
+            <button type="button" class="secondary" @click="closeQueryTargetDialog">Close</button>
+          </header>
+          <div class="query-target-dialog-body">
+            <p class="help">Choose the service where the federated query should open.</p>
+            <fieldset class="query-target-list">
+              <legend class="sr-only">Query target service</legend>
+              <label
+                class="query-target-option"
+                v-for="target in openQueryTargets"
+                :key="target.value"
+              >
+                <input
+                  type="radio"
+                  name="open-query-target"
+                  :value="target.value"
+                  v-model="openQueryTarget"
+                />
+                [[ target.label ]]
+              </label>
+            </fieldset>
+            <div class="actions">
+              <button type="button" class="secondary" @click="closeQueryTargetDialog">
+                Cancel
+              </button>
+              <button
+                type="button"
+                class="primary"
+                :disabled="!openQueryTarget"
+                @click="openFederatedQueryInTarget"
+              >
+                Open
+              </button>
+            </div>
+          </div>
+        </div>
+      </dialog>
+
+      <p class="help footer-source-link">
+        Source code: <a href="https://github.com/Wikimedia-Suomi/PetscanSparqlEndpoint" target="_blank" rel="noopener noreferrer">github.com/Wikimedia-Suomi/PetscanSparqlEndpoint</a>
+      </p>
+    </main>
+    {% endverbatim %}
+
+    <script type="module" src="{% static 'js/example_query_links.js' %}?v=20260825-01"></script>
+    <script src="{% static 'vendor/vue.global.prod.min.js' %}?v=3.5.22"></script>
+    <script type="module" src="{% static 'js/placenames_app.js' %}?v=20260825-04"></script>
+  </body>
+</html>

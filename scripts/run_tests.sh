@@ -19,7 +19,7 @@ echo "Running type checks (mypy)..."
 "${PYTHON}" -m mypy
 
 echo "Running security scan (bandit)..."
-"${PYTHON}" -m bandit -c pyproject.toml -r petscan petscan_endpoint manage.py
+"${PYTHON}" -m bandit -c pyproject.toml -r petscan petscan_endpoint placenames source-data manage.py
 
 echo "Running dependency audit (pip-audit)..."
 "${PYTHON}" -m pip_audit --local --strict --cache-dir /tmp/pip-audit-cache

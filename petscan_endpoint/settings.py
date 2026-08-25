@@ -29,6 +29,14 @@ def _required_env(name: str) -> str:
     return value
 
 
+def _env_choice(name: str, default: str, choices: Sequence[str]) -> str:
+    value = os.getenv(name, default).strip().lower()
+    if value not in choices:
+        allowed = ", ".join(choices)
+        raise ImproperlyConfigured(f"{name} must be one of: {allowed}.")
+    return value
+
+
 SECRET_KEY = _required_env("DJANGO_SECRET_KEY")
 DEBUG = _env_bool("DJANGO_DEBUG", default=False)
 ALLOWED_HOSTS = _env_list("DJANGO_ALLOWED_HOSTS", default=["127.0.0.1", "localhost", "testserver"])
@@ -40,6 +48,7 @@ INSTALLED_APPS = [
     "incubator.apps.IncubatorConfig",
     "newpages.apps.NewpagesConfig",
     "pagepile.apps.PagepileConfig",
+    "placenames.apps.PlacenamesConfig",
     "quarry.apps.QuarryConfig",
 ]
 
@@ -88,6 +97,11 @@ DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 PETSCAN_ENDPOINT = "https://petscan.wmcloud.org/"
 PETSCAN_TIMEOUT_SECONDS = 120
 OXIGRAPH_BASE_DIR = _required_env("OXIGRAPH_BASE_DIR")
+PLACENAMES_SCHEMA_MODE = _env_choice(
+    "PLACENAMES_SCHEMA_MODE",
+    default="hardcoded",
+    choices=("hardcoded", "dynamic"),
+)
 
 WIKIDATA_LOOKUP_BACKEND = os.getenv("WIKIDATA_LOOKUP_BACKEND", "api")
 INCUBATOR_API_ENDPOINT = os.getenv("INCUBATOR_API_ENDPOINT", "https://incubator.wikimedia.org/w/api.php")

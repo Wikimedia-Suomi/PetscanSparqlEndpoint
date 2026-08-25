@@ -124,6 +124,39 @@ QUARRY_SELECT_RESPONSE = {
     },
 }
 
+PLACENAMES_STRUCTURE_RESPONSE = {
+    "source": "placenames",
+    "dataset": "saami",
+    "meta": {
+        "version": "2026-05",
+        "records": 11956,
+        "places": 10752,
+        "quads": 490207,
+        "structure": {
+            "row_count": 11956,
+            "field_count": 2,
+            "fields": [
+                {
+                    "source_key": "spelling",
+                    "predicate": "https://sparqlbridge.toolforge.org/ontology/placenames/spelling",
+                    "present_in_rows": 11956,
+                    "primary_type": "rdf:langString",
+                    "observed_types": ["rdf:langString"],
+                    "row_side_cardinality": "1",
+                },
+                {
+                    "source_key": "municipality",
+                    "predicate": "https://sparqlbridge.toolforge.org/ontology/placenames/municipality",
+                    "present_in_rows": 11956,
+                    "primary_type": "xsd:string",
+                    "observed_types": ["xsd:string"],
+                    "row_side_cardinality": "1",
+                },
+            ],
+        },
+    },
+}
+
 
 def _assert_no_accessibility_violations(page: Page) -> None:
     results = Axe().run(page, options=AXE_TARGET_OPTIONS)
@@ -220,6 +253,22 @@ def test_quarry_page_has_no_detectable_accessibility_violations(page: Page, live
     goto_quarry_app(page, live_server)
 
     expect(page.get_by_role("navigation", name="Breadcrumb")).to_be_visible()
+    _assert_no_accessibility_violations(page)
+
+
+def test_placenames_page_has_no_detectable_accessibility_violations(
+    page: Page, live_server: Any
+) -> None:
+    page.route(
+        "**/placenames/api/structure**",
+        lambda route: _fulfill_json(route, PLACENAMES_STRUCTURE_RESPONSE),
+    )
+    page.goto(f"{live_server.url}/placenames/", wait_until="domcontentloaded")
+
+    expect(page.get_by_role("navigation", name="Breadcrumb")).to_be_visible()
+    expect(page.get_by_role("heading", name="Sámi place names SPARQL endpoint")).to_be_visible()
+    page.get_by_role("button", name="Load dataset").click()
+    expect(page.locator("#placenames-structure-field-rows")).to_contain_text("spelling")
     _assert_no_accessibility_violations(page)
 
 

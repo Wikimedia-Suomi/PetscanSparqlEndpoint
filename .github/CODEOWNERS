@@ -3,6 +3,8 @@
 
 # Security-sensitive paths
 /petscan_endpoint/settings.py @zache-fi
+/placenames/ @zache-fi
+/source-data/ @zache-fi
 /requirements*.txt @zache-fi
 /constraints*.in @zache-fi
 /constraints*.txt @zache-fi

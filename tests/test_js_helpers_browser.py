@@ -159,6 +159,35 @@ def test_js_helper_build_wizard_query_treats_gil_link_count_as_scalar_field(page
     assert "?item petscan:gil_link ?gil_link ." not in result
 
 
+def test_js_helper_build_placenames_wizard_query_uses_dataset_predicates(
+    page: Page, live_server: Any
+) -> None:
+    result = _call_js_helper(
+        page,
+        live_server,
+        "buildPlacenamesWizardQuery",
+        [
+            [
+                {
+                    "source_key": "spelling",
+                    "predicate": "https://sparqlbridge.toolforge.org/ontology/placenames/spelling",
+                },
+                {
+                    "source_key": "municipality",
+                    "predicate": "https://sparqlbridge.toolforge.org/ontology/placenames/municipality",
+                },
+            ],
+            ["municipality"],
+        ],
+    )
+
+    assert "PREFIX pn: <https://sparqlbridge.toolforge.org/ontology/placenames/>" in result
+    assert "SELECT ?record ?municipality" in result
+    assert "?record a pn:PlaceNameRecord" in result
+    assert "<https://sparqlbridge.toolforge.org/ontology/placenames/municipality>" in result
+    assert "?spelling" not in result
+
+
 def test_js_helper_build_incubator_wizard_query_does_not_duplicate_subject_as_incubator_url(
     page: Page, live_server: Any
 ) -> None:
@@ -209,6 +238,28 @@ def test_js_helper_normalize_selected_query_field_keys_falls_back_to_first_five_
     }
 
 
+def test_js_helper_normalize_selected_query_field_keys_accepts_source_defaults(
+    page: Page, live_server: Any
+) -> None:
+    result = _call_js_helper(
+        page,
+        live_server,
+        "normalizeSelectedQueryFieldKeys",
+        [
+            [{"source_key": "alpha"}, {"source_key": "beta"}],
+            ["place", "spelling"],
+            1,
+            ["place", "spelling"],
+        ],
+    )
+
+    assert result == {
+        "keys": ["alpha"],
+        "changed": True,
+        "usedFallback": True,
+    }
+
+
 def test_js_helper_build_quarry_urls(page: Page, live_server: Any) -> None:
     query_url = _call_js_helper(page, live_server, "buildQuarryQueryUrl", ["103479"])
     json_url = _call_js_helper(page, live_server, "buildQuarryJsonUrl", ["1084251"])
@@ -240,11 +291,22 @@ def test_js_helper_build_example_query_urls(page: Page, live_server: Any) -> Non
         "buildExampleQueryUrl",
         ["quarry"],
     )
+    placenames_url = _call_js_module_export(
+        page,
+        live_server,
+        "/static/js/example_query_urls.js?v=test",
+        "buildExampleQueryUrl",
+        ["placenames"],
+    )
 
     assert str(petscan_url).startswith("https://qlever.wikidata.dbis.rwth-aachen.de/wikidata/?query=")
     assert "psid%3D43641756" in str(petscan_url)
     assert str(quarry_url).startswith("https://qlever.dev/wikimedia-commons?query=")
     assert "quarry_id%3D103960" in str(quarry_url)
+    assert str(placenames_url).startswith(
+        "https://qlever.wikidata.dbis.rwth-aachen.de/wikidata/?query="
+    )
+    assert "placenames/sparql/dataset%3Dsaami" in str(placenames_url)
 
 
 def test_js_helper_normalize_newpages_user_list_page_from_direct_url(page: Page, live_server: Any) -> None:

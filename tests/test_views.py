@@ -49,11 +49,21 @@ class ApiViewTests(SimpleTestCase):
         self.assertContains(response, "New Pages")
         self.assertContains(response, "PagePile")
         self.assertContains(response, "Quarry")
+        self.assertContains(response, "Sámi Place Names")
         self.assertContains(response, 'href="/petscan/"', html=False)
         self.assertContains(response, 'href="/incubator/"', html=False)
         self.assertContains(response, 'href="/newpages/"', html=False)
         self.assertContains(response, 'href="/pagepile/"', html=False)
         self.assertContains(response, 'href="/quarry/"', html=False)
+        self.assertContains(response, 'href="/placenames/"', html=False)
+        self.assertContains(
+            response,
+            'href="https://www.maanmittauslaitos.fi/en/maps-and-spatial-data/'
+            'datasets-and-interfaces/product-descriptions/geographic-names"',
+            html=False,
+        )
+        self.assertContains(response, "05/2026 dataset. License:")
+        self.assertContains(response, "CC BY 4.0")
         self.assertContains(response, 'href="https://meta.wikimedia.org/wiki/PetScan"', html=False)
         self.assertContains(response, 'href="https://incubator.wikimedia.org"', html=False)
         self.assertContains(response, 'href="https://pagepile.toolforge.org"', html=False)
@@ -63,6 +73,7 @@ class ApiViewTests(SimpleTestCase):
         self.assertContains(response, 'data-example-query-source="pagepile"', html=False)
         self.assertContains(response, 'data-example-query-source="incubator"', html=False)
         self.assertContains(response, 'data-example-query-source="newpages"', html=False)
+        self.assertContains(response, 'data-example-query-source="placenames"', html=False)
         self.assertContains(
             response,
             "js/example_query_links.js",

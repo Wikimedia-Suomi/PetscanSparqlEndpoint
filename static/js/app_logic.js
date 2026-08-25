@@ -9,6 +9,8 @@ export const QUARRY_ONTOLOGY_PREFIX = "quarrycol";
 export const QUARRY_ONTOLOGY_BASE = "https://quarry.wmcloud.org/ontology/";
 export const QUARRY_QUERY_PREFIX = "quarry";
 export const QUARRY_QUERY_BASE = "https://quarry.wmcloud.org/query/";
+export const PLACENAMES_ONTOLOGY_PREFIX = "pn";
+export const PLACENAMES_ONTOLOGY_BASE = "https://sparqlbridge.toolforge.org/ontology/placenames/";
 export const RDF_PREFIX = "rdf";
 export const RDF_BASE = "http://www.w3.org/1999/02/22-rdf-syntax-ns#";
 export const SCHEMA_PREFIX = "schema";
@@ -738,7 +740,12 @@ function firstSelectableStructureFieldKeys(structureFields, limit) {
   return next;
 }
 
-export function normalizeSelectedQueryFieldKeys(structureFields, selectedQueryFieldKeys, fallbackLimit) {
+export function normalizeSelectedQueryFieldKeys(
+  structureFields,
+  selectedQueryFieldKeys,
+  fallbackLimit,
+  defaultSelectedQueryFieldKeys
+) {
   var structure = Array.isArray(structureFields) ? structureFields : [];
   var selected = Array.isArray(selectedQueryFieldKeys) ? selectedQueryFieldKeys : [];
   var allowed = {};
@@ -758,7 +765,10 @@ export function normalizeSelectedQueryFieldKeys(structureFields, selectedQueryFi
     next.push(normalized);
   });
 
-  var shouldFallbackToFirstFields = arraysEqual(selected, DEFAULT_SELECTED_QUERY_FIELDS);
+  var fallbackSelection = Array.isArray(defaultSelectedQueryFieldKeys)
+    ? defaultSelectedQueryFieldKeys
+    : DEFAULT_SELECTED_QUERY_FIELDS;
+  var shouldFallbackToFirstFields = arraysEqual(selected, fallbackSelection);
   var usedFallback = false;
   if (!next.length && shouldFallbackToFirstFields) {
     next = firstSelectableStructureFieldKeys(structure, fallbackLimit);
@@ -906,6 +916,35 @@ export function buildWizardQuery(structureFields, selectedQueryFieldKeys) {
     PETSCAN_ONTOLOGY_PREFIX,
     PETSCAN_ONTOLOGY_BASE
   );
+}
+
+export function buildPlacenamesWizardQuery(structureFields, selectedQueryFieldKeys) {
+  var normalizedStructureFields = Array.isArray(structureFields) ? structureFields : [];
+  var selected = {};
+  (Array.isArray(selectedQueryFieldKeys) ? selectedQueryFieldKeys : []).forEach(function (key) {
+    selected[String(key || "").trim()] = true;
+  });
+
+  var selectVars = ["?record"];
+  var whereLines = ["  ?record a " + PLACENAMES_ONTOLOGY_PREFIX + ":PlaceNameRecord ."];
+  normalizedStructureFields.forEach(function (field) {
+    var key = String((field && field.source_key) || "").trim();
+    if (!key || !selected[key]) {
+      return;
+    }
+    var variableName = "?" + normalizeFieldVariableName(key);
+    selectVars.push(variableName);
+    whereLines.push(
+      "  OPTIONAL { ?record " + fieldPredicateTerm(field, PLACENAMES_ONTOLOGY_PREFIX)
+      + " " + variableName + " . }"
+    );
+  });
+
+  return [
+    "PREFIX " + PLACENAMES_ONTOLOGY_PREFIX + ": <" + PLACENAMES_ONTOLOGY_BASE + ">",
+    "SELECT " + selectVars.join(" "),
+    "WHERE {",
+  ].concat(whereLines, ["}", "LIMIT 100"]).join("\n");
 }
 
 function fieldPredicateTerm(field, fallbackPrefix) {

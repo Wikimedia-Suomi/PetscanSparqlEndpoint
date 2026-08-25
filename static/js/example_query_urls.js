@@ -150,6 +150,21 @@ SELECT * WHERE {
 LIMIT 50
 `;
 
+const PLACENAMES_EXAMPLE_QUERY = `# This query fetches Sámi place names from the static local dataset.
+PREFIX pn: <https://sparqlbridge.toolforge.org/ontology/placenames/>
+
+SELECT ?record ?place ?name ?municipality ?wkt WHERE {
+  SERVICE <https://sparqlbridge.toolforge.org/placenames/sparql/dataset=saami> {
+    ?record a pn:PlaceNameRecord ;
+            pn:place ?place ;
+            pn:spelling ?name ;
+            pn:municipality ?municipality ;
+            pn:wgs84WKT ?wkt .
+  }
+}
+LIMIT 100
+`;
+
 const QLEVER_WIKIDATA_BASE_URL = "https://qlever.wikidata.dbis.rwth-aachen.de/wikidata/?query=";
 const QLEVER_COMMONS_BASE_URL = "https://qlever.dev/wikimedia-commons?query=";
 
@@ -185,6 +200,10 @@ export function buildNewpagesExampleQueryUrl() {
   return buildQueryUrl(QLEVER_WIKIDATA_BASE_URL, NEWPAGES_EXAMPLE_QUERY);
 }
 
+export function buildPlacenamesExampleQueryUrl() {
+  return buildQueryUrl(QLEVER_WIKIDATA_BASE_URL, PLACENAMES_EXAMPLE_QUERY);
+}
+
 export function buildExampleQueryUrl(source) {
   var normalizedSource = String(source || "").trim().toLowerCase();
   if (normalizedSource === "petscan") {
@@ -201,6 +220,9 @@ export function buildExampleQueryUrl(source) {
   }
   if (normalizedSource === "newpages") {
     return buildNewpagesExampleQueryUrl();
+  }
+  if (normalizedSource === "placenames") {
+    return buildPlacenamesExampleQueryUrl();
   }
   return "";
 }

@@ -6,6 +6,7 @@ This is a django app which works as SPARQL endpoint for PetScan query results.
 
 - Give the app a PetScan `psid`, and it turns that PetScan JSON result into a local RDF dataset.
 - The dataset is stored in Oxigraph, and exposed via a SPARQL endpoint at `/petscan/sparql/...`.
+- A versioned Sámi place-name dataset is bundled locally and exposed at `/placenames/sparql/dataset=saami`.
 - Web UI flow: load PetScan data -> inspect generated fields/structure -> run SPARQL queries.
 - Optional enrichment adds Wikidata-related fields for `gil_link` targets (API or Toolforge SQL backend).
 
@@ -122,6 +123,8 @@ python manage.py runserver
 ```
 
 Open [http://127.0.0.1:8000/petscan/](http://127.0.0.1:8000/petscan/).
+The bundled place-name source is available at
+[http://127.0.0.1:8000/placenames/](http://127.0.0.1:8000/placenames/).
 
 ### Check API enrichment coverage for `gil_link`
 
@@ -198,7 +201,10 @@ Security-related Django settings are configured via environment variables:
 - `DJANGO_SECRET_KEY` (required)
 - `DJANGO_DEBUG` (`1/true/yes/on` enables debug; default: disabled)
 - `DJANGO_ALLOWED_HOSTS` (comma-separated list, example: `localhost,127.0.0.1,mydomain.tld`)
-- `OXIGRAPH_BASE_DIR` (required absolute path for Oxigraph store directory)
+- `OXIGRAPH_BASE_DIR` (required absolute path for the Oxigraph store directory;
+  the place-name cache rejects symlinks in every path component)
+- `PLACENAMES_SCHEMA_MODE` (`hardcoded` by default; use `dynamic` to derive the
+  place-name field structure from Oxigraph after import)
 
 When using `manage.py runserver`, keep `DJANGO_DEBUG=1`. The app emits a startup warning if debug
 is disabled, because Django will not serve the UI static files by default in that mode. This check
@@ -272,6 +278,60 @@ SELECT ?item ?title WHERE {
 }
 LIMIT 20
 ```
+
+## Sámi Place Names Endpoint
+
+The repository stores the immutable source distribution as
+`source-data/placenames_simple_saami_2026-05.nq.gz`. It contains North Sámi,
+Inari Sámi, and Skolt Sámi names derived from the National Land Survey of
+Finland Geographic Names dataset, version 2026-05. The matching JSON manifest
+contains file sizes, SHA-256 checksums, graph IRI, counts, source, licence, and
+attribution. The `source-data` directory, manifest, and RDF asset must be real
+files and directories; symlinks are rejected.
+
+On the first request, the application verifies the gzip asset and builds an
+Oxigraph index in the dataset's fixed directory below
+`OXIGRAPH_BASE_DIR/_static/placenames/` (currently `saami/`).
+During that import it selects the field structure according to
+`PLACENAMES_SCHEMA_MODE`. The default `hardcoded` mode uses the checked-in field
+definition and avoids an additional graph scan; `dynamic` derives the fields,
+RDF value types, coverage, and cardinality directly from the loaded graph. The
+selected structure is saved in the store metadata.
+Later requests reuse that index and schema. Loading is local and does not
+download source data. Concurrent processes serialize the initial build with a
+filesystem lock. After a new version has been imported successfully, older
+data in that dataset's fixed Oxigraph directory is replaced, so old versions
+are not retained as separate cache directories.
+
+### URL
+
+`/placenames/sparql/dataset=saami`
+
+The endpoint accepts `GET` and `POST` using the same SPARQL query formats as the
+PetScan endpoint. The dataset's named graph is also configured as the default
+query graph, so both bare triple patterns and explicit `GRAPH` patterns work.
+
+```bash
+curl --get 'http://127.0.0.1:8000/placenames/sparql/dataset=saami' \
+  --data-urlencode 'query=PREFIX pn: <https://sparqlbridge.toolforge.org/ontology/placenames/> SELECT ?name ?place WHERE { ?record pn:spelling ?name ; pn:place ?place . } LIMIT 20'
+```
+
+```sparql
+PREFIX pn: <https://sparqlbridge.toolforge.org/ontology/placenames/>
+
+SELECT ?name ?place WHERE {
+  SERVICE <https://sparqlbridge.toolforge.org/placenames/sparql/dataset=saami> {
+    ?record pn:spelling ?name ;
+            pn:place ?place .
+  }
+}
+LIMIT 100
+```
+
+Dataset metadata and first-load status are available from
+`/placenames/api/structure?dataset=saami`. Rebuilding the source distribution
+is documented in `source-data/README_placenames_simple_saami.md`; the converter
+dependency `pyproj` is intentionally development-only.
 
 ## Structure Endpoint
 

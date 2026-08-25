@@ -16,4 +16,5 @@ data/oxigraph/
 data/oxigraph-bench*/
 data/oxigraph-opt-bench*/
 data/benchmarks/results/
+source-data/*.nq
 .DS_Store
