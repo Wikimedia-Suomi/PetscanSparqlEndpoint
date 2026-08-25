@@ -30,7 +30,7 @@ _HIDDEN_INCUBATOR_NAMESPACE_IDS = (6, 8, 12)
 class LiveIncubatorNamespaceOptionsTests(SimpleTestCase):
     def test_configured_namespace_options_match_live_siteinfo(self) -> None:
         request_url = "{}?{}".format(
-            str(getattr(settings, "INCUBATOR_API_ENDPOINT")),
+            str(settings.INCUBATOR_API_ENDPOINT),
             urlencode(
                 {
                     "action": "query",

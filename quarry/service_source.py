@@ -320,7 +320,7 @@ def _sequence_row_to_record(
     row: Sequence[Any],
 ) -> Dict[str, Any]:
     row_length = len(row)
-    record = dict(zip(headers, row))
+    record = dict(zip(headers, row, strict=False))
 
     if row_length < header_count:
         for index in range(row_length, header_count):
