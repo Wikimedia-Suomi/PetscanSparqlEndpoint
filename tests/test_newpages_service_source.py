@@ -316,12 +316,16 @@ class NewpagesServiceSourceTests(SimpleTestCase):
                         ),
                     ]
 
-                    records, source_url = service_source.fetch_newpage_records(
-                        wiki_domains=["fi.wikipedia.org"],
-                        timestamp="202604",
-                        user_list_page=":w:fi:Wikipedia:Users",
-                        include_edited_pages=True,
-                    )
+                    with patch("newpages.service_source.datetime", wraps=datetime) as datetime_mock:
+                        datetime_mock.now.return_value = datetime(
+                            2026, 4, 6, 0, 0, 0, tzinfo=timezone.utc
+                        )
+                        records, source_url = service_source.fetch_newpage_records(
+                            wiki_domains=["fi.wikipedia.org"],
+                            timestamp="202604",
+                            user_list_page=":w:fi:Wikipedia:Users",
+                            include_edited_pages=True,
+                        )
 
         self.assertEqual(records, [])
         self.assertEqual(source_url, "https://fi.wikipedia.org/wiki/Special:Contributions")
@@ -1519,12 +1523,16 @@ class NewpagesServiceSourceTests(SimpleTestCase):
                         ),
                     ]
 
-                    records, source_url = service_source.fetch_newpage_records(
-                        wiki_domains=["fi.wikipedia.org"],
-                        timestamp="20260401",
-                        user_list_page=":w:fi:Wikipedia:Users",
-                        include_edited_pages=True,
-                    )
+                    with patch("newpages.service_source.datetime", wraps=datetime) as datetime_mock:
+                        datetime_mock.now.return_value = datetime(
+                            2026, 4, 6, 0, 0, 0, tzinfo=timezone.utc
+                        )
+                        records, source_url = service_source.fetch_newpage_records(
+                            wiki_domains=["fi.wikipedia.org"],
+                            timestamp="20260401",
+                            user_list_page=":w:fi:Wikipedia:Users",
+                            include_edited_pages=True,
+                        )
 
         self.assertEqual(source_url, "https://fi.wikipedia.org/wiki/Special:Contributions")
         self.assertEqual(len(records), 1)
@@ -2877,12 +2885,16 @@ class NewpagesServiceSourceTests(SimpleTestCase):
                         fi_connection,
                     ]
 
-                    records, source_url = service_source.fetch_newpage_records(
-                        wiki_domains=["fi.wikipedia.org"],
-                        timestamp="202604",
-                        user_list_page=":w:fi:Wikipedia:Users",
-                        include_edited_pages=True,
-                    )
+                    with patch("newpages.service_source.datetime", wraps=datetime) as datetime_mock:
+                        datetime_mock.now.return_value = datetime(
+                            2026, 4, 6, 0, 0, 0, tzinfo=timezone.utc
+                        )
+                        records, source_url = service_source.fetch_newpage_records(
+                            wiki_domains=["fi.wikipedia.org"],
+                            timestamp="202604",
+                            user_list_page=":w:fi:Wikipedia:Users",
+                            include_edited_pages=True,
+                        )
 
         self.assertEqual(source_url, "https://fi.wikipedia.org/wiki/Special:Contributions")
         self.assertEqual(len(records), 1)

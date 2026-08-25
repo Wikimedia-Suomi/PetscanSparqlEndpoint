@@ -16,7 +16,7 @@ from statistics import mean, median
 from tempfile import TemporaryDirectory
 from time import perf_counter
 from types import ModuleType
-from typing import Any, Dict, List, Mapping, Optional, Sequence, TextIO
+from typing import Any, BinaryIO, Dict, List, Mapping, Optional, Sequence, TextIO
 from unittest.mock import patch
 from urllib.parse import urlparse
 
@@ -317,7 +317,7 @@ def _append_nquads_line(
 
 
 def _flush_nquads_lines_to_binary_stream(
-    binary_stream: io.BufferedWriter,
+    binary_stream: BinaryIO,
     nquads_line_buffer: List[str],
 ) -> int:
     if not nquads_line_buffer:
