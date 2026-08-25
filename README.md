@@ -25,9 +25,18 @@ Toolforge currently provides Python 3.13, and this repository targets Python 3.1
 ```bash
 python3 -m venv .venv
 source .venv/bin/activate
-pip install -r requirements.txt -r requirements-dev.txt
+python -m pip install --require-hashes -r constraints-dev.txt
 export DJANGO_SECRET_KEY='dev-only-change-me'
 export OXIGRAPH_BASE_DIR="$PWD/data/oxigraph"
+```
+
+Regenerate the tested dependency set after intentionally changing requirement ranges:
+
+```bash
+pip-compile --resolver=backtracking --strip-extras --allow-unsafe --generate-hashes --no-emit-index-url \
+  --output-file=constraints-dev.txt constraints-dev.in
+pip-compile --resolver=backtracking --strip-extras --allow-unsafe --generate-hashes --no-emit-index-url \
+  --output-file=constraints.txt constraints.in
 ```
 
 ### Run tests (including lint, type-check and security scans)
@@ -354,7 +363,7 @@ cd ~/www/python
 python3 -m venv venv
 source venv/bin/activate
 cd src
-pip install -r requirements.txt
+python -m pip install --require-hashes -r constraints.txt
 python manage.py check_replica_connections
 python manage.py check_api_enrichment
 TOOLFORGE_INTEGRATION_TESTS=1 python manage.py test

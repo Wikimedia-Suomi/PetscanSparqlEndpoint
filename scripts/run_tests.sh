@@ -22,8 +22,7 @@ echo "Running security scan (bandit)..."
 "${PYTHON}" -m bandit -c pyproject.toml -r petscan petscan_endpoint manage.py
 
 echo "Running dependency audit (pip-audit)..."
-"${PYTHON}" -m pip_audit -r requirements.txt --cache-dir /tmp/pip-audit-cache
-"${PYTHON}" -m pip_audit -r requirements-dev.txt --cache-dir /tmp/pip-audit-cache
+"${PYTHON}" -m pip_audit --local --strict --cache-dir /tmp/pip-audit-cache
 
 echo "Resetting coverage data..."
 "${PYTHON}" -m coverage erase

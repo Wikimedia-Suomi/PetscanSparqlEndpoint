@@ -1,7 +1,10 @@
 # Default owner for all files in this repository.
-* zache-fi
+* @zache-fi
 
 # Security-sensitive paths
-/petscan_endpoint/settings.py zache-fi
-/requirements*.txt zache-fi
-/.github/workflows/ zache-fi
+/petscan_endpoint/settings.py @zache-fi
+/requirements*.txt @zache-fi
+/constraints*.in @zache-fi
+/constraints*.txt @zache-fi
+/.github/dependabot.yml @zache-fi
+/.github/workflows/ @zache-fi
