@@ -13,7 +13,7 @@ import {
   normalizeSelectedQueryFieldKeys as normalizeSelectedQueryFieldKeysHelper,
   safeExternalHref as safeExternalHrefHelper,
   splitSparqlPrologue as splitSparqlPrologueHelper,
-} from "./app_logic.js";
+} from "./app_logic.js?v=20260825-06";
 
 (function () {
   if (!window.Vue) {

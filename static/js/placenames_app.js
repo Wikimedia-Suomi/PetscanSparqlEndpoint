@@ -7,7 +7,7 @@ import {
   inferQueryType as inferQueryTypeHelper,
   normalizeSelectedQueryFieldKeys as normalizeSelectedQueryFieldKeysHelper,
   safeExternalHref as safeExternalHrefHelper,
-} from "./app_logic.js?v=20260825-03";
+} from "./app_logic.js?v=20260825-06";
 
 (function () {
   if (!window.Vue) {

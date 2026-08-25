@@ -119,6 +119,21 @@ def test_js_helper_build_open_query_url_uses_wdqs_and_sophox(page: Page, live_se
     assert "SERVICE <https://example.test/petscan/sparql/psid=43641756>" in decoded_fragment
 
 
+def test_js_helper_build_open_query_url_uses_qlever_openstreetmap(page: Page, live_server: Any) -> None:
+    service_url = "https://example.test/placenames/sparql/dataset=saami"
+    result = _call_js_helper(
+        page,
+        live_server,
+        "buildOpenQueryUrl",
+        ["qlever-osm", "SELECT ?place WHERE { ?place a pn:Place . }", service_url],
+    )
+
+    assert str(result).startswith("https://qlever.dev/osm?query=")
+    decoded_query = unquote(str(result).split("?query=", 1)[1])
+    assert "SERVICE <{}>".format(service_url) in decoded_query
+    assert "SELECT ?place WHERE { ?place a pn:Place . }" in decoded_query
+
+
 def test_js_helper_build_wizard_query_includes_gil_link_enrichment_block(page: Page, live_server: Any) -> None:
     result = _call_js_helper(
         page,

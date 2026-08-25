@@ -241,6 +241,9 @@ def test_playwright_smoke_open_query_dialog_builds_wdqs_url(page: Page, live_ser
     page.get_by_role("button", name="Open query as Federated query in...").click()
     expect(page.get_by_role("heading", name="Open Federated Query In")).to_be_visible()
     dialog = page.locator("dialog.query-target-dialog")
+    expect(dialog.get_by_role("radio", name="Sophox (OpenStreetMap)")).to_be_visible()
+    expect(dialog.get_by_role("radio", name="QLever Wikidata endpoint")).to_be_visible()
+    expect(dialog.get_by_role("radio", name="QLever OpenStreetMap endpoint")).to_be_visible()
 
     dialog.get_by_role("button", name="Open", exact=True).click()
 

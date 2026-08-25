@@ -20,8 +20,9 @@ export const WIKIBASE_BASE = "http://wikiba.se/ontology#";
 
 export const OPEN_QUERY_TARGETS = [
   { value: "wdqs", label: "Wikidata Query Service (via Sophox)" },
-  { value: "sophox", label: "Sophox" },
-  { value: "qlever", label: "QLever endpoint" },
+  { value: "sophox", label: "Sophox (OpenStreetMap)" },
+  { value: "qlever", label: "QLever Wikidata endpoint" },
+  { value: "qlever-osm", label: "QLever OpenStreetMap endpoint" },
 ];
 
 const NEWPAGES_STANDARD_INTERWIKI_PREFIX_BY_SUFFIX = {
@@ -600,6 +601,10 @@ export function buildOpenQueryUrl(target, queryText, serviceUrl) {
   if (target === "qlever") {
     encodedQuery = encodeURIComponent(buildFederatedQueryText(serviceUrl, queryText));
     return "https://qlever.wikidata.dbis.rwth-aachen.de/wikidata/?query=" + encodedQuery;
+  }
+  if (target === "qlever-osm") {
+    encodedQuery = encodeURIComponent(buildFederatedQueryText(serviceUrl, queryText));
+    return "https://qlever.dev/osm?query=" + encodedQuery;
   }
   return "";
 }
