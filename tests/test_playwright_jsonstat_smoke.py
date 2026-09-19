@@ -1,6 +1,7 @@
 import json
 import re
 from typing import Any, Iterator
+from urllib.parse import unquote
 
 import pytest
 from playwright.sync_api import Page, Route, expect
@@ -10,9 +11,7 @@ from tests.playwright_support import managed_page
 pytestmark = [pytest.mark.smoke]
 
 EXAMPLE_URL = "https://pxdata.stat.fi/PxWeb/sq/552d1f53-bdab-472b-a8e7-68b5b8c37cda"
-SOURCE_TOKEN = (
-    "aHR0cHM6Ly9weGRhdGEuc3RhdC5maS9QeFdlYi9zcS81NTJkMWY1My1iZGFiLTQ3MmItYThlNy02OGI1YjhjMzdjZGE"
-)
+SOURCE_TOKEN = "pxdata.stat.fi_552d1f53-bdab-472b-a8e7-68b5b8c37cda"
 STRUCTURE_RESPONSE = {
     "url": EXAMPLE_URL,
     "source_token": SOURCE_TOKEN,
@@ -123,3 +122,44 @@ def test_jsonstat_ui_loads_structure_and_runs_query(page: Page, live_server: Any
     expect(page.locator("pre").filter(has_text="/sparql?dataset=jsonstat&source=")).to_contain_text(
         SOURCE_TOKEN
     )
+
+
+def test_jsonstat_ui_opens_federated_query_dialog(page: Page, live_server: Any) -> None:
+    page.route(
+        "**/jsonstat/api/structure**",
+        lambda route: _fulfill_json(route, STRUCTURE_RESPONSE),
+    )
+    page.goto("{}/jsonstat/".format(live_server.url), wait_until="domcontentloaded")
+    page.get_by_label("JSON-stat 2 file URL").fill(EXAMPLE_URL)
+    page.get_by_role("button", name="Load data").click()
+    page.get_by_label("Refresh data from the source URL before running query").check()
+    page.evaluate(
+        """
+        () => {
+          window.__openedUrls = [];
+          window.open = (url) => {
+            window.__openedUrls.push(url);
+            return {};
+          };
+        }
+        """
+    )
+
+    page.get_by_role("button", name="Open query as Federated query in...").click()
+    expect(page.get_by_role("heading", name="Open Federated Query In")).to_be_visible()
+    dialog = page.locator("dialog.query-target-dialog")
+    expect(dialog.get_by_role("radio", name="Sophox (OpenStreetMap)")).to_be_visible()
+    expect(dialog.get_by_role("radio", name="QLever Wikidata endpoint")).to_be_visible()
+    expect(dialog.get_by_role("radio", name="QLever OpenStreetMap endpoint")).to_be_visible()
+    dialog.get_by_role("button", name="Open", exact=True).click()
+
+    opened_url = page.evaluate("() => window.__openedUrls[0]")
+
+    assert str(opened_url).startswith("https://query.wikidata.org/#")
+    decoded_query = unquote(str(opened_url).split("#", 1)[1])
+    assert "SERVICE <https://sophox.org/sparql>" in decoded_query
+    assert "SERVICE <{}/sparql?dataset=jsonstat&source={}>".format(
+        live_server.url,
+        SOURCE_TOKEN,
+    ) in decoded_query
+    assert "refresh=1" not in decoded_query

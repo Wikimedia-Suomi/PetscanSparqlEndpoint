@@ -41,7 +41,8 @@
             />
             {% endverbatim %}
             <p id="jsonstat-url-help" class="help">
-              Enter an HTTPS URL that returns one JSON-stat 2.0 dataset. Only these domains and
+              Enter a Statistics Finland PxWeb saved-query URL in the form
+              <code>https://&lt;allowed-host&gt;/PxWeb/sq/&lt;UUID&gt;</code>. Only these domains and
               their subdomains are allowed:
               {% for domain in jsonstat_allowed_source_domains %}
                 <code>{{ domain }}</code>{% if not forloop.last %}, {% endif %}
@@ -115,6 +116,14 @@
                 <input id="refresh" type="checkbox" v-model="refreshBeforeQuery" />
                 Refresh data from the source URL before running query
               </label>
+              <button
+                type="button"
+                class="secondary open-query-trigger"
+                :disabled="!openQueryTargets.length"
+                @click="openQueryTargetDialog"
+              >
+                Open query as Federated query in...
+              </button>
             </div>
 
             <details class="structure-collapsible" open>
@@ -214,10 +223,50 @@
         <p class="help">Use this endpoint URL as the target of a SPARQL <code>SERVICE</code> clause:</p>
         <pre class="graph-result">[[ endpointUrl ]]</pre>
       </section>
+
+      <dialog
+        ref="openQueryDialog"
+        class="query-target-dialog"
+        aria-labelledby="open-query-dialog-title"
+        @close="onOpenQueryDialogClose"
+      >
+        <div class="query-target-dialog-inner">
+          <header class="query-target-dialog-header">
+            <h2 id="open-query-dialog-title">Open Federated Query In</h2>
+            <button type="button" class="secondary" @click="closeQueryTargetDialog">Close</button>
+          </header>
+          <div class="query-target-dialog-body">
+            <p class="help">Choose the service where the federated query should open.</p>
+            <fieldset class="query-target-list">
+              <legend class="sr-only">Query target service</legend>
+              <label class="query-target-option" v-for="target in openQueryTargets" :key="target.value">
+                <input
+                  type="radio"
+                  name="open-query-target"
+                  :value="target.value"
+                  v-model="openQueryTarget"
+                />
+                [[ target.label ]]
+              </label>
+            </fieldset>
+            <div class="actions">
+              <button type="button" class="secondary" @click="closeQueryTargetDialog">Cancel</button>
+              <button
+                type="button"
+                class="primary"
+                :disabled="!openQueryTarget"
+                @click="openFederatedQueryInTarget"
+              >
+                Open
+              </button>
+            </div>
+          </div>
+        </div>
+      </dialog>
     </main>
     {% endverbatim %}
 
-    <script src="{% static 'vendor/vue.global.prod.min.js' %}"></script>
-    <script type="module" src="{% static 'js/jsonstat_app.js' %}?v=20260919-01"></script>
+    <script src="{% static 'vendor/vue.global.prod.min.js' %}?v=3.5.22"></script>
+    <script type="module" src="{% static 'js/jsonstat_app.js' %}?v=20260919-02"></script>
   </body>
 </html>

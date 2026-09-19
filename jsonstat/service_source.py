@@ -1,6 +1,5 @@
 """Safe URL fetching and observation extraction for JSON-stat 2.0 datasets."""
 
-import base64
 import ipaddress
 import json
 import math
@@ -30,8 +29,25 @@ __all__ = [
 _DEFAULT_MAX_CELLS = 300_000
 _DEFAULT_MAX_RESPONSE_BYTES = 50 * 1024 * 1024
 _MAX_SOURCE_URL_LENGTH = 4096
-_MAX_SOURCE_TOKEN_LENGTH = 8192
+_MAX_SOURCE_TOKEN_LENGTH = 300
 _JSONSTAT_FETCH_PUBLIC_MESSAGE = "Failed to load JSON-stat data from the upstream service."
+_PXWEB_QUERY_ID_PATTERN = (
+    r"[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-"
+    r"[0-9a-fA-F]{4}-[0-9a-fA-F]{12}"
+)
+_READABLE_SOURCE_HOSTNAME_PATTERN = (
+    r"(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+"
+    r"[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?"
+)
+_PXWEB_SAVED_QUERY_PATH_RE = re.compile(
+    r"^/PxWeb/sq/(?P<query_id>{})$".format(_PXWEB_QUERY_ID_PATTERN)
+)
+_READABLE_SOURCE_TOKEN_RE = re.compile(
+    r"^(?P<hostname>{})_(?P<query_id>{})$".format(
+        _READABLE_SOURCE_HOSTNAME_PATTERN,
+        _PXWEB_QUERY_ID_PATTERN,
+    )
+)
 _FIELD_NAME_RE = re.compile(r"[^0-9A-Za-z_]+")
 _FIELD_UNDERSCORE_RUN_RE = re.compile(r"_+")
 _RESERVED_RECORD_FIELDS = frozenset({"dataset", "position", "status", "value"})
@@ -240,22 +256,34 @@ def fetch_jsonstat_json(source_url: Any) -> Tuple[Dict[str, Any], str]:
 
 def encode_source_token(source_url: Any) -> str:
     normalized_url = normalize_source_url(source_url)
-    token = base64.urlsafe_b64encode(normalized_url.encode("utf-8")).decode("ascii")
-    return token.rstrip("=")
+    parsed = urlsplit(normalized_url)
+    path_match = _PXWEB_SAVED_QUERY_PATH_RE.fullmatch(parsed.path)
+    if path_match is not None and parsed.port is None and not parsed.query:
+        return "{}_{}".format(
+            parsed.hostname,
+            path_match.group("query_id"),
+        )
+    raise ValueError(
+        "The JSON-stat source URL must be a PxWeb saved-query URL in the form "
+        "https://<allowed-host>/PxWeb/sq/<UUID>."
+    )
 
 
 def decode_source_token(value: Any) -> str:
     token = str(value or "").strip()
     if not token:
         raise ValueError("A JSON-stat source token is required in path parameters.")
-    if len(token) > _MAX_SOURCE_TOKEN_LENGTH or not re.fullmatch(r"[A-Za-z0-9_-]+", token):
+    if len(token) > _MAX_SOURCE_TOKEN_LENGTH:
         raise ValueError("The JSON-stat source token is invalid.")
-    padding = "=" * (-len(token) % 4)
-    try:
-        decoded = base64.b64decode(token + padding, altchars=b"-_", validate=True).decode("utf-8")
-    except (UnicodeDecodeError, ValueError) as exc:
-        raise ValueError("The JSON-stat source token is invalid.") from exc
-    return normalize_source_url(decoded)
+
+    readable_match = _READABLE_SOURCE_TOKEN_RE.fullmatch(token)
+    if readable_match is None:
+        raise ValueError("The JSON-stat source token is invalid.")
+    readable_url = "https://{}/PxWeb/sq/{}".format(
+        readable_match.group("hostname"),
+        readable_match.group("query_id"),
+    )
+    return normalize_source_url(readable_url)
 
 
 def normalize_source_params(params: Optional[Mapping[str, Any]]) -> Dict[str, List[str]]:

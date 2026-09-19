@@ -9,6 +9,7 @@ from petscan.service_errors import PetscanServiceError
 from tests.service_test_support import ServiceTestCase
 
 EXAMPLE_URL = "https://pxdata.stat.fi/PxWeb/sq/552d1f53-bdab-472b-a8e7-68b5b8c37cda"
+EXAMPLE_SOURCE_TOKEN = "pxdata.stat.fi_552d1f53-bdab-472b-a8e7-68b5b8c37cda"
 
 
 def _small_payload() -> dict[str, Any]:
@@ -177,10 +178,25 @@ class JsonstatSourceTests(ServiceTestCase):
         )
 
     def test_source_token_round_trip_uses_normalized_url(self) -> None:
-        token = source.encode_source_token(" HTTPS://PXDATA.STAT.FI/PxWeb/sq/example ")
-        self.assertEqual(
-            source.decode_source_token(token), "https://pxdata.stat.fi/PxWeb/sq/example"
+        token = source.encode_source_token(
+            " HTTPS://PXDATA.STAT.FI/PxWeb/sq/552d1f53-bdab-472b-a8e7-68b5b8c37cda "
         )
+
+        self.assertEqual(token, EXAMPLE_SOURCE_TOKEN)
+        self.assertEqual(source.decode_source_token(token), EXAMPLE_URL)
+
+    def test_readable_source_token_rechecks_domain_allowlist(self) -> None:
+        token = "example.org_552d1f53-bdab-472b-a8e7-68b5b8c37cda"
+
+        with self.settings(JSONSTAT_ALLOWED_SOURCE_DOMAINS=("stat.fi",)):
+            with self.assertRaisesMessage(ValueError, "source host is not allowed"):
+                source.decode_source_token(token)
+
+    def test_source_token_rejects_non_pxweb_url(self) -> None:
+        source_url = "https://stat.fi/data.json?lang=en"
+
+        with self.assertRaisesMessage(ValueError, "must be a PxWeb saved-query URL"):
+            source.encode_source_token(source_url)
 
     def test_source_url_allows_configured_domain_and_its_subdomains(self) -> None:
         with self.settings(JSONSTAT_ALLOWED_SOURCE_DOMAINS=("stat.fi",)):
@@ -283,6 +299,6 @@ class JsonstatSourceTests(ServiceTestCase):
 
 
 class JsonstatSourceSimpleTests(SimpleTestCase):
-    def test_decode_source_token_rejects_non_base64url_text(self) -> None:
+    def test_decode_source_token_rejects_invalid_text(self) -> None:
         with self.assertRaisesMessage(ValueError, "source token is invalid"):
             source.decode_source_token("not valid!")

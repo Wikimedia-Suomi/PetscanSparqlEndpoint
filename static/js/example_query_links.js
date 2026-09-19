@@ -1,4 +1,4 @@
-import { buildExampleQueryUrl } from "./example_query_urls.js?v=20260919-01";
+import { buildExampleQueryUrl } from "./example_query_urls.js?v=20260919-02";
 
 export function applyExampleQueryLinks(root = document) {
   root.querySelectorAll("[data-example-query-source]").forEach(function (link) {

@@ -146,6 +146,7 @@ def structure_endpoint(request: HttpRequest) -> JsonResponse:
         return _json_error("Method not allowed. Use GET.", status=405)
     try:
         context = _parse_request_context(request)
+        source_token = source.encode_source_token(context.source_url)
         meta = jsonstat_service.ensure_loaded(context.source_url, refresh=context.refresh)
     except ValueError as exc:
         return _json_error(str(exc), status=400)
@@ -154,7 +155,7 @@ def structure_endpoint(request: HttpRequest) -> JsonResponse:
     return JsonResponse(
         {
             "url": context.source_url,
-            "source_token": source.encode_source_token(context.source_url),
+            "source_token": source_token,
             "meta": meta,
         }
     )

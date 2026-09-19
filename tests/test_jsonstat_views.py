@@ -37,6 +37,7 @@ class JsonstatViewTests(SimpleTestCase):
         self.assertContains(response, "open classification API")
         self.assertContains(response, "dimension identifier and category code match exactly")
         self.assertContains(response, "W3C RDF Data Cube")
+        self.assertContains(response, "Open query as Federated query in...")
         self.assertContains(response, '<th scope="col">Cardinality</th>', html=True)
 
     @patch("jsonstat.views.jsonstat_service.ensure_loaded")
@@ -67,6 +68,19 @@ class JsonstatViewTests(SimpleTestCase):
         )
         self.assertEqual(response.status_code, 400)
         self.assertEqual(response.json()["error"], "The JSON-stat source URL must use HTTPS.")
+
+    @patch("jsonstat.views.jsonstat_service.ensure_loaded")
+    def test_structure_endpoint_rejects_non_pxweb_url_before_loading(
+        self, ensure_loaded: Any
+    ) -> None:
+        response = self.client.get(
+            "/jsonstat/api/structure",
+            data={"url": "https://stat.fi/data.json"},
+        )
+
+        self.assertEqual(response.status_code, 400)
+        self.assertIn("must be a PxWeb saved-query URL", response.json()["error"])
+        ensure_loaded.assert_not_called()
 
     @patch("jsonstat.views.jsonstat_service.ensure_loaded")
     def test_structure_endpoint_sanitizes_transport_errors(self, ensure_loaded: Any) -> None:

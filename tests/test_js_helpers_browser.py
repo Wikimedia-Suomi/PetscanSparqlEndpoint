@@ -101,6 +101,35 @@ def test_js_helper_build_named_service_param_path_supports_quarry_ids(page: Page
     assert result == "quarry_id=103479&refresh=1&limit=25"
 
 
+def test_js_helper_build_jsonstat_wizard_query_uses_data_cube_observations(
+    page: Page, live_server: Any
+) -> None:
+    result = _call_js_helper(
+        page,
+        live_server,
+        "buildJsonstatWizardQuery",
+        [
+            [
+                {
+                    "source_key": "timeperiod_y",
+                    "predicate": "https://sparqlbridge.toolforge.org/ontology/jsonstat/timeperiod_y",
+                },
+                {
+                    "source_key": "value",
+                    "predicate": "https://sparqlbridge.toolforge.org/ontology/jsonstat/value",
+                },
+            ],
+            ["value"],
+        ],
+    )
+
+    assert "PREFIX qb: <http://purl.org/linked-data/cube#>" in result
+    assert "?observation a qb:Observation" in result
+    assert "SELECT ?observation ?value" in result
+    assert "<https://sparqlbridge.toolforge.org/ontology/jsonstat/value> ?value" in result
+    assert "?timeperiod_y" not in result
+
+
 def test_js_helper_build_open_query_url_uses_wdqs_and_sophox(page: Page, live_server: Any) -> None:
     result = _call_js_helper(
         page,
@@ -332,7 +361,10 @@ def test_js_helper_build_example_query_urls(page: Page, live_server: Any) -> Non
     assert str(jsonstat_url).startswith(
         "https://qlever.wikidata.dbis.rwth-aachen.de/wikidata/?query="
     )
-    assert "sparql%3Fdataset%3Djsonstat%26source%3D" in str(jsonstat_url)
+    assert (
+        "sparql%3Fdataset%3Djsonstat%26source%3D"
+        "pxdata.stat.fi_552d1f53-bdab-472b-a8e7-68b5b8c37cda"
+    ) in str(jsonstat_url)
     assert "qb%3AObservation" in str(jsonstat_url)
 
 

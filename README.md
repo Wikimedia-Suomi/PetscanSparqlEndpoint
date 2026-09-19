@@ -336,18 +336,18 @@ curl --get 'http://127.0.0.1:8000/jsonstat/api/structure' \
   --data-urlencode 'refresh=1'
 ```
 
-The response includes `source_token`, a URL-safe token used as a SPARQL endpoint parameter. Keeping the
-potentially complex source URL in this opaque token prevents its own `?` and `&` characters from
-being confused with SPARQL protocol parameters. For the example above, the endpoint is:
+The response includes `source_token`, a URL-safe token used as a SPARQL endpoint parameter. Statistics
+Finland PxWeb saved-query URLs use the readable `<hostname>_<UUID>` format. The endpoint accepts only
+canonical `https://<allowed-host>/PxWeb/sq/<UUID>` sources. For the example above, the endpoint is:
 
-`/sparql?dataset=jsonstat&source=aHR0cHM6Ly9weGRhdGEuc3RhdC5maS9QeFdlYi9zcS81NTJkMWY1My1iZGFiLTQ3MmItYThlNy02OGI1YjhjMzdjZGE`
+`/sparql?dataset=jsonstat&source=pxdata.stat.fi_552d1f53-bdab-472b-a8e7-68b5b8c37cda`
 
 ```sparql
 PREFIX qb: <http://purl.org/linked-data/cube#>
 PREFIX jsonstat: <https://sparqlbridge.toolforge.org/ontology/jsonstat/>
 
 SELECT ?year ?ageGroup ?indicator ?value WHERE {
-  SERVICE <https://sparqlbridge.toolforge.org/sparql?dataset=jsonstat&source=aHR0cHM6Ly9weGRhdGEuc3RhdC5maS9QeFdlYi9zcS81NTJkMWY1My1iZGFiLTQ3MmItYThlNy02OGI1YjhjMzdjZGE> {
+  SERVICE <https://sparqlbridge.toolforge.org/sparql?dataset=jsonstat&source=pxdata.stat.fi_552d1f53-bdab-472b-a8e7-68b5b8c37cda> {
     ?observation a qb:Observation ;
       jsonstat:timeperiod_y ?year ;
       jsonstat:ikaryhma_10_20180101_label ?ageGroup ;

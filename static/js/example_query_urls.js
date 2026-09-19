@@ -156,7 +156,7 @@ PREFIX qb: <http://purl.org/linked-data/cube#>
 PREFIX jsonstat: <https://sparqlbridge.toolforge.org/ontology/jsonstat/>
 
 SELECT ?year ?age_group ?indicator ?participants WHERE {
-  SERVICE <https://sparqlbridge.toolforge.org/sparql?dataset=jsonstat&source=aHR0cHM6Ly9weGRhdGEuc3RhdC5maS9QeFdlYi9zcS81NTJkMWY1My1iZGFiLTQ3MmItYThlNy02OGI1YjhjMzdjZGE> {
+  SERVICE <https://sparqlbridge.toolforge.org/sparql?dataset=jsonstat&source=pxdata.stat.fi_552d1f53-bdab-472b-a8e7-68b5b8c37cda> {
     ?observation a qb:Observation ;
                  jsonstat:timeperiod_y ?year ;
                  jsonstat:ikaryhma_10_20180101_label ?age_group ;

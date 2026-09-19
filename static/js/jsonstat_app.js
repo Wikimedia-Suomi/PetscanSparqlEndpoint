@@ -1,32 +1,22 @@
 import {
+  OPEN_QUERY_TARGETS,
+  buildJsonstatDefaultQueryText as buildJsonstatDefaultQueryTextHelper,
+  buildJsonstatWizardQuery as buildJsonstatWizardQueryHelper,
+  buildNamedServiceParamPath as buildNamedServiceParamPathHelper,
+  buildOpenQueryUrl as buildOpenQueryUrlHelper,
+  buildPetscanServiceUrl as buildPetscanServiceUrlHelper,
   formatFieldType as formatFieldTypeHelper,
   inferQueryType as inferQueryTypeHelper,
-  normalizeFieldVariableName as normalizeFieldVariableNameHelper,
   normalizeSelectedQueryFieldKeys as normalizeSelectedQueryFieldKeysHelper,
-} from "./app_logic.js?v=20260825-06";
+} from "./app_logic.js?v=20260919-02";
 
 (function () {
   if (!window.Vue) {
     return;
   }
 
-  var JSONSTAT_ONTOLOGY_BASE = "https://sparqlbridge.toolforge.org/ontology/jsonstat/";
-  var DATA_CUBE_ONTOLOGY_BASE = "http://purl.org/linked-data/cube#";
   var structurePath = "/jsonstat/api/structure";
   var sparqlBasePath = "/sparql?dataset=jsonstat&";
-
-  function defaultQuery() {
-    return [
-      "PREFIX qb: <" + DATA_CUBE_ONTOLOGY_BASE + ">",
-      "PREFIX jsonstat: <" + JSONSTAT_ONTOLOGY_BASE + ">",
-      "SELECT ?observation ?value",
-      "WHERE {",
-      "  ?observation a qb:Observation .",
-      "  OPTIONAL { ?observation jsonstat:value ?value . }",
-      "}",
-      "LIMIT 50",
-    ].join("\n");
-  }
 
   var app = window.Vue.createApp({
     data: function () {
@@ -34,7 +24,7 @@ import {
         sourceUrl: "",
         loadedSourceUrl: "",
         loadedSourceToken: "",
-        query: defaultQuery(),
+        query: buildJsonstatDefaultQueryTextHelper(),
         refreshBeforeQuery: false,
         isBusy: false,
         loadStatusMessage: "Ready.",
@@ -42,11 +32,12 @@ import {
         statusMessage: "Ready.",
         statusLevel: "neutral",
         queryType: "",
-        resultFormat: "",
         result: null,
         meta: {},
         selectedQueryFieldKeys: ["value"],
         hasLoadedData: false,
+        openQueryTarget: "wdqs",
+        openQueryTargets: OPEN_QUERY_TARGETS,
       };
     },
     computed: {
@@ -87,9 +78,7 @@ import {
         return Boolean(this.hasLoadedData && this.loadedSourceToken);
       },
       endpointUrl: function () {
-        return this.loadedSourceToken
-          ? window.location.origin + sparqlBasePath + "source=" + this.loadedSourceToken
-          : "";
+        return this.loadedSourceToken ? this.buildJsonstatServiceUrl(false) : "";
       },
     },
     watch: {
@@ -153,10 +142,7 @@ import {
         this.statusMessage = "Running SPARQL query...";
         this.statusLevel = "neutral";
         try {
-          var servicePath = "source=" + this.loadedSourceToken;
-          if (this.refreshBeforeQuery) {
-            servicePath += "&refresh=1";
-          }
+          var servicePath = this.buildSparqlServicePath(this.refreshBeforeQuery);
           var response = await fetch(sparqlBasePath + servicePath, {
             method: "POST",
             headers: {
@@ -211,6 +197,71 @@ import {
       bindingText: function (binding) {
         return binding && Object.prototype.hasOwnProperty.call(binding, "value") ? binding.value : "";
       },
+      buildSparqlServicePath: function (refresh) {
+        return buildNamedServiceParamPathHelper("source", this.loadedSourceToken, [], refresh);
+      },
+      buildJsonstatServiceUrl: function (refresh) {
+        return buildPetscanServiceUrlHelper(
+          window.location.origin,
+          sparqlBasePath,
+          this.buildSparqlServicePath(refresh)
+        );
+      },
+      buildOpenQueryUrl: function (target) {
+        return buildOpenQueryUrlHelper(
+          target,
+          this.query,
+          this.buildJsonstatServiceUrl(false)
+        );
+      },
+      openQueryTargetDialog: function () {
+        var dialogRef = this.$refs.openQueryDialog;
+        var dialog = Array.isArray(dialogRef) ? dialogRef[0] : dialogRef;
+        if (!dialog || dialog.open) {
+          return;
+        }
+        if (typeof dialog.showModal === "function") {
+          dialog.showModal();
+          return;
+        }
+        dialog.setAttribute("open", "open");
+      },
+      closeQueryTargetDialog: function () {
+        var dialogRef = this.$refs.openQueryDialog;
+        var dialog = Array.isArray(dialogRef) ? dialogRef[0] : dialogRef;
+        if (!dialog) {
+          return;
+        }
+        if (typeof dialog.close === "function" && dialog.open) {
+          dialog.close();
+          return;
+        }
+        dialog.removeAttribute("open");
+      },
+      onOpenQueryDialogClose: function () {
+        // No-op hook for future dialog state sync.
+      },
+      openFederatedQueryInTarget: function () {
+        var target = String(this.openQueryTarget || "").trim();
+        if (!target) {
+          this.statusMessage = "Choose a target from Open query in.";
+          this.statusLevel = "error";
+          return;
+        }
+        var targetUrl = this.buildOpenQueryUrl(target);
+        if (!targetUrl) {
+          this.statusMessage = "Unsupported Open query in target.";
+          this.statusLevel = "error";
+          return;
+        }
+        var opened = window.open(targetUrl, "_blank", "noopener,noreferrer");
+        if (!opened) {
+          this.statusMessage = "Unable to open new tab. Check browser popup settings.";
+          this.statusLevel = "error";
+          return;
+        }
+        this.closeQueryTargetDialog();
+      },
       isWizardFieldSelected: function (fieldKey) {
         return this.selectedQueryFieldKeys.indexOf(String(fieldKey || "").trim()) !== -1;
       },
@@ -230,6 +281,9 @@ import {
         this.updateQueryFromWizardSelections();
       },
       selectAllWizardFields: function () {
+        if (!this.canShowStructure) {
+          return;
+        }
         this.selectedQueryFieldKeys = this.structureFields.map(function (field) {
           return field.source_key;
         });
@@ -240,37 +294,20 @@ import {
         this.updateQueryFromWizardSelections();
       },
       normalizeWizardSelections: function () {
-        var normalized = normalizeSelectedQueryFieldKeysHelper(
+        var normalizedSelection = normalizeSelectedQueryFieldKeysHelper(
           this.structureFields,
           this.selectedQueryFieldKeys,
           5,
           ["value"]
         );
-        this.selectedQueryFieldKeys = normalized.keys;
+        this.selectedQueryFieldKeys = normalizedSelection.keys;
+        return normalizedSelection.changed;
       },
       buildWizardQuery: function () {
-        var selected = {};
-        this.selectedQueryFieldKeys.forEach(function (key) {
-          selected[key] = true;
-        });
-        var selectVariables = ["?observation"];
-        var whereLines = ["  ?observation a qb:Observation ."];
-        this.structureFields.forEach(function (field) {
-          var key = String(field.source_key || "").trim();
-          var predicate = String(field.predicate || "").trim();
-          if (!key || !predicate || !selected[key]) {
-            return;
-          }
-          var variable = "?" + normalizeFieldVariableNameHelper(key);
-          selectVariables.push(variable);
-          whereLines.push("  OPTIONAL { ?observation <" + predicate + "> " + variable + " . }");
-        });
-        return [
-          "PREFIX qb: <" + DATA_CUBE_ONTOLOGY_BASE + ">",
-          "PREFIX jsonstat: <" + JSONSTAT_ONTOLOGY_BASE + ">",
-          "SELECT " + selectVariables.join(" "),
-          "WHERE {",
-        ].concat(whereLines, ["}", "LIMIT 50"]).join("\n");
+        return buildJsonstatWizardQueryHelper(
+          this.structureFields,
+          this.selectedQueryFieldKeys
+        );
       },
       updateQueryFromWizardSelections: function () {
         this.query = this.buildWizardQuery();
@@ -278,6 +315,6 @@ import {
     },
   });
 
-  app.config.compilerOptions.delimiters = ["[[", "]]" ];
+  app.config.compilerOptions.delimiters = ["[[", "]]"];
   app.mount("#app");
 })();

@@ -11,6 +11,10 @@ export const QUARRY_QUERY_PREFIX = "quarry";
 export const QUARRY_QUERY_BASE = "https://quarry.wmcloud.org/query/";
 export const PLACENAMES_ONTOLOGY_PREFIX = "pn";
 export const PLACENAMES_ONTOLOGY_BASE = "https://sparqlbridge.toolforge.org/ontology/placenames/";
+export const JSONSTAT_ONTOLOGY_PREFIX = "jsonstat";
+export const JSONSTAT_ONTOLOGY_BASE = "https://sparqlbridge.toolforge.org/ontology/jsonstat/";
+export const DATA_CUBE_ONTOLOGY_PREFIX = "qb";
+export const DATA_CUBE_ONTOLOGY_BASE = "http://purl.org/linked-data/cube#";
 export const RDF_PREFIX = "rdf";
 export const RDF_BASE = "http://www.w3.org/1999/02/22-rdf-syntax-ns#";
 export const SCHEMA_PREFIX = "schema";
@@ -299,6 +303,19 @@ export function buildIncubatorDefaultQueryText(subjectVariableName) {
 
 export function buildPagepileDefaultQueryText(subjectVariableName) {
   return buildIncubatorDefaultQueryText(subjectVariableName);
+}
+
+export function buildJsonstatDefaultQueryText() {
+  return [
+    "PREFIX " + DATA_CUBE_ONTOLOGY_PREFIX + ": <" + DATA_CUBE_ONTOLOGY_BASE + ">",
+    "PREFIX " + JSONSTAT_ONTOLOGY_PREFIX + ": <" + JSONSTAT_ONTOLOGY_BASE + ">",
+    "SELECT ?observation ?value",
+    "WHERE {",
+    "  ?observation a " + DATA_CUBE_ONTOLOGY_PREFIX + ":Observation .",
+    "  OPTIONAL { ?observation " + JSONSTAT_ONTOLOGY_PREFIX + ":value ?value . }",
+    "}",
+    "LIMIT 50",
+  ].join("\n");
 }
 
 export function defaultQueryText() {
@@ -950,6 +967,34 @@ export function buildPlacenamesWizardQuery(structureFields, selectedQueryFieldKe
     "SELECT " + selectVars.join(" "),
     "WHERE {",
   ].concat(whereLines, ["}", "LIMIT 100"]).join("\n");
+}
+
+export function buildJsonstatWizardQuery(structureFields, selectedQueryFieldKeys) {
+  var normalizedStructureFields = Array.isArray(structureFields) ? structureFields : [];
+  var selected = {};
+  (Array.isArray(selectedQueryFieldKeys) ? selectedQueryFieldKeys : []).forEach(function (key) {
+    selected[String(key || "").trim()] = true;
+  });
+
+  var selectVariables = ["?observation"];
+  var whereLines = ["  ?observation a " + DATA_CUBE_ONTOLOGY_PREFIX + ":Observation ."];
+  normalizedStructureFields.forEach(function (field) {
+    var key = String((field && field.source_key) || "").trim();
+    var predicate = String((field && field.predicate) || "").trim();
+    if (!key || !predicate || !selected[key]) {
+      return;
+    }
+    var variable = "?" + normalizeFieldVariableName(key);
+    selectVariables.push(variable);
+    whereLines.push("  OPTIONAL { ?observation <" + predicate + "> " + variable + " . }");
+  });
+
+  return [
+    "PREFIX " + DATA_CUBE_ONTOLOGY_PREFIX + ": <" + DATA_CUBE_ONTOLOGY_BASE + ">",
+    "PREFIX " + JSONSTAT_ONTOLOGY_PREFIX + ": <" + JSONSTAT_ONTOLOGY_BASE + ">",
+    "SELECT " + selectVariables.join(" "),
+    "WHERE {",
+  ].concat(whereLines, ["}", "LIMIT 50"]).join("\n");
 }
 
 function fieldPredicateTerm(field, fallbackPrefix) {
