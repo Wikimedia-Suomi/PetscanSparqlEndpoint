@@ -23,7 +23,7 @@ import {
   var createApp = window.Vue.createApp;
   var newpagesBasePath = "/newpages";
   var newpagesStructurePath = newpagesBasePath + "/api/structure";
-  var newpagesSparqlBasePath = newpagesBasePath + "/sparql";
+  var newpagesSparqlBasePath = "/sparql?dataset=newpages";
   var newpagesRowIdVariableName = "new_page";
   var defaultNewpagesSelectedQueryFields = [
     "wikidata_entity",
@@ -143,7 +143,7 @@ import {
         if (!this.currentFilterSignature) {
           return base;
         }
-        return base + "/" + this.currentFilterSignature;
+        return base + "&" + this.currentFilterSignature;
       },
       sourceDataUrl: function () {
         return "https://meta.wikimedia.org/wiki/Special:SiteMatrix";
@@ -312,11 +312,11 @@ import {
         if (!servicePath) {
           return window.location.origin + newpagesSparqlBasePath;
         }
-        return window.location.origin + newpagesSparqlBasePath + "/" + servicePath;
+        return window.location.origin + newpagesSparqlBasePath + "&" + servicePath;
       },
       sparqlRequest: async function (query, refresh) {
         var servicePath = this.buildSparqlServicePath(refresh);
-        var requestUrl = newpagesSparqlBasePath + (servicePath ? "/" + servicePath : "");
+        var requestUrl = newpagesSparqlBasePath + (servicePath ? "&" + servicePath : "");
 
         var response = await fetch(requestUrl, {
           method: "POST",

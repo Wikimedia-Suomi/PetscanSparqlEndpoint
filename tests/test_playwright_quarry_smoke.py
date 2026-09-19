@@ -82,7 +82,7 @@ def _load_quarry_structure_successfully(page: Page, live_server: Any) -> None:
 
 def _stub_quarry_select_query_success(page: Page) -> None:
     page.route(
-        "**/quarry/sparql/**",
+        "**/sparql?dataset=quarry*",
         lambda route: route.fulfill(
             status=200,
             content_type="application/sparql-results+json; charset=utf-8",

@@ -22,7 +22,7 @@ import {
   var createApp = window.Vue.createApp;
   var incubatorBasePath = "/incubator";
   var incubatorStructurePath = incubatorBasePath + "/api/structure";
-  var incubatorSparqlBasePath = incubatorBasePath + "/sparql";
+  var incubatorSparqlBasePath = "/sparql?dataset=incubator";
   var incubatorRowIdVariableName = "incubator_page";
   var defaultIncubatorSelectedQueryFields = [
     "wikidata_entity",
@@ -147,7 +147,7 @@ import {
         if (!this.currentFilterSignature) {
           return base;
         }
-        return base + "/" + this.currentFilterSignature;
+        return base + "&" + this.currentFilterSignature;
       },
       incubatorCategoryUrl: function () {
         return buildIncubatorCategoryUrlHelper();
@@ -301,11 +301,11 @@ import {
         if (!servicePath) {
           return window.location.origin + incubatorSparqlBasePath;
         }
-        return window.location.origin + incubatorSparqlBasePath + "/" + servicePath;
+        return window.location.origin + incubatorSparqlBasePath + "&" + servicePath;
       },
       sparqlRequest: async function (query, refresh) {
         var servicePath = this.buildSparqlServicePath(refresh);
-        var requestUrl = incubatorSparqlBasePath + (servicePath ? "/" + servicePath : "");
+        var requestUrl = incubatorSparqlBasePath + (servicePath ? "&" + servicePath : "");
 
         var response = await fetch(requestUrl, {
           method: "POST",

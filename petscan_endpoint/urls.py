@@ -4,6 +4,7 @@ from . import views
 
 urlpatterns = [
     path("", views.home, name="root_home"),
+    path("sparql", views.sparql_endpoint, name="unified_sparql_endpoint"),
     path("petscan/", include("petscan.urls")),
     path("incubator/", include("incubator.urls")),
     path("jsonstat/", include("jsonstat.urls")),

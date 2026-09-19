@@ -6,10 +6,12 @@ endpoints.
 ## TL;DR
 
 - Give the app a PetScan `psid`, and it turns that PetScan JSON result into a local RDF dataset.
-- The dataset is stored in Oxigraph, and exposed via a SPARQL endpoint at `/petscan/sparql/...`.
+- The dataset is stored in Oxigraph, and exposed via the shared SPARQL endpoint at
+  `/sparql?dataset=petscan&...`.
 - Give the JSON-stat source an allowlisted HTTPS URL, and it turns a JSON-stat 2.0 cube into RDF
-  observations under `/jsonstat/sparql/...`.
-- A versioned Sámi place-name dataset is bundled locally and exposed at `/placenames/sparql/dataset=saami`.
+  observations under `/sparql?dataset=jsonstat&...`.
+- A versioned Sámi place-name dataset is bundled locally and exposed at
+  `/sparql?dataset=placenames`.
 - Web UI flow: load PetScan data -> inspect generated fields/structure -> run SPARQL queries.
 - Optional enrichment adds Wikidata-related fields for `gil_link` targets (API or Toolforge SQL backend).
 
@@ -284,7 +286,13 @@ python manage.py check_endpoint_snapshot_regression --write
 
 ### URL
 
-`/petscan/sparql/<path:service_params>`
+`/sparql?dataset=petscan&<service-parameters>`
+
+All sources use the fixed `/sparql` path so Wikimedia Query Service can allowlist one endpoint.
+Select the source with `dataset`: `petscan`, `quarry`, `pagepile`, `incubator`, `newpages`,
+`jsonstat`, or `placenames`. Existing source-specific paths such as
+`/petscan/sparql/psid=43641756` remain supported for backwards compatibility, but new links and
+queries should use the shared endpoint.
 
 ### Parameters
 
@@ -292,13 +300,13 @@ python manage.py check_endpoint_snapshot_regression --write
 - `query` (required): SPARQL query (for `GET`) or in the request body (for `POST`)
 - `refresh` (optional): `1/true` to force reloading PetScan data before query
 - any additional URL query parameters are forwarded to PetScan JSON fetch (except reserved keys `psid`, `format`, `query`, `refresh`)
-- `POST /petscan/sparql` supports `Content-Type: application/sparql-query` and `application/x-www-form-urlencoded`
+- `POST /sparql?dataset=petscan&...` supports `Content-Type: application/sparql-query` and `application/x-www-form-urlencoded`
 - In the web UI, use the **PetScan extra GET params** field (example: `category=Turku&language=fi`) to simulate `SERVICE` URI parameters.
 
 ### Example `GET`
 
 ```bash
-curl --get 'http://127.0.0.1:8000/petscan/sparql/psid=43641756' \
+curl --get 'http://127.0.0.1:8000/sparql?dataset=petscan&psid=43641756' \
   --data-urlencode 'query=SELECT ?item ?title WHERE { ?item a <https://petscan.wmcloud.org/ontology/Page> . OPTIONAL { ?item <https://petscan.wmcloud.org/ontology/title> ?title } } LIMIT 5'
 ```
 
@@ -308,7 +316,7 @@ You can include this endpoint in a federated query by encoding `psid` in the end
 
 ```sparql
 SELECT ?item ?title WHERE {
-  SERVICE <http://127.0.0.1:8000/petscan/sparql/psid=43641756> {
+  SERVICE <http://127.0.0.1:8000/sparql?dataset=petscan&psid=43641756> {
     ?item a <https://petscan.wmcloud.org/ontology/Page> .
     OPTIONAL { ?item <https://petscan.wmcloud.org/ontology/title> ?title }
   }
@@ -328,18 +336,18 @@ curl --get 'http://127.0.0.1:8000/jsonstat/api/structure' \
   --data-urlencode 'refresh=1'
 ```
 
-The response includes `source_token`, a URL-safe token used in the SPARQL path. Keeping the
+The response includes `source_token`, a URL-safe token used as a SPARQL endpoint parameter. Keeping the
 potentially complex source URL in this opaque token prevents its own `?` and `&` characters from
 being confused with SPARQL protocol parameters. For the example above, the endpoint is:
 
-`/jsonstat/sparql/source=aHR0cHM6Ly9weGRhdGEuc3RhdC5maS9QeFdlYi9zcS81NTJkMWY1My1iZGFiLTQ3MmItYThlNy02OGI1YjhjMzdjZGE`
+`/sparql?dataset=jsonstat&source=aHR0cHM6Ly9weGRhdGEuc3RhdC5maS9QeFdlYi9zcS81NTJkMWY1My1iZGFiLTQ3MmItYThlNy02OGI1YjhjMzdjZGE`
 
 ```sparql
 PREFIX qb: <http://purl.org/linked-data/cube#>
 PREFIX jsonstat: <https://sparqlbridge.toolforge.org/ontology/jsonstat/>
 
 SELECT ?year ?ageGroup ?indicator ?value WHERE {
-  SERVICE <https://sparqlbridge.toolforge.org/jsonstat/sparql/source=aHR0cHM6Ly9weGRhdGEuc3RhdC5maS9QeFdlYi9zcS81NTJkMWY1My1iZGFiLTQ3MmItYThlNy02OGI1YjhjMzdjZGE> {
+  SERVICE <https://sparqlbridge.toolforge.org/sparql?dataset=jsonstat&source=aHR0cHM6Ly9weGRhdGEuc3RhdC5maS9QeFdlYi9zcS81NTJkMWY1My1iZGFiLTQ3MmItYThlNy02OGI1YjhjMzdjZGE> {
     ?observation a qb:Observation ;
       jsonstat:timeperiod_y ?year ;
       jsonstat:ikaryhma_10_20180101_label ?ageGroup ;
@@ -422,14 +430,14 @@ are not retained as separate cache directories.
 
 ### URL
 
-`/placenames/sparql/dataset=saami`
+`/sparql?dataset=placenames`
 
 The endpoint accepts `GET` and `POST` using the same SPARQL query formats as the
 PetScan endpoint. The dataset's named graph is also configured as the default
 query graph, so both bare triple patterns and explicit `GRAPH` patterns work.
 
 ```bash
-curl --get 'http://127.0.0.1:8000/placenames/sparql/dataset=saami' \
+curl --get 'http://127.0.0.1:8000/sparql?dataset=placenames' \
   --data-urlencode 'query=PREFIX pn: <https://sparqlbridge.toolforge.org/ontology/placenames/> SELECT ?name ?place WHERE { ?record pn:spelling ?name ; pn:place ?place . } LIMIT 20'
 ```
 
@@ -437,7 +445,7 @@ curl --get 'http://127.0.0.1:8000/placenames/sparql/dataset=saami' \
 PREFIX pn: <https://sparqlbridge.toolforge.org/ontology/placenames/>
 
 SELECT ?name ?place WHERE {
-  SERVICE <https://sparqlbridge.toolforge.org/placenames/sparql/dataset=saami> {
+  SERVICE <https://sparqlbridge.toolforge.org/sparql?dataset=placenames> {
     ?record pn:spelling ?name ;
             pn:place ?place .
   }

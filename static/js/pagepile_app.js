@@ -27,7 +27,7 @@ import {
   var createApp = window.Vue.createApp;
   var pagepileBasePath = "/pagepile";
   var pagepileStructurePath = pagepileBasePath + "/api/structure";
-  var pagepileSparqlBasePath = pagepileBasePath + "/sparql/";
+  var pagepileSparqlBasePath = "/sparql?dataset=pagepile&";
   var pagepileRowIdVariableName = "page";
   var defaultPagepileSelectedQueryFields = [
     "wikidata_entity",

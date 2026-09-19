@@ -360,8 +360,8 @@
           <code>[[ endpointPreview ]]</code>
         </p>
         <p>
-          For federated queries, use path parameters in the endpoint URL, for example
-          <code>/incubator/sparql/limit=10</code>.
+          For federated queries, use query parameters in the shared endpoint URL, for example
+          <code>/sparql?dataset=incubator&amp;limit=10</code>.
         </p>
       </section>
 
@@ -402,8 +402,8 @@
     </main>
     {% endverbatim %}
 
-    <script type="module" src="{% static 'js/example_query_links.js' %}?v=20260830-02"></script>
+    <script type="module" src="{% static 'js/example_query_links.js' %}?v=20260919-01"></script>
     <script src="{% static 'vendor/vue.global.prod.min.js' %}?v=3.5.22"></script>
-    <script type="module" src="{% static 'js/incubator_app.js' %}?v=20260825-03"></script>
+    <script type="module" src="{% static 'js/incubator_app.js' %}?v=20260919-01"></script>
   </body>
 </html>

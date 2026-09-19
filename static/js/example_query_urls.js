@@ -4,7 +4,7 @@ PREFIX petscan: <https://petscan.wmcloud.org/ontology/>
 PREFIX xsd: <http://www.w3.org/2001/XMLSchema#>
 
 SELECT * WHERE {
-  SERVICE <https://sparqlbridge.toolforge.org/petscan/sparql/psid=43641756> {
+  SERVICE <https://sparqlbridge.toolforge.org/sparql?dataset=petscan&psid=43641756> {
     SELECT
       ?item
       ?namespace
@@ -48,7 +48,7 @@ PREFIX wd: <http://www.wikidata.org/entity/>
 SELECT DISTINCT ?page_title ?page_id ?page_uri ?pp_value ?file WHERE {
   # 1. Fetch source data: fiwiki biographies without the "page_image_free" page property.
   # https://quarry.wmcloud.org/query/103960
-  SERVICE <https://sparqlbridge.toolforge.org/quarry/sparql/quarry_id=103960> {
+  SERVICE <https://sparqlbridge.toolforge.org/sparql?dataset=quarry&quarry_id=103960> {
     SELECT ?page_id ?page_title ?page_uri ?pp_value WHERE {
       ?quarry_row_id quarrycol:page_id ?page_id .
       ?quarry_row_id quarrycol:page_title ?page_title .
@@ -70,7 +70,7 @@ SELECT DISTINCT ?page_title ?page_id ?page_uri ?pp_value ?file WHERE {
   # 4. Exclude pages that already have large images using one uncorrelated subquery.
   # https://quarry.wmcloud.org/query/103966
   MINUS {
-    SERVICE <https://sparqlbridge.toolforge.org/quarry/sparql/quarry_id=103966> {
+    SERVICE <https://sparqlbridge.toolforge.org/sparql?dataset=quarry&quarry_id=103966> {
       SELECT DISTINCT ?linked_page WHERE {
         ?r quarrycol:gil_page ?linked_page .
         ?r quarrycol:gil_to [] .
@@ -101,7 +101,7 @@ SELECT * WHERE {
     ?isPartOf wikibase:wikiGroup ?wikiGroup .
   }
   UNION {
-    SERVICE <https://sparqlbridge.toolforge.org/incubator/sparql/namespace=0&page_prefix=Wp/sms> {
+    SERVICE <https://sparqlbridge.toolforge.org/sparql?dataset=incubator&namespace=0&page_prefix=Wp/sms> {
       ?sitelink schema:about ?qid .
       ?sitelink schema:inLanguage ?inLanguage .
       ?sitelink rdf:type ?type .
@@ -121,7 +121,7 @@ PREFIX wikibase: <http://wikiba.se/ontology#>
 PREFIX pagepile: <https://pagepile.toolforge.org/ontology/>
 
 SELECT * WHERE {
-  SERVICE <https://sparqlbridge.toolforge.org/pagepile/sparql/pagepile_id=112306&limit=50> {
+  SERVICE <https://sparqlbridge.toolforge.org/sparql?dataset=pagepile&pagepile_id=112306&limit=50> {
     ?page schema:about ?wikidata_entity .
     ?page schema:name ?page_label .
     ?page pagepile:page_id ?page_id .
@@ -139,7 +139,7 @@ PREFIX wikibase: <http://wikiba.se/ontology#>
 PREFIX newpages: <https://sparqlbridge.toolforge.org/newpages/ontology/>
 
 SELECT * WHERE {
-  SERVICE <https://sparqlbridge.toolforge.org/newpages/sparql/wiki=fi&timestamp=20260401000000> {
+  SERVICE <https://sparqlbridge.toolforge.org/sparql?dataset=newpages&wiki=fi&timestamp=20260401000000> {
     ?page schema:about ?wikidata_entity .
     ?page schema:name ?page_label .
     ?page newpages:created_timestamp ?created_timestamp .
@@ -156,7 +156,7 @@ PREFIX qb: <http://purl.org/linked-data/cube#>
 PREFIX jsonstat: <https://sparqlbridge.toolforge.org/ontology/jsonstat/>
 
 SELECT ?year ?age_group ?indicator ?participants WHERE {
-  SERVICE <https://sparqlbridge.toolforge.org/jsonstat/sparql/source=aHR0cHM6Ly9weGRhdGEuc3RhdC5maS9QeFdlYi9zcS81NTJkMWY1My1iZGFiLTQ3MmItYThlNy02OGI1YjhjMzdjZGE> {
+  SERVICE <https://sparqlbridge.toolforge.org/sparql?dataset=jsonstat&source=aHR0cHM6Ly9weGRhdGEuc3RhdC5maS9QeFdlYi9zcS81NTJkMWY1My1iZGFiLTQ3MmItYThlNy02OGI1YjhjMzdjZGE> {
     ?observation a qb:Observation ;
                  jsonstat:timeperiod_y ?year ;
                  jsonstat:ikaryhma_10_20180101_label ?age_group ;
@@ -171,7 +171,7 @@ const PLACENAMES_EXAMPLE_QUERY = `# This query fetches Sámi place names from th
 PREFIX pn: <https://sparqlbridge.toolforge.org/ontology/placenames/>
 
 SELECT ?record ?place ?name ?municipality ?wkt WHERE {
-  SERVICE <https://sparqlbridge.toolforge.org/placenames/sparql/dataset=saami> {
+  SERVICE <https://sparqlbridge.toolforge.org/sparql?dataset=placenames> {
     ?record a pn:PlaceNameRecord ;
             pn:place ?place ;
             pn:spelling ?name ;

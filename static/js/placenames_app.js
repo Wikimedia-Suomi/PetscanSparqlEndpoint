@@ -18,7 +18,7 @@ import {
   var placenamesDataset = "saami";
   var placenamesBasePath = "/placenames";
   var placenamesStructurePath = placenamesBasePath + "/api/structure";
-  var placenamesSparqlPath = placenamesBasePath + "/sparql/dataset=" + placenamesDataset;
+  var placenamesSparqlPath = "/sparql?dataset=placenames";
   var defaultPlacenamesSelectedQueryFields = [
     "place",
     "spelling",

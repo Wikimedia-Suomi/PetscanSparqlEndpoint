@@ -96,7 +96,7 @@ def test_jsonstat_ui_loads_structure_and_runs_query(page: Page, live_server: Any
         lambda route: _fulfill_json(route, STRUCTURE_RESPONSE),
     )
     page.route(
-        "**/jsonstat/sparql/**",
+        "**/sparql?dataset=jsonstat*",
         lambda route: route.fulfill(
             status=200,
             content_type="application/sparql-results+json; charset=utf-8",
@@ -120,6 +120,6 @@ def test_jsonstat_ui_loads_structure_and_runs_query(page: Page, live_server: Any
 
     expect(page.locator(".status-query.is-success")).to_contain_text("1 rows returned")
     expect(page.locator(".result-block table")).to_contain_text("1526457")
-    expect(page.locator("pre").filter(has_text="/jsonstat/sparql/source=")).to_contain_text(
+    expect(page.locator("pre").filter(has_text="/sparql?dataset=jsonstat&source=")).to_contain_text(
         SOURCE_TOKEN
     )

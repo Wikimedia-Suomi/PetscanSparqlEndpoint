@@ -104,7 +104,7 @@ def test_placenames_ui_loads_static_dataset_metadata(page: Page, live_server: An
     expect(page.locator("#placenames-query-section")).to_be_hidden()
     expect(page.get_by_role("heading", name="SPARQL Endpoint", exact=True)).to_be_visible()
     expect(page.locator("#placenames-endpoint-preview")).to_contain_text(
-        "/placenames/sparql/dataset=saami"
+        "/sparql?dataset=placenames"
     )
     page.get_by_role("button", name="Load dataset").click()
 
@@ -144,7 +144,7 @@ def test_placenames_ui_runs_query_and_renders_result(page: Page, live_server: An
         lambda route: _fulfill_json(route, _STRUCTURE_RESPONSE),
     )
     page.route(
-        "**/placenames/sparql/**",
+        "**/sparql?dataset=placenames*",
         lambda route: _fulfill_json(route, _SELECT_RESPONSE),
     )
 

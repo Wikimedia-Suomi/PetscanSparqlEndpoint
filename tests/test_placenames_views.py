@@ -41,7 +41,7 @@ class PlacenamesViewTests(SimpleTestCase):
         self.assertContains(response, "vendor/vue.global.prod.min.js", html=False)
         self.assertContains(response, 'id="placenames-query-section"', html=False)
         self.assertContains(response, "<h2 id=\"endpoint-heading\">SPARQL Endpoint</h2>", html=True)
-        self.assertContains(response, "/placenames/sparql/dataset=saami")
+        self.assertContains(response, "/sparql?dataset=placenames")
 
     @patch("placenames.views.service.ensure_loaded")
     def test_structure_returns_dataset_metadata(self, ensure_loaded: Any) -> None:

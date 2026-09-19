@@ -13,7 +13,7 @@ import {
   var JSONSTAT_ONTOLOGY_BASE = "https://sparqlbridge.toolforge.org/ontology/jsonstat/";
   var DATA_CUBE_ONTOLOGY_BASE = "http://purl.org/linked-data/cube#";
   var structurePath = "/jsonstat/api/structure";
-  var sparqlBasePath = "/jsonstat/sparql/";
+  var sparqlBasePath = "/sparql?dataset=jsonstat&";
 
   function defaultQuery() {
     return [

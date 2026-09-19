@@ -109,18 +109,18 @@ def test_js_helper_build_open_query_url_uses_wdqs_and_sophox(page: Page, live_se
         [
             "wdqs",
             "SELECT ?item WHERE { ?item a petscan:Page . }",
-            "https://example.test/petscan/sparql/psid=43641756",
+            "https://example.test/sparql?dataset=petscan&psid=43641756",
         ],
     )
 
     assert str(result).startswith("https://query.wikidata.org/#")
     decoded_fragment = unquote(str(result).split("#", 1)[1])
     assert "SERVICE <https://sophox.org/sparql>" in decoded_fragment
-    assert "SERVICE <https://example.test/petscan/sparql/psid=43641756>" in decoded_fragment
+    assert "SERVICE <https://example.test/sparql?dataset=petscan&psid=43641756>" in decoded_fragment
 
 
 def test_js_helper_build_open_query_url_uses_qlever_openstreetmap(page: Page, live_server: Any) -> None:
-    service_url = "https://example.test/placenames/sparql/dataset=saami"
+    service_url = "https://example.test/sparql?dataset=placenames"
     result = _call_js_helper(
         page,
         live_server,
@@ -322,17 +322,17 @@ def test_js_helper_build_example_query_urls(page: Page, live_server: Any) -> Non
     )
 
     assert str(petscan_url).startswith("https://qlever.wikidata.dbis.rwth-aachen.de/wikidata/?query=")
-    assert "psid%3D43641756" in str(petscan_url)
+    assert "sparql%3Fdataset%3Dpetscan%26psid%3D43641756" in str(petscan_url)
     assert str(quarry_url).startswith("https://qlever.dev/wikimedia-commons?query=")
-    assert "quarry_id%3D103960" in str(quarry_url)
+    assert "sparql%3Fdataset%3Dquarry%26quarry_id%3D103960" in str(quarry_url)
     assert str(placenames_url).startswith(
         "https://qlever.wikidata.dbis.rwth-aachen.de/wikidata/?query="
     )
-    assert "placenames/sparql/dataset%3Dsaami" in str(placenames_url)
+    assert "sparql%3Fdataset%3Dplacenames" in str(placenames_url)
     assert str(jsonstat_url).startswith(
         "https://qlever.wikidata.dbis.rwth-aachen.de/wikidata/?query="
     )
-    assert "jsonstat/sparql/source%3D" in str(jsonstat_url)
+    assert "sparql%3Fdataset%3Djsonstat%26source%3D" in str(jsonstat_url)
     assert "qb%3AObservation" in str(jsonstat_url)
 
 

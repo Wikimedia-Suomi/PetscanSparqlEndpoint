@@ -72,7 +72,7 @@ def _stub_structure_success(page: Page) -> None:
 
 def _stub_select_query_success(page: Page) -> None:
     page.route(
-        "**/petscan/sparql/**",
+        "**/sparql?dataset=petscan*",
         lambda route: route.fulfill(
             status=200,
             content_type="application/sparql-results+json; charset=utf-8",
@@ -187,7 +187,7 @@ def test_playwright_smoke_surfaces_load_errors(page: Page, live_server: Any) -> 
 def test_playwright_smoke_surfaces_query_errors(page: Page, live_server: Any) -> None:
     _stub_structure_success(page)
     page.route(
-        "**/petscan/sparql/**",
+        "**/sparql?dataset=petscan*",
         lambda route: route.fulfill(
             status=400,
             content_type="text/plain; charset=utf-8",
@@ -248,7 +248,9 @@ def test_playwright_smoke_open_query_dialog_builds_wdqs_url(page: Page, live_ser
     dialog.get_by_role("button", name="Open", exact=True).click()
 
     opened_url = page.evaluate("() => window.__openedUrls[0]")
-    self_query = "{}/petscan/sparql/psid=43641756&output_limit=10".format(live_server.url)
+    self_query = "{}/sparql?dataset=petscan&psid=43641756&output_limit=10".format(
+        live_server.url
+    )
 
     assert str(opened_url).startswith("https://query.wikidata.org/#")
     decoded_query = unquote(str(opened_url).split("#", 1)[1])

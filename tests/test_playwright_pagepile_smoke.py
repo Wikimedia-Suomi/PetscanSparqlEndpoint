@@ -114,7 +114,7 @@ def _stub_structure_success(page: Page) -> None:
 
 def _stub_select_query_success(page: Page) -> None:
     page.route(
-        "**/pagepile/sparql/**",
+        "**/sparql?dataset=pagepile*",
         lambda route: route.fulfill(
             status=200,
             content_type="application/sparql-results+json; charset=utf-8",
@@ -218,7 +218,7 @@ def test_playwright_pagepile_smoke_can_run_query_and_render_results(page: Page, 
 def test_playwright_pagepile_smoke_surfaces_query_errors(page: Page, live_server: Any) -> None:
     _stub_structure_success(page)
     page.route(
-        "**/pagepile/sparql/**",
+        "**/sparql?dataset=pagepile*",
         lambda route: route.fulfill(
             status=400,
             content_type="text/plain; charset=utf-8",
@@ -249,7 +249,7 @@ def test_playwright_pagepile_smoke_refresh_before_query_adds_refresh_to_request(
         )
 
     _stub_structure_success(page)
-    page.route("**/pagepile/sparql/**", _fulfill_select)
+    page.route("**/sparql?dataset=pagepile*", _fulfill_select)
 
     _load_structure_successfully(page, live_server)
     page.get_by_role("checkbox", name="Refresh data from PagePile before running query").check()
@@ -289,4 +289,6 @@ def test_playwright_pagepile_smoke_open_query_dialog_builds_wdqs_url(page: Page,
     assert str(opened_url).startswith("https://query.wikidata.org/#")
     decoded_query = unquote(str(opened_url).split("#", 1)[1])
     assert "SERVICE <https://sophox.org/sparql>" in decoded_query
-    assert "SERVICE <{}/pagepile/sparql/pagepile_id=112306&limit=10>".format(live_server.url) in decoded_query
+    assert "SERVICE <{}/sparql?dataset=pagepile&pagepile_id=112306&limit=10>".format(
+        live_server.url
+    ) in decoded_query

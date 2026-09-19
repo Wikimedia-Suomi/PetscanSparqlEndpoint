@@ -30,7 +30,7 @@ import {
   var createApp = window.Vue.createApp;
   var petscanBasePath = "/petscan";
   var petscanStructurePath = petscanBasePath + "/api/structure";
-  var petscanSparqlBasePath = petscanBasePath + "/sparql/";
+  var petscanSparqlBasePath = "/sparql?dataset=petscan&";
 
   var app = createApp({
     data: function () {

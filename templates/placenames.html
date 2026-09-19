@@ -336,8 +336,8 @@
           <code id="placenames-endpoint-preview">[[ endpointPreview ]]</code>
         </p>
         <p>
-          For federated queries, use the dataset path parameter in the endpoint URL:
-          <code>/placenames/sparql/dataset=saami</code>.
+          For federated queries, select the source with the shared endpoint's dataset parameter:
+          <code>/sparql?dataset=placenames</code>.
         </p>
       </section>
 
@@ -393,8 +393,8 @@
     </main>
     {% endverbatim %}
 
-    <script type="module" src="{% static 'js/example_query_links.js' %}?v=20260830-02"></script>
+    <script type="module" src="{% static 'js/example_query_links.js' %}?v=20260919-01"></script>
     <script src="{% static 'vendor/vue.global.prod.min.js' %}?v=3.5.22"></script>
-    <script type="module" src="{% static 'js/placenames_app.js' %}?v=20260825-07"></script>
+    <script type="module" src="{% static 'js/placenames_app.js' %}?v=20260919-01"></script>
   </body>
 </html>

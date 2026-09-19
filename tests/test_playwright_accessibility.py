@@ -180,7 +180,7 @@ def _stub_petscan_structure_success(page: Page) -> None:
 
 def _stub_petscan_select_query_success(page: Page) -> None:
     page.route(
-        "**/petscan/sparql/**",
+        "**/sparql?dataset=petscan*",
         lambda route: route.fulfill(
             status=200,
             content_type="application/sparql-results+json; charset=utf-8",
@@ -198,7 +198,7 @@ def _stub_quarry_structure_success(page: Page) -> None:
 
 def _stub_quarry_select_query_success(page: Page) -> None:
     page.route(
-        "**/quarry/sparql/**",
+        "**/sparql?dataset=quarry*",
         lambda route: route.fulfill(
             status=200,
             content_type="application/sparql-results+json; charset=utf-8",

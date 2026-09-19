@@ -32,7 +32,7 @@ import {
   var createApp = window.Vue.createApp;
   var quarryBasePath = "/quarry";
   var quarryStructurePath = quarryBasePath + "/api/structure";
-  var quarrySparqlBasePath = quarryBasePath + "/sparql/";
+  var quarrySparqlBasePath = "/sparql?dataset=quarry&";
   var quarryRowIdVariableName = "quarry_row_id";
   var quarryExtraPrefixEntries = [[QUARRY_QUERY_PREFIX, QUARRY_QUERY_BASE]];
 
