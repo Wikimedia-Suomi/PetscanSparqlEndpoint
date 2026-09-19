@@ -1,9 +1,15 @@
 from unittest.mock import Mock, patch
+from urllib.parse import quote
 
 from django.http import HttpRequest, HttpResponse
 from django.test import SimpleTestCase
 
+from jsonstat import service_source
 from petscan_endpoint import views
+
+EXAMPLE_URL = "https://pxdata.stat.fi/PxWeb/sq/87785a9a-bac4-4a63-a849-8175f7de69ae"
+SOURCE_TOKEN = service_source.encode_source_token(EXAMPLE_URL)
+ASK_QUERY = "ASK { ?observation ?predicate ?value }"
 
 
 class UnifiedSparqlEndpointTests(SimpleTestCase):
@@ -54,6 +60,49 @@ class UnifiedSparqlEndpointTests(SimpleTestCase):
         self.assertEqual(
             endpoint.call_args.kwargs,
             {"service_params": "quarry_id=103479&limit=10"},
+        )
+
+    def test_normalizes_blazegraph_query_after_existing_service_parameters(self) -> None:
+        endpoint = Mock(return_value=HttpResponse("ok"))
+        path = (
+            "/sparql?dataset=jsonstat&source={}?query={}&queryId=blazegraph-request"
+        ).format(SOURCE_TOKEN, quote(ASK_QUERY, safe=""))
+
+        with patch.dict(views._SPARQL_ENDPOINTS, {"jsonstat": endpoint}, clear=True):
+            response = self.client.get(path)
+
+        self.assertEqual(response.status_code, 200)
+        request = endpoint.call_args.args[0]
+        self.assertEqual(request.GET["query"], ASK_QUERY)
+        self.assertEqual(request.GET["source"], SOURCE_TOKEN)
+        self.assertEqual(
+            endpoint.call_args.kwargs,
+            {"service_params": "source={}&queryId=blazegraph-request".format(SOURCE_TOKEN)},
+        )
+
+    def test_normalizes_blazegraph_query_after_dummy_parameter(self) -> None:
+        endpoint = Mock(return_value=HttpResponse("ok"))
+        path = (
+            "/sparql?dataset=jsonstat&source={}&d?query={}&queryId=blazegraph-request"
+        ).format(SOURCE_TOKEN, quote(ASK_QUERY, safe=""))
+
+        with patch.dict(views._SPARQL_ENDPOINTS, {"jsonstat": endpoint}, clear=True):
+            response = self.client.get(path)
+
+        self.assertEqual(response.status_code, 200)
+        request = endpoint.call_args.args[0]
+        self.assertEqual(request.GET["query"], ASK_QUERY)
+        self.assertEqual(request.GET["source"], SOURCE_TOKEN)
+
+    def test_rejects_ambiguous_blazegraph_query_delimiters(self) -> None:
+        response = self.client.get(
+            "/sparql?dataset=jsonstat&source={}?query=ASK?query=ASK".format(SOURCE_TOKEN)
+        )
+
+        self.assertEqual(response.status_code, 400)
+        self.assertEqual(
+            response.content.decode("utf-8"),
+            "Ambiguous Blazegraph SPARQL query parameters.",
         )
 
     def test_placenames_uses_default_inner_dataset(self) -> None:

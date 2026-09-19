@@ -358,6 +358,11 @@ SELECT ?year ?ageGroup ?indicator ?value WHERE {
 ORDER BY ?year
 ```
 
+The same SERVICE IRI works with Blazegraph even though Blazegraph appends its protocol query after
+a second `?`; the dispatcher normalizes that request form. Write parameter separators as literal
+`&` characters in SPARQL source. `&amp;` is HTML encoding and is not a valid replacement inside the
+IRI.
+
 The loader supports dense and sparse `value` objects, plus string, dense-array, sparse-object, and
 deprecated one-item-array forms of `status`. Cube cells use JSON-stat row-major ordering. A cell
 whose value is `null` is preserved as a `jsonstat:Observation` compatibility resource with its

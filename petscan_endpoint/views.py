@@ -1,7 +1,7 @@
 from typing import Callable, Dict, TypeVar, cast
 from urllib.parse import urlencode
 
-from django.http import HttpRequest, HttpResponse
+from django.http import HttpRequest, HttpResponse, QueryDict
 from django.shortcuts import render
 from django.views.decorators.csrf import csrf_exempt
 
@@ -26,6 +26,7 @@ _SPARQL_ENDPOINTS: Dict[str, _SparqlView] = {
     "quarry": quarry_views.sparql_endpoint,
 }
 _PLACENAMES_DEFAULT_DATASET = "saami"
+_BLAZEGRAPH_QUERY_DELIMITER = "?query="
 
 
 def _csrf_exempt(view_func: _ViewFunc) -> _ViewFunc:
@@ -58,6 +59,39 @@ def _dataset_name(request: HttpRequest) -> str:
         allowed = ", ".join(sorted(_SPARQL_ENDPOINTS))
         raise ValueError("Unsupported dataset. Allowed values: {}.".format(allowed))
     return dataset
+
+
+def _normalize_blazegraph_get_query(request: HttpRequest) -> None:
+    """Recover a query that Blazegraph appended after a second question mark.
+
+    Blazegraph assumes that a SERVICE IRI has no query string and always appends
+    its SPARQL protocol parameters with ``?query=``. The unified endpoint needs
+    a query string for dataset selection, so the resulting request contains two
+    question marks. Normalize that one, unambiguous wire format before the
+    existing endpoint parsers inspect ``request.GET``.
+    """
+
+    if request.method != "GET" or "query" in request.GET:
+        return
+
+    raw_query_string = str(request.META.get("QUERY_STRING", ""))
+    delimiter_count = raw_query_string.count(_BLAZEGRAPH_QUERY_DELIMITER)
+    if delimiter_count == 0:
+        return
+    if delimiter_count != 1:
+        raise ValueError("Ambiguous Blazegraph SPARQL query parameters.")
+
+    service_query_string, sparql_query_string = raw_query_string.split(
+        _BLAZEGRAPH_QUERY_DELIMITER,
+        1,
+    )
+    separator = "" if not service_query_string or service_query_string.endswith("&") else "&"
+    normalized_query_string = "{}{}query={}".format(
+        service_query_string,
+        separator,
+        sparql_query_string,
+    )
+    request.GET = QueryDict(normalized_query_string, encoding=request.encoding)
 
 
 def _service_params(request: HttpRequest, dataset: str) -> str:
@@ -96,6 +130,7 @@ def sparql_endpoint(request: HttpRequest) -> HttpResponse:
         return _add_cors_headers(HttpResponse(status=204))
 
     try:
+        _normalize_blazegraph_get_query(request)
         dataset = _dataset_name(request)
         service_params = _service_params(request, dataset)
     except ValueError as exc:
