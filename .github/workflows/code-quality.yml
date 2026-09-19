@@ -41,9 +41,9 @@ jobs:
 
       - name: Verify dependency constraints
         run: |
-          pip-compile --resolver=backtracking --strip-extras --allow-unsafe --generate-hashes --no-emit-index-url \
+          pip-compile --resolver=backtracking --strip-extras --allow-unsafe --generate-hashes --no-emit-index-url --no-header \
             --output-file=constraints-dev.txt constraints-dev.in
-          pip-compile --resolver=backtracking --strip-extras --allow-unsafe --generate-hashes --no-emit-index-url \
+          pip-compile --resolver=backtracking --strip-extras --allow-unsafe --generate-hashes --no-emit-index-url --no-header \
             --output-file=constraints.txt constraints.in
           git diff --exit-code -- constraints-dev.txt constraints.txt
 

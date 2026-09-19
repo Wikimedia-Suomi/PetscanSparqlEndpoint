@@ -37,9 +37,9 @@ export OXIGRAPH_BASE_DIR="$PWD/data/oxigraph"
 Regenerate the tested dependency set after intentionally changing requirement ranges:
 
 ```bash
-pip-compile --resolver=backtracking --strip-extras --allow-unsafe --generate-hashes --no-emit-index-url \
+pip-compile --resolver=backtracking --strip-extras --allow-unsafe --generate-hashes --no-emit-index-url --no-header \
   --output-file=constraints-dev.txt constraints-dev.in
-pip-compile --resolver=backtracking --strip-extras --allow-unsafe --generate-hashes --no-emit-index-url \
+pip-compile --resolver=backtracking --strip-extras --allow-unsafe --generate-hashes --no-emit-index-url --no-header \
   --output-file=constraints.txt constraints.in
 ```
 
