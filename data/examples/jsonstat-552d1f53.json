@@ -1,0 +1,141 @@
+{
+  "version": "2.0",
+  "class": "dataset",
+  "label": "Participation in adult education (incl. adult education and training related to work or occupation, personnel training and not related to work) by age group by Year, Age and Information",
+  "source": "Statistics Finland, participation in adult education",
+  "updated": "2023-10-06T05:00:00Z",
+  "note": [
+    "<A HREF='https://stat.fi/en/statistics/documentation/aku' TARGET=_blank>Documentation of statistics</A>"
+  ],
+  "role": {
+    "metric": [
+      "contentscode"
+    ]
+  },
+  "id": [
+    "timeperiod_y",
+    "ikaryhma_10_20180101",
+    "contentscode"
+  ],
+  "size": [
+    7,
+    1,
+    1
+  ],
+  "dimension": {
+    "timeperiod_y": {
+      "label": "Year",
+      "category": {
+        "index": {
+          "1990": 0,
+          "1995": 1,
+          "2000": 2,
+          "2006": 3,
+          "2012": 4,
+          "2017": 5,
+          "2022": 6
+        },
+        "label": {
+          "1990": "1990",
+          "1995": "1995",
+          "2000": "2000",
+          "2006": "2006",
+          "2012": "2012",
+          "2017": "2017",
+          "2022": "2022"
+        }
+      },
+      "extension": {
+        "elimination": false,
+        "show": "value"
+      }
+    },
+    "ikaryhma_10_20180101": {
+      "label": "Age",
+      "category": {
+        "index": {
+          "SSS": 0
+        },
+        "label": {
+          "SSS": "Total"
+        }
+      },
+      "extension": {
+        "elimination": true,
+        "eliminationValueCode": "SSS",
+        "show": "value"
+      },
+      "link": {
+        "describedby": [
+          {
+            "extension": {
+              "ikaryhma_10_20180101": "SCALE-TYPE=ordinal"
+            }
+          }
+        ]
+      }
+    },
+    "contentscode": {
+      "label": "Information",
+      "category": {
+        "index": {
+          "akuo_lkm": 0
+        },
+        "label": {
+          "akuo_lkm": "Participants in adult education and training, number"
+        },
+        "note": {
+          "akuo_lkm": [
+            "Participants in adult education and training, population aged 18 to 64.\r\nAdult education refers to training arranged and organised specifically for adults. Includes studying abroad excl. the year 1990. Until 2017, only such training is included where participation was at least six hours."
+          ]
+        },
+        "unit": {
+          "akuo_lkm": {
+            "base": "number",
+            "decimals": 0
+          }
+        }
+      },
+      "extension": {
+        "elimination": false,
+        "show": "value"
+      }
+    }
+  },
+  "extension": {
+    "px": {
+      "tableid": "12dz",
+      "decimals": 0,
+      "official-statistics": true,
+      "aggregallowed": true,
+      "language": "fi",
+      "contents": "Participation in adult education (incl. adult education and training related to work or occupation, personnel training and not related to work) by age group",
+      "description": "12dz -- Participation in adult education (incl. adult education and training related to work or occupation, personnel training and not related to work) by age group, 1990-2022",
+      "descriptiondefault": false,
+      "heading": [
+        "contentscode"
+      ],
+      "stub": [
+        "timeperiod_y",
+        "ikaryhma_10_20180101"
+      ],
+      "matrix": "12dz",
+      "subject-code": "aku",
+      "subject-area": "Participation in adult education"
+    },
+    "contact": [
+      {
+        "raw": "<A HREF='https://stat.fi/en/statistics/aku' TARGET=_blank>Statistics' homepage</A>"
+      }
+    ]
+  },
+  "value": [
+    1526457,
+    1555554,
+    1754057,
+    1706728,
+    1715520,
+    1584069,
+    1452840
+  ]
+}

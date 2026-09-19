@@ -313,6 +313,13 @@ def test_js_helper_build_example_query_urls(page: Page, live_server: Any) -> Non
         "buildExampleQueryUrl",
         ["placenames"],
     )
+    jsonstat_url = _call_js_module_export(
+        page,
+        live_server,
+        "/static/js/example_query_urls.js?v=test",
+        "buildExampleQueryUrl",
+        ["jsonstat"],
+    )
 
     assert str(petscan_url).startswith("https://qlever.wikidata.dbis.rwth-aachen.de/wikidata/?query=")
     assert "psid%3D43641756" in str(petscan_url)
@@ -322,6 +329,11 @@ def test_js_helper_build_example_query_urls(page: Page, live_server: Any) -> Non
         "https://qlever.wikidata.dbis.rwth-aachen.de/wikidata/?query="
     )
     assert "placenames/sparql/dataset%3Dsaami" in str(placenames_url)
+    assert str(jsonstat_url).startswith(
+        "https://qlever.wikidata.dbis.rwth-aachen.de/wikidata/?query="
+    )
+    assert "jsonstat/sparql/source%3D" in str(jsonstat_url)
+    assert "qb%3AObservation" in str(jsonstat_url)
 
 
 def test_js_helper_normalize_newpages_user_list_page_from_direct_url(page: Page, live_server: Any) -> None:

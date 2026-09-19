@@ -17,4 +17,11 @@ data/oxigraph-bench*/
 data/oxigraph-opt-bench*/
 data/benchmarks/results/
 source-data/*.nq
+# Full Statistics Finland harvests and matching research are maintained outside
+# this application. Only the reviewed runtime subset and its documentation ship.
+source-data/statfi_*
+source-data/statfin_*
+source-data/README_statme.md
+!source-data/statfi_runtime_links.json
+!source-data/README_statfi_runtime_links.md
 .DS_Store

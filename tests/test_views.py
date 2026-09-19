@@ -49,12 +49,16 @@ class ApiViewTests(SimpleTestCase):
         self.assertContains(response, "New Pages")
         self.assertContains(response, "PagePile")
         self.assertContains(response, "Quarry")
+        self.assertContains(response, "JSON-stat 2")
         self.assertContains(response, "Sámi Place Names")
         self.assertContains(response, 'href="/petscan/"', html=False)
         self.assertContains(response, 'href="/incubator/"', html=False)
         self.assertContains(response, 'href="/newpages/"', html=False)
         self.assertContains(response, 'href="/pagepile/"', html=False)
         self.assertContains(response, 'href="/quarry/"', html=False)
+        self.assertContains(response, 'href="/jsonstat/"', html=False)
+        self.assertContains(response, "Allowed domains and their subdomains:")
+        self.assertContains(response, "<code>stat.fi</code>", html=True)
         self.assertContains(response, 'href="/placenames/"', html=False)
         self.assertContains(
             response,
@@ -73,6 +77,7 @@ class ApiViewTests(SimpleTestCase):
         self.assertContains(response, 'data-example-query-source="pagepile"', html=False)
         self.assertContains(response, 'data-example-query-source="incubator"', html=False)
         self.assertContains(response, 'data-example-query-source="newpages"', html=False)
+        self.assertContains(response, 'data-example-query-source="jsonstat"', html=False)
         self.assertContains(response, 'data-example-query-source="placenames"', html=False)
         self.assertContains(
             response,

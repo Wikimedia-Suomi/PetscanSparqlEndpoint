@@ -150,6 +150,23 @@ SELECT * WHERE {
 LIMIT 50
 `;
 
+const JSONSTAT_EXAMPLE_QUERY = `# This query reads a JSON-stat 2.0 cube published by Statistics Finland.
+# Cells with values are W3C RDF Data Cube observations.
+PREFIX qb: <http://purl.org/linked-data/cube#>
+PREFIX jsonstat: <https://sparqlbridge.toolforge.org/ontology/jsonstat/>
+
+SELECT ?year ?age_group ?indicator ?participants WHERE {
+  SERVICE <https://sparqlbridge.toolforge.org/jsonstat/sparql/source=aHR0cHM6Ly9weGRhdGEuc3RhdC5maS9QeFdlYi9zcS81NTJkMWY1My1iZGFiLTQ3MmItYThlNy02OGI1YjhjMzdjZGE> {
+    ?observation a qb:Observation ;
+                 jsonstat:timeperiod_y ?year ;
+                 jsonstat:ikaryhma_10_20180101_label ?age_group ;
+                 jsonstat:contentscode_label ?indicator ;
+                 jsonstat:value ?participants .
+  }
+}
+ORDER BY ?year
+`;
+
 const PLACENAMES_EXAMPLE_QUERY = `# This query fetches Sámi place names from the static local dataset.
 PREFIX pn: <https://sparqlbridge.toolforge.org/ontology/placenames/>
 
@@ -200,6 +217,10 @@ export function buildNewpagesExampleQueryUrl() {
   return buildQueryUrl(QLEVER_WIKIDATA_BASE_URL, NEWPAGES_EXAMPLE_QUERY);
 }
 
+export function buildJsonstatExampleQueryUrl() {
+  return buildQueryUrl(QLEVER_WIKIDATA_BASE_URL, JSONSTAT_EXAMPLE_QUERY);
+}
+
 export function buildPlacenamesExampleQueryUrl() {
   return buildQueryUrl(QLEVER_WIKIDATA_BASE_URL, PLACENAMES_EXAMPLE_QUERY);
 }
@@ -220,6 +241,9 @@ export function buildExampleQueryUrl(source) {
   }
   if (normalizedSource === "newpages") {
     return buildNewpagesExampleQueryUrl();
+  }
+  if (normalizedSource === "jsonstat") {
+    return buildJsonstatExampleQueryUrl();
   }
   if (normalizedSource === "placenames") {
     return buildPlacenamesExampleQueryUrl();

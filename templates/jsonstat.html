@@ -1,0 +1,223 @@
+{% load static %}
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>JSON-stat 2 SPARQL Endpoint</title>
+    <link rel="stylesheet" href="{% static 'css/app.css' %}" />
+  </head>
+  <body>
+    <noscript><p class="noscript">This interface needs JavaScript enabled.</p></noscript>
+
+    {% verbatim %}
+    <main id="app" class="page" v-cloak>
+      <nav class="breadcrumb-nav page-breadcrumb" aria-label="Breadcrumb">
+        <ol class="breadcrumb-list">
+          <li><a href="/">All data sources</a></li>
+          <li aria-current="page">JSON-stat 2</li>
+        </ol>
+      </nav>
+
+      <header class="hero">
+        <h1>JSON-stat 2 SPARQL endpoint</h1>
+      </header>
+
+      <div class="source-layout">
+        <section class="card" aria-labelledby="loading-heading">
+          <h2 id="loading-heading">Data Loading</h2>
+          <form class="query-form" @submit.prevent="loadStructure">
+            <label for="jsonstat-url">JSON-stat 2 file URL</label>
+            <input
+              id="jsonstat-url"
+              type="url"
+              inputmode="url"
+              spellcheck="false"
+              autocomplete="url"
+              placeholder="https://pxdata.stat.fi/PxWeb/sq/552d1f53-bdab-472b-a8e7-68b5b8c37cda"
+              required
+              v-model.trim="sourceUrl"
+              aria-describedby="jsonstat-url-help"
+            />
+            {% endverbatim %}
+            <p id="jsonstat-url-help" class="help">
+              Enter an HTTPS URL that returns one JSON-stat 2.0 dataset. Only these domains and
+              their subdomains are allowed:
+              {% for domain in jsonstat_allowed_source_domains %}
+                <code>{{ domain }}</code>{% if not forloop.last %}, {% endif %}
+              {% endfor %}.
+            </p>
+            {% verbatim %}
+
+            <div class="actions">
+              <button type="submit" class="primary" :disabled="isBusy || !sourceUrl">
+                Load data
+              </button>
+            </div>
+
+            <p class="help help-links">
+              Examples:
+              <a href="https://pxdata.stat.fi/PxWeb/sq/552d1f53-bdab-472b-a8e7-68b5b8c37cda" target="_blank" rel="noopener noreferrer">adult education</a>
+              <span aria-hidden="true">|</span>
+              <a href="https://pxdata.stat.fi/PxWeb/sq/f922e117-eea8-46e0-9cc0-5f47725caf8a" target="_blank" rel="noopener noreferrer">new businesses</a>
+              <span aria-hidden="true">|</span>
+              <a href="https://pxdata.stat.fi/PxWeb/sq/c8155c9f-4162-4908-a84a-f4d100838c97" target="_blank" rel="noopener noreferrer">regional time series</a>
+            </p>
+            <p class="help" v-if="loadedSourceUrl">
+              Loaded source:
+              <a :href="loadedSourceUrl" target="_blank" rel="noopener noreferrer">[[ loadedSourceUrl ]]</a>
+            </p>
+          </form>
+          <p class="status" :class="'is-' + loadStatusLevel" role="status" aria-live="polite">
+            [[ loadStatusMessage ]]
+          </p>
+        </section>
+
+        <aside class="card source-info-card" aria-labelledby="jsonstat-info-heading">
+          <h2 id="jsonstat-info-heading">About JSON-stat 2</h2>
+          <p class="help">
+            <a href="https://json-stat.org/format/" target="_blank" rel="noopener noreferrer">JSON-stat</a>
+            is a cube-oriented JSON format for statistical data. SPARQL Bridge turns every cube
+            cell with a value into a
+            <a href="https://www.w3.org/TR/vocab-data-cube/" target="_blank" rel="noopener noreferrer">W3C RDF Data Cube</a>
+            observation, including coded dimensions, measure value, optional status, and unit
+            attributes. Cells without values remain available as JSON-stat compatibility records.
+          </p>
+          <p class="help">
+            Statistics Finland dimensions are enriched primarily from a local, pre-parsed export
+            of the
+            <a href="https://stat.fi/fi/luokitukset/info" target="_blank" rel="noopener noreferrer">open classification API</a>
+            only when both the dimension identifier and category code match exactly. Matched
+            categories receive additional SKOS labels, hierarchy, notes, and links to the API;
+            unmatched values remain local SKOS concepts with their original JSON-stat metadata.
+            Network fallback is disabled by default, so classification enrichment does not add
+            upstream API requests to dataset loading.
+          </p>
+        </aside>
+      </div>
+
+      <section class="card" aria-labelledby="sparql-heading" v-if="querySectionReady">
+        <h2 id="sparql-heading">SPARQL Query</h2>
+        <form class="query-form" @submit.prevent="runQuery">
+          <section class="wizard-section">
+            <textarea
+              id="query"
+              rows="12"
+              required
+              spellcheck="false"
+              v-model="query"
+              aria-label="SPARQL query"
+            ></textarea>
+
+            <div class="query-run-row">
+              <button type="submit" class="primary" :disabled="isBusy">Run query</button>
+              <label class="checkbox-row query-refresh-toggle" for="refresh">
+                <input id="refresh" type="checkbox" v-model="refreshBeforeQuery" />
+                Refresh data from the source URL before running query
+              </label>
+            </div>
+
+            <details class="structure-collapsible" open>
+              <summary>
+                <span class="summary-title">Select observation fields for the SPARQL query.</span>
+                <span class="summary-controls">
+                  <span class="help">([[ selectedQueryFieldKeys.length ]] selected)</span>
+                  <span class="collapsible-hint">Collapse/expand</span>
+                  <span class="collapsible-indicator" aria-hidden="true">▾</span>
+                </span>
+              </summary>
+
+              <div class="structure-inline-body" v-if="canShowStructure">
+                <div class="wizard-actions">
+                  <button type="button" class="secondary" @click="selectAllWizardFields">Select all</button>
+                  <button type="button" class="secondary" :disabled="!selectedQueryFieldKeys.length" @click="clearWizardSelections">Clear selection</button>
+                </div>
+                <div class="table-wrap">
+                  <table>
+                    <caption class="sr-only">Loaded JSON-stat cell structure</caption>
+                    <thead>
+                      <tr>
+                        <th scope="col">Include</th>
+                        <th scope="col">Field</th>
+                        <th scope="col">Predicate</th>
+                        <th scope="col">Type</th>
+                        <th scope="col">Cardinality</th>
+                        <th scope="col">Present in observations</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      <tr v-for="field in structureFields" :key="field.source_key">
+                        <td class="checkbox-cell">
+                          <input
+                            type="checkbox"
+                            :id="'wizard-field-' + field.source_key"
+                            :checked="isWizardFieldSelected(field.source_key)"
+                            @change="toggleWizardField(field.source_key, $event.target.checked)"
+                          />
+                        </td>
+                        <td><label :for="'wizard-field-' + field.source_key"><code>[[ field.source_key ]]</code></label></td>
+                        <td class="predicate-cell"><code>[[ field.predicate ]]</code></td>
+                        <td>[[ formatFieldType(field) ]]</td>
+                        <td><code>[[ field.row_side_cardinality || "?" ]]</code></td>
+                        <td>[[ field.present_in_rows ]] / [[ structureRowCount ]]</td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+              <div class="structure-inline-body" v-else>
+                <p class="help">No observation fields were found in this dataset.</p>
+              </div>
+            </details>
+          </section>
+        </form>
+
+        <p
+          class="status status-query"
+          :class="'is-' + statusLevel"
+          :role="statusLevel === 'error' ? 'alert' : 'status'"
+          :aria-live="statusLevel === 'error' ? 'assertive' : 'polite'"
+        >
+          [[ statusMessage ]]
+        </p>
+      </section>
+
+      <section class="card" v-if="resultVisible" aria-labelledby="result-heading">
+        <h2 id="result-heading">SPARQL Query Result</h2>
+        <div class="meta" v-if="meta.loaded_at">
+          <span><strong>Loaded at:</strong> [[ meta.loaded_at ]]</span>
+          <span><strong>Observations:</strong> [[ meta.records ]]</span>
+        </div>
+
+        <div v-if="queryType === 'SELECT'" class="result-block">
+          <div class="table-wrap" v-if="selectRows.length">
+            <table>
+              <caption class="sr-only">SPARQL query results</caption>
+              <thead><tr><th scope="col" v-for="variable in selectVars" :key="variable">[[ variable ]]</th></tr></thead>
+              <tbody>
+                <tr v-for="(row, rowIndex) in selectRows" :key="rowIndex">
+                  <td v-for="variable in selectVars" :key="variable"><code>[[ bindingText(row[variable]) ]]</code></td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+          <p class="help" v-else>No rows returned.</p>
+        </div>
+        <div v-else-if="queryType === 'ASK'" class="ask-result" :class="askValue ? 'is-true' : 'is-false'">
+          [[ askValue ? "true" : "false" ]]
+        </div>
+        <pre v-else class="graph-result">[[ textResult ]]</pre>
+      </section>
+
+      <section class="card" aria-labelledby="endpoint-heading" v-if="loadedSourceToken">
+        <h2 id="endpoint-heading">Federated endpoint</h2>
+        <p class="help">Use this endpoint URL as the target of a SPARQL <code>SERVICE</code> clause:</p>
+        <pre class="graph-result">[[ endpointUrl ]]</pre>
+      </section>
+    </main>
+    {% endverbatim %}
+
+    <script src="{% static 'vendor/vue.global.prod.min.js' %}"></script>
+    <script type="module" src="{% static 'js/jsonstat_app.js' %}?v=20260830-02"></script>
+  </body>
+</html>

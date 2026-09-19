@@ -6,6 +6,7 @@ urlpatterns = [
     path("", views.home, name="root_home"),
     path("petscan/", include("petscan.urls")),
     path("incubator/", include("incubator.urls")),
+    path("jsonstat/", include("jsonstat.urls")),
     path("newpages/", include("newpages.urls")),
     path("pagepile/", include("pagepile.urls")),
     path("placenames/", include("placenames.urls")),

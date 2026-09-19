@@ -1,11 +1,14 @@
-# PetScan SPARQL Endpoint
+# SPARQL Bridge
 
-This is a django app which works as SPARQL endpoint for PetScan query results.
+This Django application exposes several source formats and services as local, federatable SPARQL
+endpoints.
 
 ## TL;DR
 
 - Give the app a PetScan `psid`, and it turns that PetScan JSON result into a local RDF dataset.
 - The dataset is stored in Oxigraph, and exposed via a SPARQL endpoint at `/petscan/sparql/...`.
+- Give the JSON-stat source an allowlisted HTTPS URL, and it turns a JSON-stat 2.0 cube into RDF
+  observations under `/jsonstat/sparql/...`.
 - A versioned Sámi place-name dataset is bundled locally and exposed at `/placenames/sparql/dataset=saami`.
 - Web UI flow: load PetScan data -> inspect generated fields/structure -> run SPARQL queries.
 - Optional enrichment adds Wikidata-related fields for `gil_link` targets (API or Toolforge SQL backend).
@@ -123,6 +126,8 @@ python manage.py runserver
 ```
 
 Open [http://127.0.0.1:8000/petscan/](http://127.0.0.1:8000/petscan/).
+The JSON-stat 2 source is available at
+[http://127.0.0.1:8000/jsonstat/](http://127.0.0.1:8000/jsonstat/).
 The bundled place-name source is available at
 [http://127.0.0.1:8000/placenames/](http://127.0.0.1:8000/placenames/).
 
@@ -205,19 +210,51 @@ Security-related Django settings are configured via environment variables:
   the place-name cache rejects symlinks in every path component)
 - `PLACENAMES_SCHEMA_MODE` (`hardcoded` by default; use `dynamic` to derive the
   place-name field structure from Oxigraph after import)
+- `JSONSTAT_ALLOWED_SOURCE_DOMAINS` (comma-separated source-domain allowlist; the default
+  `stat.fi` also permits its subdomains, such as `pxdata.stat.fi`)
+- `JSONSTAT_TIMEOUT_SECONDS` (upstream request timeout; default: `30`)
+- `JSONSTAT_MAX_RESPONSE_BYTES` (maximum downloaded JSON-stat document size; default: 50 MiB)
+- `JSONSTAT_MAX_CELLS` (maximum number of cube cells converted to observations; default: `300000`)
+- `JSONSTAT_CLASSIFICATION_ENRICHMENT_ENABLED` (enable exact Statistics Finland classification
+  enrichment; default: enabled)
+- `JSONSTAT_CLASSIFICATION_LANGUAGES` (comma-separated classification API languages chosen from
+  `fi`, `sv`, and `en`; default: `fi`)
+- `JSONSTAT_LINKING_SNAPSHOT_PATH` (reviewed Statistics Finland runtime links; default:
+  `source-data/statfi_runtime_links.json`)
+- `JSONSTAT_CLASSIFICATION_SNAPSHOT_PATH` (optional classification-snapshot override; defaults to
+  `JSONSTAT_LINKING_SNAPSHOT_PATH`; an empty value disables local classification enrichment)
+- `JSONSTAT_CLASSIFICATION_NETWORK_FALLBACK_ENABLED` (allow the classification API as a fallback
+  for classifications or languages missing from the local snapshot; default: disabled)
+- `JSONSTAT_CLASSIFICATION_TIMEOUT_SECONDS` (classification API timeout; default: `10`)
+- `JSONSTAT_CLASSIFICATION_MAX_RESPONSE_BYTES` (classification API response limit; default:
+  20 MiB)
+- `JSONSTAT_CLASSIFICATION_CACHE_SECONDS` (successful classification API response cache lifetime;
+  default: `86400`)
+
+The version-controlled runtime snapshot is a curated linking artifact rather than a complete
+Statistics Finland export. It currently contains 7 useful classifications with 1,134 exact item
+links, 134 statistics IDs, and 79 unit mappings. It is indexed with a memory-mapped scan, and only
+classifications used by the current JSON-stat dataset are parsed into memory. The complete source
+harvests, matching pipeline, review candidates, and intermediate identifier pairs are maintained
+outside this repository. See `source-data/README_statfi_runtime_links.md` for the inclusion policy.
+
+When the optional network fallback is enabled, every classification and language uses at most one
+metadata request and one item collection request; enrichment never issues a sequential request for
+each category code.
 
 When using `manage.py runserver`, keep `DJANGO_DEBUG=1`. The app emits a startup warning if debug
 is disabled, because Django will not serve the UI static files by default in that mode. This check
 is intentionally only a reminder and can be bypassed with `python manage.py runserver --skip-checks`
 for intentional local experiments.
 
-## Example PetScan JSON Files
+## Example Source Files
 
 - `data/examples/petscan-43641756.json.gz`
 - `data/examples/petscan-43642782.json.gz`
 - `data/examples/petscan-43706364.json.gz`
 - `data/examples/quarry-103479-run-1084300.json.gz`
 - `data/examples/quarry-103514-run-1084648.json.gz`
+- `data/examples/jsonstat-552d1f53.json`
 
 ## Endpoint Output Regression Snapshots
 
@@ -275,6 +312,86 @@ SELECT ?item ?title WHERE {
     ?item a <https://petscan.wmcloud.org/ontology/Page> .
     OPTIONAL { ?item <https://petscan.wmcloud.org/ontology/title> ?title }
   }
+}
+LIMIT 20
+```
+
+## JSON-stat 2 Endpoint
+
+Open `/jsonstat/` and enter an allowlisted HTTPS URL that returns one JSON-stat 2.0 `dataset`
+response. Initially only `stat.fi` and its subdomains are allowed.
+The structure endpoint accepts the URL directly:
+
+```bash
+curl --get 'http://127.0.0.1:8000/jsonstat/api/structure' \
+  --data-urlencode 'url=https://pxdata.stat.fi/PxWeb/sq/552d1f53-bdab-472b-a8e7-68b5b8c37cda' \
+  --data-urlencode 'refresh=1'
+```
+
+The response includes `source_token`, a URL-safe token used in the SPARQL path. Keeping the
+potentially complex source URL in this opaque token prevents its own `?` and `&` characters from
+being confused with SPARQL protocol parameters. For the example above, the endpoint is:
+
+`/jsonstat/sparql/source=aHR0cHM6Ly9weGRhdGEuc3RhdC5maS9QeFdlYi9zcS81NTJkMWY1My1iZGFiLTQ3MmItYThlNy02OGI1YjhjMzdjZGE`
+
+```sparql
+PREFIX qb: <http://purl.org/linked-data/cube#>
+PREFIX jsonstat: <https://sparqlbridge.toolforge.org/ontology/jsonstat/>
+
+SELECT ?year ?ageGroup ?indicator ?value WHERE {
+  SERVICE <https://sparqlbridge.toolforge.org/jsonstat/sparql/source=aHR0cHM6Ly9weGRhdGEuc3RhdC5maS9QeFdlYi9zcS81NTJkMWY1My1iZGFiLTQ3MmItYThlNy02OGI1YjhjMzdjZGE> {
+    ?observation a qb:Observation ;
+      jsonstat:timeperiod_y ?year ;
+      jsonstat:ikaryhma_10_20180101_label ?ageGroup ;
+      jsonstat:contentscode_label ?indicator ;
+      jsonstat:value ?value .
+  }
+}
+ORDER BY ?year
+```
+
+The loader supports dense and sparse `value` objects, plus string, dense-array, sparse-object, and
+deprecated one-item-array forms of `status`. Cube cells use JSON-stat row-major ordering. A cell
+whose value is `null` is preserved as a `jsonstat:Observation` compatibility resource with its
+dimensions and possible status, but it is not typed as `qb:Observation` or linked with
+`qb:dataSet`. This keeps the Data Cube graph conformant with the requirement that every Data Cube
+observation has a value for each declared measure.
+
+Only HTTPS source URLs whose host belongs to `JSONSTAT_ALLOWED_SOURCE_DOMAINS` are accepted. A
+listed domain also allows its subdomains, but matching is label-aware: `stat.fi` permits
+`pxdata.stat.fi`, not `evilstat.fi` or `stat.fi.example.com`. The loader also rejects credentials,
+fragments, local host names, and hosts resolving to non-public IP addresses, and repeats these
+checks across redirects.
+
+For Statistics Finland sources, the loader first compares JSON-stat dimension and category codes
+against the curated local snapshot. It accepts an item only when its classification `localId`, item
+`localId`, and code all exactly match the source dimension and category. If the separately enabled
+network fallback is used, the same exact-match rules apply to the public classification API.
+Successful responses are cached. Missing classifications, missing item codes, and classification
+API failures do not prevent the original JSON-stat dataset from loading.
+
+Every JSON-stat dimension has a local `skos:ConceptScheme`, and every category is represented as a
+`skos:Concept`. An exact Statistics Finland match enriches those resources with localized metadata,
+hierarchy, notes, API links, and reviewed ontology links such as YSO and Wikidata. The snapshot also
+links known Statistics Finland statistics IDs to their statistics pages and accepted subject
+concepts, and maps known units to UCUM metadata through `sdmx-attribute:unitMeasure`. Statistics
+Finland concept IDs are intentionally
+not duplicated: Wikidata property P14864 is their canonical integration path. The original code
+predicate remains unchanged for backwards-compatible queries, while a generated
+`{dimension}_concept` predicate links every cell directly to its concept:
+
+```sparql
+PREFIX qb: <http://purl.org/linked-data/cube#>
+PREFIX jsonstat: <https://sparqlbridge.toolforge.org/ontology/jsonstat/>
+PREFIX skos: <http://www.w3.org/2004/02/skos/core#>
+
+SELECT ?code ?classificationLabel ?apiResource WHERE {
+  ?observation a qb:Observation ;
+    jsonstat:ikaryhma_10_20180101 ?code ;
+    jsonstat:ikaryhma_10_20180101_concept ?concept .
+  ?concept skos:prefLabel ?classificationLabel ;
+    skos:exactMatch ?apiResource .
+  FILTER(LANG(?classificationLabel) = "fi")
 }
 LIMIT 20
 ```
@@ -364,6 +481,24 @@ Each PetScan row becomes one RDF resource:
 Example field predicate:
 
 - PetScan key `title` -> `https://petscan.wmcloud.org/ontology/title`
+
+JSON-stat RDF uses the [W3C RDF Data Cube Vocabulary](https://www.w3.org/TR/vocab-data-cube/) as
+its primary model:
+
+- A source dataset is a `qb:DataSet` linked with `qb:structure` to one
+  `qb:DataStructureDefinition`.
+- JSON-stat dimensions become ordered `qb:DimensionProperty` components. Each uses a local
+  `skos:ConceptScheme`, and every category is a `skos:Concept` linked from observations through a
+  generated `{dimension}_concept` predicate.
+- `jsonstat:value` is the DSD's `qb:MeasureProperty`. JSON-stat status and unit fields are optional
+  `qb:AttributeProperty` components.
+- Cells with non-null values are `qb:Observation` resources linked to the dataset with
+  `qb:dataSet`.
+- Exact Statistics Finland classification matches enrich the local SKOS resources with localized
+  labels, hierarchy, explanatory notes, and classification API links.
+- The earlier `jsonstat:Dataset`, `jsonstat:Observation`, `jsonstat:dataset`, dimension code/label,
+  coordinate, note, and unit triples remain as a compatibility layer. Null-valued cells exist only
+  in this compatibility layer so Data Cube observations always carry the declared measure.
 
 ## Limitations
 
