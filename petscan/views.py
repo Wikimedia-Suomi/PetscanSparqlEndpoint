@@ -24,6 +24,8 @@ def _csrf_exempt(view_func: _ViewFunc) -> _ViewFunc:
 class RequestContext:
     psid: int
     refresh: bool
+    include_gil_categories: bool
+    include_item_categories: bool
     petscan_params: Dict[str, List[str]]
 
 
@@ -86,7 +88,13 @@ def _validate_sparql_query_size(query: str) -> str:
 def _extract_forwarded_petscan_params(request: HttpRequest) -> Dict[str, List[str]]:
     forwarded = {}  # type: Dict[str, List[str]]
     for key in request.GET.keys():
-        if key.lower() in {"psid", "query", "refresh"}:
+        if key.lower() in {
+            "psid",
+            "query",
+            "refresh",
+            "include_gil_categories",
+            "include_item_categories",
+        }:
             continue
         values = [str(value).strip() for value in request.GET.getlist(key) if str(value).strip()]
         if values:
@@ -98,6 +106,14 @@ def _parse_request_context(request: HttpRequest) -> RequestContext:
     return RequestContext(
         psid=_parse_psid(request.GET.get("psid")),
         refresh=_parse_bool(request.GET.get("refresh"), default=False),
+        include_gil_categories=_parse_bool(
+            request.GET.get("include_gil_categories"),
+            default=False,
+        ),
+        include_item_categories=_parse_bool(
+            request.GET.get("include_item_categories"),
+            default=False,
+        ),
         petscan_params=_extract_forwarded_petscan_params(request),
     )
 
@@ -115,16 +131,47 @@ def _parse_path_request_context(service_params: str) -> RequestContext:
 
     refresh_values = [str(value).strip() for value in parsed.get("refresh", []) if str(value).strip()]
     refresh = _parse_bool(refresh_values[-1] if refresh_values else None, default=False)
+    category_values = [
+        str(value).strip()
+        for value in parsed.get("include_gil_categories", [])
+        if str(value).strip()
+    ]
+    include_gil_categories = _parse_bool(
+        category_values[-1] if category_values else None,
+        default=False,
+    )
+    item_category_values = [
+        str(value).strip()
+        for value in parsed.get("include_item_categories", [])
+        if str(value).strip()
+    ]
+    include_item_categories = _parse_bool(
+        item_category_values[-1] if item_category_values else None,
+        default=False,
+    )
 
     forwarded = {}  # type: Dict[str, List[str]]
     for key, values in parsed.items():
-        if key.lower() in {"psid", "query", "refresh", "format"}:
+        if key.lower() in {
+            "psid",
+            "query",
+            "refresh",
+            "format",
+            "include_gil_categories",
+            "include_item_categories",
+        }:
             continue
         normalized_values = [str(value).strip() for value in values if str(value).strip()]
         if normalized_values:
             forwarded[key] = normalized_values
 
-    return RequestContext(psid=psid, refresh=refresh, petscan_params=forwarded)
+    return RequestContext(
+        psid=psid,
+        refresh=refresh,
+        include_gil_categories=include_gil_categories,
+        include_item_categories=include_item_categories,
+        petscan_params=forwarded,
+    )
 
 
 def _parse_sparql_query(request: HttpRequest) -> str:
@@ -177,6 +224,8 @@ def _parse_sparql_request(request: HttpRequest, service_params: str) -> SparqlRe
     return SparqlRequest(
         psid=context.psid,
         refresh=context.refresh,
+        include_gil_categories=context.include_gil_categories,
+        include_item_categories=context.include_item_categories,
         petscan_params=context.petscan_params,
         query=query,
     )
@@ -193,6 +242,8 @@ def structure_endpoint(request: HttpRequest) -> JsonResponse:
             request_context.psid,
             refresh=request_context.refresh,
             petscan_params=request_context.petscan_params,
+            include_gil_categories=request_context.include_gil_categories,
+            include_item_categories=request_context.include_item_categories,
         )
     except ValueError as exc:
         return _json_error(str(exc), status=400)
@@ -226,6 +277,8 @@ def sparql_endpoint(request: HttpRequest, service_params: str) -> HttpResponse:
             parsed_request.query,
             refresh=parsed_request.refresh,
             petscan_params=parsed_request.petscan_params,
+            include_gil_categories=parsed_request.include_gil_categories,
+            include_item_categories=parsed_request.include_item_categories,
         )
     except ValueError as exc:
         return _add_cors_headers(_text_error(str(exc), status=400))

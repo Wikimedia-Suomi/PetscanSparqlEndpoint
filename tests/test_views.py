@@ -170,6 +170,73 @@ class ApiViewTests(SimpleTestCase):
             123,
             refresh=True,
             petscan_params={"category": ["Turku"]},
+            include_gil_categories=False,
+            include_item_categories=False,
+        )
+
+    @patch("petscan.views.petscan_service.ensure_loaded")
+    def test_structure_endpoint_enables_gil_categories_without_forwarding_option_to_petscan(
+        self,
+        ensure_loaded,
+    ):
+        ensure_loaded.return_value = {
+            "psid": 123,
+            "records": 1,
+            "source_url": "https://petscan.wmcloud.org/?psid=123&format=json",
+            "loaded_at": "2026-09-22T10:00:00+00:00",
+            "source_params": {"category": ["Turku"]},
+            "enrichment_options": {"gil_categories": True},
+            "structure": {"row_count": 1, "field_count": 0, "fields": []},
+        }
+
+        response = self.client.get(
+            API_STRUCTURE_PATH,
+            data={
+                "psid": 123,
+                "category": "Turku",
+                "include_gil_categories": "1",
+            },
+        )
+
+        self.assertEqual(response.status_code, 200)
+        ensure_loaded.assert_called_once_with(
+            123,
+            refresh=False,
+            petscan_params={"category": ["Turku"]},
+            include_gil_categories=True,
+            include_item_categories=False,
+        )
+
+    @patch("petscan.views.petscan_service.ensure_loaded")
+    def test_structure_endpoint_enables_item_categories_without_forwarding_option_to_petscan(
+        self,
+        ensure_loaded,
+    ):
+        ensure_loaded.return_value = {
+            "psid": 123,
+            "records": 1,
+            "source_url": "https://petscan.wmcloud.org/?psid=123&format=json",
+            "loaded_at": "2026-09-22T10:00:00+00:00",
+            "source_params": {"category": ["Turku"]},
+            "structure": {"row_count": 1, "field_count": 0, "fields": []},
+        }
+
+        response = self.client.get(
+            API_STRUCTURE_PATH,
+            data={
+                "psid": 123,
+                "category": "Turku",
+                "include_item_categories": "1",
+            },
+        )
+
+        self.assertEqual(response.status_code, 200)
+        ensure_loaded.assert_called_once_with(
+            123,
+            refresh=False,
+            petscan_params={"category": ["Turku"]},
+            include_gil_categories=False,
+            include_item_categories=True,
         )
 
     def test_structure_endpoint_rejects_non_get(self):
@@ -224,7 +291,14 @@ class ApiViewTests(SimpleTestCase):
         self.assertEqual(response.status_code, 200)
         self.assertIn("application/sparql-results+json", response["Content-Type"])
         self.assertEqual(json.loads(response.content.decode("utf-8"))["boolean"], True)
-        execute_query.assert_called_once_with(123, ASK_QUERY, refresh=False, petscan_params={})
+        execute_query.assert_called_once_with(
+            123,
+            ASK_QUERY,
+            refresh=False,
+            petscan_params={},
+            include_gil_categories=False,
+            include_item_categories=False,
+        )
 
     @patch("petscan.views.petscan_service.execute_query")
     def test_sparql_endpoint_accepts_protocol_post(self, execute_query):
@@ -238,7 +312,14 @@ class ApiViewTests(SimpleTestCase):
 
         self.assertEqual(response.status_code, 200)
         self.assertIn("application/sparql-results+json", response["Content-Type"])
-        execute_query.assert_called_once_with(123, ASK_QUERY, refresh=True, petscan_params={})
+        execute_query.assert_called_once_with(
+            123,
+            ASK_QUERY,
+            refresh=True,
+            petscan_params={},
+            include_gil_categories=False,
+            include_item_categories=False,
+        )
 
     @patch("petscan.views.petscan_service.execute_query")
     def test_sparql_endpoint_rejects_invalid_utf8_protocol_post(self, execute_query):
@@ -282,7 +363,14 @@ class ApiViewTests(SimpleTestCase):
 
         self.assertEqual(response.status_code, 200)
         self.assertIn("application/sparql-results+json", response["Content-Type"])
-        execute_query.assert_called_once_with(123, ASK_QUERY, refresh=True, petscan_params={})
+        execute_query.assert_called_once_with(
+            123,
+            ASK_QUERY,
+            refresh=True,
+            petscan_params={},
+            include_gil_categories=False,
+            include_item_categories=False,
+        )
 
     def test_sparql_endpoint_rejects_non_sparql_query_post_content_type(self):
         with self.assertLogs("petscan.views", level="WARNING") as captured_logs:
@@ -337,6 +425,27 @@ class ApiViewTests(SimpleTestCase):
             ASK_QUERY,
             refresh=False,
             petscan_params={"category": ["Turku"], "language": ["fi"]},
+            include_gil_categories=False,
+            include_item_categories=False,
+        )
+
+    @patch("petscan.views.petscan_service.execute_query")
+    def test_sparql_endpoint_parses_gil_category_option_separately(self, execute_query):
+        execute_query.return_value = self._ask_execution_result()
+
+        response = self.client.get(
+            "/petscan/sparql/psid=123&category=Turku&include_gil_categories=1",
+            data={"query": ASK_QUERY},
+        )
+
+        self.assertEqual(response.status_code, 200)
+        execute_query.assert_called_once_with(
+            123,
+            ASK_QUERY,
+            refresh=False,
+            petscan_params={"category": ["Turku"]},
+            include_gil_categories=True,
+            include_item_categories=False,
         )
 
     @patch("petscan.views.petscan_service.execute_query")
@@ -376,4 +485,25 @@ class ApiViewTests(SimpleTestCase):
             FEDERATED_SUBQUERY,
             refresh=False,
             petscan_params={"categories": ["Turku"]},
+            include_gil_categories=False,
+            include_item_categories=False,
+        )
+
+    @patch("petscan.views.petscan_service.execute_query")
+    def test_sparql_endpoint_parses_item_category_option_separately(self, execute_query):
+        execute_query.return_value = self._ask_execution_result()
+
+        response = self.client.get(
+            "/petscan/sparql/psid=123&category=Turku&include_item_categories=1",
+            data={"query": ASK_QUERY},
+        )
+
+        self.assertEqual(response.status_code, 200)
+        execute_query.assert_called_once_with(
+            123,
+            ASK_QUERY,
+            refresh=False,
+            petscan_params={"category": ["Turku"]},
+            include_gil_categories=False,
+            include_item_categories=True,
         )

@@ -21,6 +21,7 @@ from typing import (
 from urllib.parse import quote
 
 from . import service_links as links
+from .normalization import normalize_qid
 from .service_types import StructureField, StructureSummary
 
 try:
@@ -54,6 +55,9 @@ __all__ = [
     "append_scalar_field_quads",
     "iter_scalar_fields",
     "iter_typed_gil_link_fields",
+    "iter_typed_gil_link_category_fields",
+    "iter_typed_item_page_fields",
+    "iter_typed_item_category_fields",
     "iter_typed_scalar_fields",
     "literal_for",
     "literal_for_scalar_field",
@@ -631,6 +635,116 @@ def iter_typed_gil_link_fields(
         yield "gil_link_wikidata_id", qid, "xsd:string"
         yield "gil_link_wikidata_entity", "http://www.wikidata.org/entity/{}".format(qid), SPARQL_IRI_TYPE
 
+    raw_categories = payload.get("categories") if isinstance(payload, RuntimeMapping) else None
+    if isinstance(raw_categories, list):
+        seen_category_uris = set()
+        for category in raw_categories:
+            if not isinstance(category, RuntimeMapping):
+                continue
+            category_uri = str(category.get("link_uri", "") or "").strip()
+            if not category_uri or category_uri in seen_category_uris:
+                continue
+            seen_category_uris.add(category_uri)
+            yield "gil_link_category", category_uri, SPARQL_IRI_TYPE
+
+
+def iter_typed_gil_link_category_fields(
+    link_uri: str,
+    gil_link_enrichment_map: Optional[Mapping[str, Mapping[str, Any]]] = None,
+) -> Iterable[Tuple[str, str, Any, str]]:
+    payload = gil_link_enrichment_map.get(link_uri) if gil_link_enrichment_map is not None else None
+    raw_categories = payload.get("categories") if isinstance(payload, RuntimeMapping) else None
+    if not isinstance(raw_categories, list):
+        return
+
+    seen_category_uris = set()
+    for category in raw_categories:
+        if not isinstance(category, RuntimeMapping):
+            continue
+        category_uri = str(category.get("link_uri", "") or "").strip()
+        category_title = str(category.get("title", "") or "").strip()
+        qid = normalize_qid(category.get("wikidata_id"))
+        if not category_uri or category_uri in seen_category_uris:
+            continue
+        seen_category_uris.add(category_uri)
+        if category_title:
+            yield category_uri, "gil_link_category_title", category_title, "xsd:string"
+        yield (
+            category_uri,
+            "gil_link_category_hiddencat",
+            bool(category.get("hiddencat", False)),
+            "xsd:boolean",
+        )
+        if qid is not None:
+            yield category_uri, "gil_link_category_wikidata_id", qid, "xsd:string"
+            yield (
+                category_uri,
+                "gil_link_category_wikidata_entity",
+                "http://www.wikidata.org/entity/{}".format(qid),
+                SPARQL_IRI_TYPE,
+            )
+
+
+def iter_typed_item_page_fields(
+    item_page_enrichment: Optional[Mapping[str, Any]],
+) -> Iterable[Tuple[str, Any, str]]:
+    if not isinstance(item_page_enrichment, RuntimeMapping):
+        return
+
+    page_uri = str(item_page_enrichment.get("page_uri", "") or "").strip()
+    if page_uri:
+        yield "item_page", page_uri, SPARQL_IRI_TYPE
+
+    raw_categories = item_page_enrichment.get("categories")
+    if not isinstance(raw_categories, list):
+        return
+    seen_category_uris = set()
+    for category in raw_categories:
+        if not isinstance(category, RuntimeMapping):
+            continue
+        category_uri = str(category.get("link_uri", "") or "").strip()
+        if not category_uri or category_uri in seen_category_uris:
+            continue
+        seen_category_uris.add(category_uri)
+        yield "item_category", category_uri, SPARQL_IRI_TYPE
+
+
+def iter_typed_item_category_fields(
+    item_page_enrichment: Optional[Mapping[str, Any]],
+) -> Iterable[Tuple[str, str, Any, str]]:
+    if not isinstance(item_page_enrichment, RuntimeMapping):
+        return
+    raw_categories = item_page_enrichment.get("categories")
+    if not isinstance(raw_categories, list):
+        return
+
+    seen_category_uris = set()
+    for category in raw_categories:
+        if not isinstance(category, RuntimeMapping):
+            continue
+        category_uri = str(category.get("link_uri", "") or "").strip()
+        category_title = str(category.get("title", "") or "").strip()
+        qid = normalize_qid(category.get("wikidata_id"))
+        if not category_uri or category_uri in seen_category_uris:
+            continue
+        seen_category_uris.add(category_uri)
+        if category_title:
+            yield category_uri, "item_category_title", category_title, "xsd:string"
+        yield (
+            category_uri,
+            "item_category_hiddencat",
+            bool(category.get("hiddencat", False)),
+            "xsd:boolean",
+        )
+        if qid is not None:
+            yield category_uri, "item_category_wikidata_id", qid, "xsd:string"
+            yield (
+                category_uri,
+                "item_category_wikidata_entity",
+                "http://www.wikidata.org/entity/{}".format(qid),
+                SPARQL_IRI_TYPE,
+            )
+
 
 def summarize_structure(
     records: Sequence[Mapping[str, Any]],
@@ -655,6 +769,12 @@ def summarize_structure(
             for key, _value, sparql_type in iter_typed_gil_link_fields(
                 link_uri,
                 qid,
+                gil_link_enrichment_map=gil_link_enrichment_map,
+            ):
+                _track_row_field_kind(row_field_kinds, key, sparql_type)
+                _track_row_field_value_count(row_field_value_counts, key)
+            for _category_uri, key, _value, sparql_type in iter_typed_gil_link_category_fields(
+                link_uri,
                 gil_link_enrichment_map=gil_link_enrichment_map,
             ):
                 _track_row_field_kind(row_field_kinds, key, sparql_type)

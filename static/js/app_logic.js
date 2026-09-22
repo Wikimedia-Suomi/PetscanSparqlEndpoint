@@ -341,6 +341,8 @@ export function parseForwardedPetscanParams(rawValue) {
     format: true,
     query: true,
     refresh: true,
+    include_gil_categories: true,
+    include_item_categories: true,
     output_limit: true,
     limit: true,
   };
@@ -664,6 +666,13 @@ export function formatUriText(uriValue) {
     return "sdc:" + commonsEntityMatch[1];
   }
 
+  var commonsCategoryMatch = value.match(
+    /^https?:\/\/commons\.wikimedia\.org\/wiki\/Category:([^?#]+)$/i
+  );
+  if (commonsCategoryMatch) {
+    return "c:category:" + decodeUriComponentSafe(commonsCategoryMatch[1]);
+  }
+
   var wikidataEntityMatch = value.match(/^https?:\/\/www\.wikidata\.org\/entity\/(Q\d+)$/i);
   if (wikidataEntityMatch) {
     return "wd:" + wikidataEntityMatch[1];
@@ -852,10 +861,25 @@ export function buildWizardQueryWithOntology(
     "gil_link_wikidata_entity",
     "gil_link_page_len",
     "gil_link_rev_timestamp",
+    "gil_link_category",
+    "gil_link_category_title",
+    "gil_link_category_hiddencat",
+    "gil_link_category_wikidata_id",
+    "gil_link_category_wikidata_entity",
+  ];
+  var itemCategoryRelationFields = [
+    "item_category",
+    "item_category_title",
+    "item_category_hiddencat",
+    "item_category_wikidata_id",
+    "item_category_wikidata_entity",
   ];
   var whereLines = ["  " + subjectVariable + " a " + normalizedPrefix + ":Page ."];
   orderedKeys.forEach(function (key) {
-    if (gilLinkRelationFields.indexOf(key) !== -1) {
+    if (
+      gilLinkRelationFields.indexOf(key) !== -1
+      || itemCategoryRelationFields.indexOf(key) !== -1
+    ) {
       return;
     }
     var variableName = "?" + normalizeFieldVariableName(key);
@@ -902,6 +926,103 @@ export function buildWizardQueryWithOntology(
         "    OPTIONAL { ?gil_link "
         + normalizedPrefix
         + ":gil_link_rev_timestamp ?gil_link_rev_timestamp . }"
+      );
+    }
+    var includeGilCategoryBlock = Boolean(
+      selected.gil_link_category
+      || selected.gil_link_category_title
+      || selected.gil_link_category_hiddencat
+      || selected.gil_link_category_wikidata_id
+      || selected.gil_link_category_wikidata_entity
+    );
+    if (includeGilCategoryBlock) {
+      whereLines.push("    OPTIONAL {");
+      whereLines.push(
+        "      ?gil_link " + normalizedPrefix + ":gil_link_category ?gil_link_category ."
+      );
+      if (selected.gil_link_category) {
+        pushSelectVar("?gil_link_category");
+      }
+      [
+        "gil_link_category_title",
+        "gil_link_category_hiddencat",
+      ].forEach(function (categoryField) {
+        if (!selected[categoryField]) {
+          return;
+        }
+        pushSelectVar("?" + categoryField);
+        whereLines.push(
+          "      OPTIONAL { ?gil_link_category "
+          + normalizedPrefix
+          + ":"
+          + categoryField
+          + " ?"
+          + categoryField
+          + " . }"
+        );
+      });
+      if (selected.gil_link_category_wikidata_id) {
+        pushSelectVar("?gil_link_category_wikidata_id");
+        whereLines.push(
+          "      OPTIONAL { ?gil_link_category "
+          + normalizedPrefix
+          + ":gil_link_category_wikidata_id ?gil_link_category_wikidata_id . }"
+        );
+      }
+      if (selected.gil_link_category_wikidata_entity) {
+        pushSelectVar("?gil_link_category_wikidata_entity");
+        whereLines.push(
+          "      OPTIONAL { ?gil_link_category "
+          + normalizedPrefix
+          + ":gil_link_category_wikidata_entity ?gil_link_category_wikidata_entity . }"
+        );
+      }
+      whereLines.push("    }");
+    }
+    whereLines.push("  }");
+  }
+
+  var includeItemCategoryBlock = itemCategoryRelationFields.some(function (key) {
+    return Boolean(selected[key]);
+  });
+  if (includeItemCategoryBlock) {
+    whereLines.push("  OPTIONAL {");
+    whereLines.push(
+      "    " + subjectVariable + " " + normalizedPrefix + ":item_category ?item_category ."
+    );
+    if (selected.item_category) {
+      pushSelectVar("?item_category");
+    }
+    if (selected.item_category_title) {
+      pushSelectVar("?item_category_title");
+      whereLines.push(
+        "    OPTIONAL { ?item_category "
+        + normalizedPrefix
+        + ":item_category_title ?item_category_title . }"
+      );
+    }
+    if (selected.item_category_hiddencat) {
+      pushSelectVar("?item_category_hiddencat");
+      whereLines.push(
+        "    OPTIONAL { ?item_category "
+        + normalizedPrefix
+        + ":item_category_hiddencat ?item_category_hiddencat . }"
+      );
+    }
+    if (selected.item_category_wikidata_id) {
+      pushSelectVar("?item_category_wikidata_id");
+      whereLines.push(
+        "    OPTIONAL { ?item_category "
+        + normalizedPrefix
+        + ":item_category_wikidata_id ?item_category_wikidata_id . }"
+      );
+    }
+    if (selected.item_category_wikidata_entity) {
+      pushSelectVar("?item_category_wikidata_entity");
+      whereLines.push(
+        "    OPTIONAL { ?item_category "
+        + normalizedPrefix
+        + ":item_category_wikidata_entity ?item_category_wikidata_entity . }"
       );
     }
     whereLines.push("  }");

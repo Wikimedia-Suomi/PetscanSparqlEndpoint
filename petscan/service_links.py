@@ -22,7 +22,10 @@ from urllib.parse import quote, urlsplit
 from django.conf import settings
 
 from . import enrichment_sql
-from .enrichment_api import fetch_wikibase_items_for_site_api
+from .enrichment_api import (
+    fetch_page_categories_with_wikidata_api,
+    fetch_wikibase_items_for_site_api,
+)
 from .normalization import normalize_page_title as _normalize_page_title
 from .normalization import normalize_qid as _normalize_qid
 from .service_source import HTTP_USER_AGENT
@@ -35,13 +38,16 @@ LOOKUP_BACKEND_TOOLFORGE_SQL = "toolforge_sql"
 __all__ = [
     "GilLinkEnrichmentBuildResult",
     "GilLinkLookupStats",
+    "ItemPageEnrichmentBuildResult",
     "LOOKUP_BACKEND_API",
     "LOOKUP_BACKEND_TOOLFORGE_SQL",
     "build_gil_link_enrichment",
+    "build_item_page_enrichment",
     "extract_qid",
     "iter_gil_link_enrichment",
     "iter_gil_link_uris",
     "resolve_gil_links",
+    "petscan_site_from_project_language",
     "site_to_mediawiki_api_url",
     "wikidata_lookup_backend",
 ]
@@ -61,6 +67,7 @@ class SiteLookupTarget:
     namespace: int
     api_title: str
     db_title: str
+    page_id: Optional[int] = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -75,6 +82,12 @@ class GilLinkLookupStats:
 class GilLinkEnrichmentBuildResult:
     enrichment_by_link: Dict[str, Dict[str, Any]]
     resolved_links_by_row: List[List[Tuple[str, Optional[str]]]]
+    lookup_stats: GilLinkLookupStats
+
+
+@dataclass(frozen=True, slots=True)
+class ItemPageEnrichmentBuildResult:
+    enrichment_by_row: List[Dict[str, Any]]
     lookup_stats: GilLinkLookupStats
 
 
@@ -212,6 +225,50 @@ def site_to_mediawiki_api_url(site: str) -> Optional[str]:
     return api_url
 
 
+def petscan_site_from_project_language(
+    project: Optional[str],
+    language: Optional[str],
+) -> Optional[str]:
+    normalized_project = str(project or "").strip().lower()
+    normalized_language = str(language or "").strip().lower()
+    if not normalized_project or not normalized_language:
+        return None
+    if not _SITE_TOKEN_RE.fullmatch(normalized_project):
+        return None
+    if not _SITE_TOKEN_RE.fullmatch(normalized_language):
+        return None
+
+    special_wikimedia_sites = {
+        "commons": "commonswiki",
+        "incubator": "incubatorwiki",
+        "mediawiki": "mediawikiwiki",
+        "meta": "metawiki",
+        "outreach": "outreachwiki",
+        "species": "specieswiki",
+    }
+    if normalized_project == "wikimedia":
+        site = special_wikimedia_sites.get(normalized_language)
+    elif normalized_project == "wikidata":
+        site = "wikidatawiki" if normalized_language in {"wikidata", "www"} else None
+    else:
+        suffix_by_project = {
+            "wikipedia": "wiki",
+            "wikibooks": "wikibooks",
+            "wikinews": "wikinews",
+            "wikiquote": "wikiquote",
+            "wikisource": "wikisource",
+            "wikiversity": "wikiversity",
+            "wikivoyage": "wikivoyage",
+            "wiktionary": "wiktionary",
+        }
+        suffix = suffix_by_project.get(normalized_project)
+        site = "{}{}".format(normalized_language, suffix) if suffix is not None else None
+
+    if site is None or _site_to_mediawiki_domain(site) is None:
+        return None
+    return site
+
+
 def _gil_link_uri(site: str, title: str) -> Optional[str]:
     domain = _site_to_mediawiki_domain(site)
     normalized_title = _normalize_page_title(title)
@@ -226,6 +283,47 @@ def _namespace_db_title(namespace: int, title: str) -> str:
     if namespace != 0 and ":" in normalized_title:
         return normalized_title.split(":", 1)[1]
     return normalized_title
+
+
+def _record_page_id(record: Mapping[str, Any]) -> Optional[int]:
+    for key in ("id", "pageid", "page_id"):
+        try:
+            page_id = int(str(record.get(key, "")).strip())
+        except (TypeError, ValueError):
+            continue
+        if page_id > 0:
+            return page_id
+    return None
+
+
+def _item_page_target(record: Mapping[str, Any], site: str) -> Optional[Tuple[str, SiteLookupTarget]]:
+    title = _normalize_page_title(record.get("title"))
+    if not title:
+        return None
+    try:
+        namespace = int(record.get("namespace", 0))
+    except (TypeError, ValueError):
+        return None
+
+    api_title = title
+    namespace_text = _normalize_page_title(record.get("nstext"))
+    namespace_prefix = "{}:".format(namespace_text)
+    if (
+        namespace != 0
+        and namespace_text
+        and not api_title.casefold().startswith(namespace_prefix.casefold())
+    ):
+        api_title = "{}:{}".format(namespace_text, api_title)
+
+    page_uri = _gil_link_uri(site, api_title)
+    if page_uri is None:
+        return None
+    return page_uri, SiteLookupTarget(
+        namespace=namespace,
+        api_title=api_title,
+        db_title=_namespace_db_title(namespace, api_title),
+        page_id=_record_page_id(record),
+    )
 
 
 def _iter_gil_link_targets(record: Mapping[str, Any]) -> List[GilLinkTarget]:
@@ -345,15 +443,85 @@ def _normalize_link_enrichment_payload(payload: Mapping[str, Any]) -> Optional[D
     qid = _normalize_qid(payload.get("wikidata_id"))
     page_len = _normalize_page_len(payload.get("page_len"))
     rev_timestamp = _normalize_revision_timestamp_xsd(payload.get("rev_timestamp"))
+    page_id = _record_page_id(payload)
 
-    if qid is None and page_len is None and rev_timestamp is None:
+    raw_categories = payload.get("categories")
+    categories = []  # type: List[Dict[str, Any]]
+    if isinstance(raw_categories, list):
+        seen_category_uris = set()
+        for raw_category in raw_categories:
+            if not isinstance(raw_category, RuntimeMapping):
+                continue
+            link_uri = str(raw_category.get("link_uri", "") or "").strip()
+            title = _normalize_page_title(raw_category.get("title"))
+            if not link_uri or not title or link_uri in seen_category_uris:
+                continue
+            seen_category_uris.add(link_uri)
+            categories.append(
+                {
+                    "title": title,
+                    "link_uri": link_uri,
+                    "wikidata_id": _normalize_qid(raw_category.get("wikidata_id")),
+                }
+            )
+
+    if (
+        qid is None
+        and page_len is None
+        and rev_timestamp is None
+        and page_id is None
+        and not categories
+    ):
         return None
 
-    return {
+    result: Dict[str, Any] = {
         "wikidata_id": qid,
         "page_len": page_len,
         "rev_timestamp": rev_timestamp,
     }
+    if categories:
+        result["categories"] = categories
+    if page_id is not None:
+        result["page_id"] = page_id
+    return result
+
+
+def _normalize_categories_for_site(
+    site: str,
+    categories_by_title: Mapping[str, Sequence[Mapping[str, Any]]],
+) -> Dict[str, List[Dict[str, Any]]]:
+    resolved: Dict[str, List[Dict[str, Any]]] = {}
+    for title, raw_categories in categories_by_title.items():
+        normalized_title = _normalize_page_title(title)
+        if not normalized_title:
+            continue
+        target_uri = _gil_link_uri(site, normalized_title)
+        if target_uri is None:
+            continue
+        categories: List[Dict[str, Any]] = []
+        seen_category_uris = set()
+        for raw_category in raw_categories:
+            if not isinstance(raw_category, RuntimeMapping):
+                continue
+            category_title = _normalize_page_title(raw_category.get("title"))
+            if category_title:
+                category_title = "Category:{}".format(
+                    category_title.split(":", 1)[-1]
+                )
+            category_uri = _gil_link_uri(site, category_title)
+            if not category_title or category_uri is None or category_uri in seen_category_uris:
+                continue
+            seen_category_uris.add(category_uri)
+            categories.append(
+                {
+                    "title": category_title,
+                    "link_uri": category_uri,
+                    "wikidata_id": _normalize_qid(raw_category.get("wikidata_id")),
+                    "hiddencat": bool(raw_category.get("hiddencat", False)),
+                }
+            )
+        resolved[normalized_title] = categories
+    return resolved
 
 
 def _fetch_wikibase_enrichment_for_site_api(
@@ -428,6 +596,76 @@ def fetch_wikibase_enrichment_for_site(
     return resolved
 
 
+def fetch_category_enrichment_for_site(
+    site: str,
+    targets: Sequence[SiteLookupTarget],
+    backend: str,
+    lookup_stats: Optional[MutableMapping[str, float]] = None,
+) -> Dict[str, List[Dict[str, Any]]]:
+    if not targets:
+        return {}
+    timeout = int(getattr(settings, "PETSCAN_TIMEOUT_SECONDS", 30))
+
+    if backend == LOOKUP_BACKEND_TOOLFORGE_SQL:
+        sql_targets = [
+            (target.namespace, target.api_title, target.db_title)
+            for target in targets
+        ]
+        page_ids_by_title = {
+            _normalize_page_title(target.api_title): target.page_id
+            for target in targets
+            if target.page_id is not None and target.page_id > 0
+        }
+        fetched = enrichment_sql.fetch_page_categories_with_wikidata_sql(
+            site,
+            sql_targets,
+            timeout_seconds=timeout,
+            replica_cnf=str(getattr(settings, "TOOLFORGE_REPLICA_CNF", "") or "").strip(),
+            lookup_stats=lookup_stats,
+            page_ids_by_title=page_ids_by_title,
+        )
+        return _normalize_categories_for_site(site, fetched)
+
+    api_url = site_to_mediawiki_api_url(site)
+    if api_url is None:
+        return {}
+    titles_by_page_id: Dict[str, int] = {}
+    fallback_titles: Set[str] = set()
+    for target in targets:
+        normalized_title = _normalize_page_title(target.api_title)
+        if not normalized_title:
+            continue
+        if target.page_id is not None and target.page_id > 0:
+            titles_by_page_id[normalized_title] = target.page_id
+            fallback_titles.discard(normalized_title)
+        elif normalized_title not in titles_by_page_id:
+            fallback_titles.add(normalized_title)
+
+    fetched_by_title: Dict[str, List[Dict[str, Any]]] = {}
+    for batch in _chunked(sorted(titles_by_page_id), _MAX_TITLES_PER_MEDIAWIKI_BATCH):
+        fetched_by_title.update(
+            fetch_page_categories_with_wikidata_api(
+                api_url,
+                batch,
+                user_agent=HTTP_USER_AGENT,
+                timeout_seconds=timeout,
+                lookup_stats=lookup_stats,
+                page_ids_by_title={title: titles_by_page_id[title] for title in batch},
+            )
+        )
+    for batch in _chunked(sorted(fallback_titles), _MAX_TITLES_PER_MEDIAWIKI_BATCH):
+        fetched_by_title.update(
+            fetch_page_categories_with_wikidata_api(
+                api_url,
+                batch,
+                user_agent=HTTP_USER_AGENT,
+                timeout_seconds=timeout,
+                lookup_stats=lookup_stats,
+            )
+        )
+    return _normalize_categories_for_site(site, fetched_by_title)
+
+
 def _direct_wikidata_qid_for_target(
     site: str,
     namespace: int,
@@ -495,6 +733,7 @@ def _resolve_site_title_enrichment(
     site_lookup_targets: Mapping[str, Set[SiteLookupTarget]],
     backend: Optional[str] = None,
     lookup_stats: Optional[MutableMapping[str, float]] = None,
+    include_categories: bool = False,
 ) -> Dict[Tuple[str, str], Dict[str, Any]]:
     resolved_by_site_title = {}  # type: Dict[Tuple[str, str], Dict[str, Any]]
     resolved_backend = backend if backend in {LOOKUP_BACKEND_API, LOOKUP_BACKEND_TOOLFORGE_SQL} else None
@@ -516,6 +755,47 @@ def _resolve_site_title_enrichment(
             normalized_title = _normalize_page_title(title)
             if normalized_title:
                 resolved_by_site_title[(site, normalized_title)] = dict(enrichment)
+
+        if include_categories:
+            category_targets: List[SiteLookupTarget] = []
+            for target in ordered_targets:
+                normalized_title = _normalize_page_title(target.api_title)
+                target_enrichment = result.get(normalized_title)
+                resolved_page_id = target.page_id
+                if resolved_page_id is None and isinstance(
+                    target_enrichment,
+                    RuntimeMapping,
+                ):
+                    resolved_page_id = _record_page_id(target_enrichment)
+                category_targets.append(
+                    SiteLookupTarget(
+                        namespace=target.namespace,
+                        api_title=target.api_title,
+                        db_title=target.db_title,
+                        page_id=resolved_page_id,
+                    )
+                )
+            categories_by_title = fetch_category_enrichment_for_site(
+                site,
+                category_targets,
+                backend=resolved_backend,
+                lookup_stats=lookup_stats,
+            )
+            for title, categories in categories_by_title.items():
+                normalized_title = _normalize_page_title(title)
+                if not normalized_title:
+                    continue
+                key = (site, normalized_title)
+                payload = resolved_by_site_title.setdefault(
+                    key,
+                    {
+                        "wikidata_id": None,
+                        "page_len": None,
+                        "rev_timestamp": None,
+                    },
+                )
+                if categories:
+                    payload["categories"] = categories
 
     return resolved_by_site_title
 
@@ -541,7 +821,7 @@ def _attach_resolved_enrichment(
             continue
 
         resolved_qid = _normalize_qid(resolved.get("wikidata_id")) if isinstance(resolved, RuntimeMapping) else None
-        payload = {
+        payload: Dict[str, Any] = {
             "wikidata_id": resolved_qid or direct_qid,
             "page_len": _normalize_page_len(resolved.get("page_len")) if isinstance(resolved, RuntimeMapping) else None,
             "rev_timestamp": (
@@ -550,7 +830,19 @@ def _attach_resolved_enrichment(
                 else None
             ),
         }
-        if payload["wikidata_id"] is None and payload["page_len"] is None and payload["rev_timestamp"] is None:
+        raw_categories = resolved.get("categories") if isinstance(resolved, RuntimeMapping) else None
+        if isinstance(raw_categories, list) and raw_categories:
+            payload["categories"] = [
+                dict(category)
+                for category in raw_categories
+                if isinstance(category, RuntimeMapping)
+            ]
+        if (
+            payload["wikidata_id"] is None
+            and payload["page_len"] is None
+            and payload["rev_timestamp"] is None
+            and not payload.get("categories")
+        ):
             continue
         link_to_enrichment[link_uri] = payload
 
@@ -586,6 +878,7 @@ def _lookup_stats_from_mapping(lookup_stats: Mapping[str, float]) -> GilLinkLook
 def build_gil_link_enrichment(
     records: Sequence[Mapping[str, Any]],
     backend: Optional[str] = None,
+    include_categories: bool = False,
 ) -> GilLinkEnrichmentBuildResult:
     lookup_stats: Dict[str, float] = {
         "api_calls": 0.0,
@@ -603,6 +896,7 @@ def build_gil_link_enrichment(
         site_lookup_targets,
         backend=backend,
         lookup_stats=lookup_stats,
+        include_categories=include_categories,
     )
     result = _attach_resolved_enrichment(
         link_targets_by_uri,
@@ -612,5 +906,71 @@ def build_gil_link_enrichment(
     return GilLinkEnrichmentBuildResult(
         enrichment_by_link=result,
         resolved_links_by_row=_build_resolved_links_by_row(row_link_uris, result),
+        lookup_stats=_lookup_stats_from_mapping(lookup_stats),
+    )
+
+
+def build_item_page_enrichment(
+    records: Sequence[Mapping[str, Any]],
+    project: Optional[str],
+    language: Optional[str],
+    backend: Optional[str] = None,
+    include_categories: bool = False,
+) -> ItemPageEnrichmentBuildResult:
+    """Build page URIs and optional category metadata for PetScan result rows."""
+    lookup_stats: Dict[str, float] = {
+        "api_calls": 0.0,
+        "api_ms_total": 0.0,
+        "sql_calls": 0.0,
+        "sql_ms_total": 0.0,
+    }
+    site = petscan_site_from_project_language(project, language)
+    if site is None:
+        return ItemPageEnrichmentBuildResult(
+            enrichment_by_row=[{} for _record in records],
+            lookup_stats=_lookup_stats_from_mapping(lookup_stats),
+        )
+
+    row_targets: List[Optional[Tuple[str, SiteLookupTarget]]] = []
+    unique_targets: Set[SiteLookupTarget] = set()
+    for record in records:
+        target = _item_page_target(record, site)
+        row_targets.append(target)
+        if include_categories and target is not None:
+            unique_targets.add(target[1])
+
+    categories_by_title: Dict[str, List[Dict[str, Any]]] = {}
+    if include_categories and unique_targets:
+        resolved_backend = (
+            backend
+            if backend in {LOOKUP_BACKEND_API, LOOKUP_BACKEND_TOOLFORGE_SQL}
+            else wikidata_lookup_backend()
+        )
+        categories_by_title = fetch_category_enrichment_for_site(
+            site,
+            sorted(
+                unique_targets,
+                key=lambda item: (item.namespace, item.api_title, item.db_title),
+            ),
+            backend=resolved_backend,
+            lookup_stats=lookup_stats,
+        )
+
+    enrichment_by_row: List[Dict[str, Any]] = []
+    for target in row_targets:
+        if target is None:
+            enrichment_by_row.append({})
+            continue
+        page_uri, lookup_target = target
+        payload: Dict[str, Any] = {"page_uri": page_uri}
+        categories = categories_by_title.get(
+            _normalize_page_title(lookup_target.api_title),
+        )
+        if categories:
+            payload["categories"] = categories
+        enrichment_by_row.append(payload)
+
+    return ItemPageEnrichmentBuildResult(
+        enrichment_by_row=enrichment_by_row,
         lookup_stats=_lookup_stats_from_mapping(lookup_stats),
     )

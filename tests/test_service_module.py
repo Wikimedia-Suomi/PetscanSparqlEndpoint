@@ -19,6 +19,111 @@ class ServiceModuleTests(ServiceTestCase):
         )
         self.assertFalse(service.meta_has_matching_source_params(meta, {"category": ["Helsinki"]}))
 
+    def test_meta_enrichment_options_distinguish_category_enriched_store(self):
+        self.assertFalse(
+            service._meta_has_matching_enrichment_options(
+                {},
+                include_gil_categories=False,
+                include_item_categories=False,
+            )
+        )
+        self.assertTrue(
+            service._meta_has_matching_enrichment_options(
+                {"enrichment_options": {"petscan_store_schema_version": 1}},
+                include_gil_categories=False,
+                include_item_categories=False,
+            )
+        )
+        self.assertFalse(
+            service._meta_has_matching_enrichment_options(
+                {"enrichment_options": {"petscan_store_schema_version": 1}},
+                include_gil_categories=True,
+                include_item_categories=False,
+            )
+        )
+        self.assertFalse(
+            service._meta_has_matching_enrichment_options(
+                {
+                    "enrichment_options": {
+                        "petscan_store_schema_version": 1,
+                        "gil_categories": True,
+                    }
+                },
+                include_gil_categories=True,
+                include_item_categories=False,
+            )
+        )
+        self.assertTrue(
+            service._meta_has_matching_enrichment_options(
+                {
+                    "enrichment_options": {
+                        "gil_categories": True,
+                        "gil_categories_schema_version": 3,
+                        "petscan_store_schema_version": 1,
+                    }
+                },
+                include_gil_categories=True,
+                include_item_categories=False,
+            )
+        )
+        self.assertFalse(
+            service._meta_has_matching_enrichment_options(
+                {"enrichment_options": {"petscan_store_schema_version": 1}},
+                include_gil_categories=False,
+                include_item_categories=True,
+            )
+        )
+        self.assertTrue(
+            service._meta_has_matching_enrichment_options(
+                {
+                    "enrichment_options": {
+                        "item_categories": True,
+                        "item_categories_schema_version": 2,
+                        "petscan_store_schema_version": 1,
+                    }
+                },
+                include_gil_categories=False,
+                include_item_categories=True,
+            )
+        )
+
+    @patch("petscan.service.store_builder.build_store")
+    @patch("petscan.service.source.fetch_petscan_json")
+    @patch("petscan.service.store.prune_expired_stores")
+    @patch("petscan.service._ensure_oxigraph")
+    def test_ensure_loaded_passes_resolved_petscan_wiki_to_store_builder(
+        self,
+        _ensure_oxigraph_mock,
+        _prune_expired_stores_mock,
+        fetch_petscan_json_mock,
+        build_store_mock,
+    ):
+        psid = STORE_REBUILD_TEST_PSID + 110
+        self._cleanup_store(psid)
+        payload = {
+            "a": {
+                "query": (
+                    "https://petscan.wmcloud.org/?psid=123&project=wikipedia&language=fi"
+                )
+            },
+            "pages": [{"id": 1, "title": "Turku", "namespace": 0, "nstext": ""}],
+        }
+        fetch_petscan_json_mock.return_value = (payload, "https://example.invalid")
+        build_store_mock.return_value = {"psid": psid}
+
+        service.ensure_loaded(psid, include_item_categories=True)
+
+        build_store_mock.assert_called_once_with(
+            psid,
+            payload["pages"],
+            "https://example.invalid",
+            source_params={},
+            include_gil_categories=False,
+            include_item_categories=True,
+            petscan_project="wikipedia",
+            petscan_language="fi",
+        )
+
     @patch("petscan.service.store_builder.build_store")
     @patch("petscan.service.source.extract_records")
     @patch("petscan.service.source.fetch_petscan_json")
@@ -79,6 +184,7 @@ class ServiceModuleTests(ServiceTestCase):
         meta_path = store.meta_path(psid)
 
         fresh_meta = {
+            "enrichment_options": {"petscan_store_schema_version": 1},
             "psid": psid,
             "records": 1,
             "source_url": "https://example.invalid",
@@ -112,6 +218,7 @@ class ServiceModuleTests(ServiceTestCase):
         meta_path = store.meta_path(psid)
 
         stale_meta = {
+            "enrichment_options": {"petscan_store_schema_version": 1},
             "psid": psid,
             "records": 1,
             "source_url": "https://example.invalid",
@@ -170,7 +277,13 @@ class ServiceModuleTests(ServiceTestCase):
         self.assertEqual(execution["query_type"], "ASK")
         self.assertEqual(execution["result_format"], "sparql-json")
         self.assertEqual(execution["sparql_json"]["boolean"], True)
-        ensure_loaded_mock.assert_called_once_with(psid, refresh=False, petscan_params=None)
+        ensure_loaded_mock.assert_called_once_with(
+            psid,
+            refresh=False,
+            petscan_params=None,
+            include_gil_categories=False,
+            include_item_categories=False,
+        )
         store_class_mock.read_only.assert_called_once_with(str(store.store_path(psid)))
 
     @patch("petscan.service.ensure_loaded")

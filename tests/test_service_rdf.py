@@ -13,6 +13,117 @@ from tests.service_test_support import (
 
 
 class ServiceRdfTests(ServiceTestCase):
+    def test_item_category_fields_preserve_category_resource_relationship(self) -> None:
+        category_uri = "https://fi.wikipedia.org/wiki/Category:Turku"
+        enrichment = {
+            "page_uri": "https://fi.wikipedia.org/wiki/Turku",
+            "categories": [
+                {
+                    "title": "Category:Turku",
+                    "link_uri": category_uri,
+                    "wikidata_id": "Q8357355",
+                    "hiddencat": True,
+                }
+            ],
+        }
+
+        self.assertEqual(
+            list(rdf.iter_typed_item_page_fields(enrichment)),
+            [
+                ("item_page", "https://fi.wikipedia.org/wiki/Turku", "iri"),
+                ("item_category", category_uri, "iri"),
+            ],
+        )
+        self.assertEqual(
+            list(rdf.iter_typed_item_category_fields(enrichment)),
+            [
+                (category_uri, "item_category_title", "Category:Turku", "xsd:string"),
+                (category_uri, "item_category_hiddencat", True, "xsd:boolean"),
+                (category_uri, "item_category_wikidata_id", "Q8357355", "xsd:string"),
+                (
+                    category_uri,
+                    "item_category_wikidata_entity",
+                    "http://www.wikidata.org/entity/Q8357355",
+                    "iri",
+                ),
+            ],
+        )
+
+    def test_gil_category_fields_preserve_category_to_wikidata_relationship(self) -> None:
+        link_uri = "https://en.wikipedia.org/wiki/Albert_Einstein"
+        category_uri = "https://en.wikipedia.org/wiki/Category:Relativity"
+        enrichment = {
+            link_uri: {
+                "categories": [
+                    {
+                        "title": "Category:Relativity",
+                        "link_uri": category_uri,
+                        "wikidata_id": "Q177370",
+                        "hiddencat": True,
+                    }
+                ]
+            }
+        }
+
+        link_fields = list(
+            rdf.iter_typed_gil_link_fields(
+                link_uri,
+                None,
+                gil_link_enrichment_map=enrichment,
+            )
+        )
+        category_fields = list(
+            rdf.iter_typed_gil_link_category_fields(
+                link_uri,
+                gil_link_enrichment_map=enrichment,
+            )
+        )
+
+        self.assertIn(
+            (
+                "gil_link_category",
+                category_uri,
+                "iri",
+            ),
+            link_fields,
+        )
+        self.assertIn(
+            (
+                category_uri,
+                "gil_link_category_title",
+                "Category:Relativity",
+                "xsd:string",
+            ),
+            category_fields,
+        )
+        self.assertIn(
+            (
+                category_uri,
+                "gil_link_category_wikidata_id",
+                "Q177370",
+                "xsd:string",
+            ),
+            category_fields,
+        )
+        self.assertIn(
+            (
+                category_uri,
+                "gil_link_category_hiddencat",
+                True,
+                "xsd:boolean",
+            ),
+            category_fields,
+        )
+        self.assertEqual(
+            {field[1] for field in category_fields},
+            {
+                "gil_link_category_title",
+                "gil_link_category_hiddencat",
+                "gil_link_category_wikidata_id",
+                "gil_link_category_wikidata_entity",
+            },
+        )
+
     @staticmethod
     def _field_map(summary: Mapping[str, Any]) -> Dict[str, Dict[str, Any]]:
         return {field["source_key"]: field for field in summary["fields"]}

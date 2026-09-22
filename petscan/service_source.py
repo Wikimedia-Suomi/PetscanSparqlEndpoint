@@ -2,7 +2,7 @@
 
 import json
 from typing import Any, Dict, List, Mapping, Optional, Sequence, Tuple
-from urllib.parse import urlencode
+from urllib.parse import parse_qs, urlencode, urlsplit
 from urllib.request import Request, urlopen
 
 from django.conf import settings
@@ -10,7 +10,14 @@ from django.conf import settings
 from .service_errors import PetscanServiceError
 
 HTTP_USER_AGENT = "PetscanSparqlEndpoint (https://meta.wikimedia.org/wiki/user:Zache)"
-_PETSCAN_RESERVED_QUERY_PARAMS = {"psid", "format", "query", "refresh"}
+_PETSCAN_RESERVED_QUERY_PARAMS = {
+    "psid",
+    "format",
+    "query",
+    "refresh",
+    "include_gil_categories",
+    "include_item_categories",
+}
 _ROW_HINT_KEYS = {
     "id",
     "pageid",
@@ -25,10 +32,41 @@ _ROW_HINT_KEYS = {
 __all__ = [
     "HTTP_USER_AGENT",
     "build_petscan_url",
+    "extract_petscan_project_language",
     "extract_records",
     "fetch_petscan_json",
     "normalize_petscan_params",
 ]
+
+
+def extract_petscan_project_language(
+    payload: Mapping[str, Any],
+) -> Tuple[Optional[str], Optional[str]]:
+    """Return the project and language encoded in PetScan's resolved query URL."""
+    raw_metadata = payload.get("a") if isinstance(payload, Mapping) else None
+    if not isinstance(raw_metadata, Mapping):
+        return None, None
+
+    raw_query_url = raw_metadata.get("query")
+    if not isinstance(raw_query_url, str) or not raw_query_url.strip():
+        return None, None
+
+    try:
+        parsed_url = urlsplit(raw_query_url.strip())
+        if parsed_url.scheme not in {"http", "https"}:
+            return None, None
+        query_params = parse_qs(parsed_url.query, keep_blank_values=False)
+    except (TypeError, ValueError):
+        return None, None
+
+    def _last_value(key: str) -> Optional[str]:
+        values = query_params.get(key, [])
+        if not values:
+            return None
+        value = str(values[-1]).strip().lower()
+        return value or None
+
+    return _last_value("project"), _last_value("language")
 
 
 def _petscan_transport_public_message(exc: Exception) -> str:

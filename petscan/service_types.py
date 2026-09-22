@@ -3,6 +3,10 @@
 from dataclasses import dataclass
 from typing import Any, Dict, List, Literal, NotRequired, Optional, TypedDict
 
+GIL_CATEGORIES_SCHEMA_VERSION = 3
+ITEM_CATEGORIES_SCHEMA_VERSION = 2
+PETSCAN_STORE_SCHEMA_VERSION = 1
+
 
 class StructureField(TypedDict):
     source_key: str
@@ -19,6 +23,14 @@ class StructureSummary(TypedDict):
     fields: List[StructureField]
 
 
+class EnrichmentOptions(TypedDict, total=False):
+    petscan_store_schema_version: int
+    gil_categories: bool
+    gil_categories_schema_version: int
+    item_categories: bool
+    item_categories_schema_version: int
+
+
 class StoreMeta(TypedDict):
     psid: int
     records: int
@@ -26,6 +38,7 @@ class StoreMeta(TypedDict):
     source_params: Dict[str, List[str]]
     loaded_at: str
     structure: StructureSummary
+    enrichment_options: NotRequired[EnrichmentOptions]
 
 
 class QueryExecution(TypedDict, total=False):
@@ -44,9 +57,10 @@ class StoreMetaModel:
     source_params: Dict[str, List[str]]
     loaded_at: str
     structure: StructureSummary
+    enrichment_options: Optional[EnrichmentOptions] = None
 
     def to_dict(self) -> StoreMeta:
-        return {
+        payload: StoreMeta = {
             "psid": self.psid,
             "records": self.records,
             "source_url": self.source_url,
@@ -54,6 +68,39 @@ class StoreMetaModel:
             "loaded_at": self.loaded_at,
             "structure": self.structure,
         }
+        if self.enrichment_options:
+            options: EnrichmentOptions = {}
+            raw_store_schema_version = self.enrichment_options.get(
+                "petscan_store_schema_version"
+            )
+            if isinstance(raw_store_schema_version, int) and not isinstance(
+                raw_store_schema_version, bool
+            ):
+                options["petscan_store_schema_version"] = raw_store_schema_version
+            if "gil_categories" in self.enrichment_options:
+                options["gil_categories"] = bool(
+                    self.enrichment_options["gil_categories"]
+                )
+            raw_schema_version = self.enrichment_options.get(
+                "gil_categories_schema_version"
+            )
+            if isinstance(raw_schema_version, int) and not isinstance(
+                raw_schema_version, bool
+            ):
+                options["gil_categories_schema_version"] = raw_schema_version
+            if "item_categories" in self.enrichment_options:
+                options["item_categories"] = bool(
+                    self.enrichment_options["item_categories"]
+                )
+            raw_item_schema_version = self.enrichment_options.get(
+                "item_categories_schema_version"
+            )
+            if isinstance(raw_item_schema_version, int) and not isinstance(
+                raw_item_schema_version, bool
+            ):
+                options["item_categories_schema_version"] = raw_item_schema_version
+            payload["enrichment_options"] = options
+        return payload
 
 
 @dataclass(frozen=True)

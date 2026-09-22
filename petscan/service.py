@@ -8,7 +8,14 @@ from . import service_sparql as sparql
 from . import service_store as store
 from . import service_store_builder as store_builder
 from .service_errors import PetscanServiceError
-from .service_types import QueryExecution, QueryExecutionModel, StoreMeta
+from .service_types import (
+    GIL_CATEGORIES_SCHEMA_VERSION,
+    ITEM_CATEGORIES_SCHEMA_VERSION,
+    PETSCAN_STORE_SCHEMA_VERSION,
+    QueryExecution,
+    QueryExecutionModel,
+    StoreMeta,
+)
 
 __all__ = [
     "PetscanServiceError",
@@ -60,6 +67,49 @@ def meta_has_matching_source_params(meta: Mapping[str, Any], petscan_params: Map
     return expected == actual
 
 
+def _meta_has_matching_enrichment_options(
+    meta: Mapping[str, Any],
+    *,
+    include_gil_categories: bool,
+    include_item_categories: bool,
+) -> bool:
+    raw_options = meta.get("enrichment_options") if isinstance(meta, Mapping) else None
+    options = raw_options if isinstance(raw_options, Mapping) else {}
+    store_schema_version = options.get("petscan_store_schema_version")
+    if not (
+        isinstance(store_schema_version, int)
+        and not isinstance(store_schema_version, bool)
+        and store_schema_version == PETSCAN_STORE_SCHEMA_VERSION
+    ):
+        return False
+    stored_categories = bool(options.get("gil_categories", False))
+    requested_categories = bool(include_gil_categories)
+    if stored_categories != requested_categories:
+        return False
+    if requested_categories:
+        schema_version = options.get("gil_categories_schema_version")
+        if not (
+            isinstance(schema_version, int)
+            and not isinstance(schema_version, bool)
+            and schema_version == GIL_CATEGORIES_SCHEMA_VERSION
+        ):
+            return False
+
+    stored_item_categories = bool(options.get("item_categories", False))
+    requested_item_categories = bool(include_item_categories)
+    if stored_item_categories != requested_item_categories:
+        return False
+    if requested_item_categories:
+        item_schema_version = options.get("item_categories_schema_version")
+        if not (
+            isinstance(item_schema_version, int)
+            and not isinstance(item_schema_version, bool)
+            and item_schema_version == ITEM_CATEGORIES_SCHEMA_VERSION
+        ):
+            return False
+    return True
+
+
 def _meta_is_usable(meta: Mapping[str, Any], psid: int) -> bool:
     if not isinstance(meta, Mapping) or not meta:
         return False
@@ -82,6 +132,10 @@ def _meta_is_usable(meta: Mapping[str, Any], psid: int) -> bool:
 
     source_params = meta.get("source_params", {})
     if not isinstance(source_params, Mapping):
+        return False
+
+    enrichment_options = meta.get("enrichment_options")
+    if enrichment_options is not None and not isinstance(enrichment_options, Mapping):
         return False
 
     return True
@@ -135,6 +189,8 @@ def ensure_loaded(
     psid: int,
     refresh: bool = False,
     petscan_params: Optional[Mapping[str, Any]] = None,
+    include_gil_categories: bool = False,
+    include_item_categories: bool = False,
 ) -> StoreMeta:
     _ensure_oxigraph()
     store.prune_expired_stores(exclude_psids=[psid])
@@ -148,6 +204,11 @@ def ensure_loaded(
                 _meta_is_usable(meta, psid)
                 and _meta_is_fresh(meta)
                 and meta_has_matching_source_params(meta, normalized_params)
+                and _meta_has_matching_enrichment_options(
+                    meta,
+                    include_gil_categories=include_gil_categories,
+                    include_item_categories=include_item_categories,
+                )
             ):
                 return cast(StoreMeta, meta)
 
@@ -156,7 +217,17 @@ def ensure_loaded(
         if not records:
             raise PetscanServiceError("PetScan returned zero rows for psid {}.".format(psid))
 
-        return store_builder.build_store(psid, records, source_url, source_params=normalized_params)
+        petscan_project, petscan_language = source.extract_petscan_project_language(payload)
+        return store_builder.build_store(
+            psid,
+            records,
+            source_url,
+            source_params=normalized_params,
+            include_gil_categories=include_gil_categories,
+            include_item_categories=include_item_categories,
+            petscan_project=petscan_project,
+            petscan_language=petscan_language,
+        )
 
 
 def execute_query(
@@ -164,10 +235,18 @@ def execute_query(
     query: str,
     refresh: bool = False,
     petscan_params: Optional[Mapping[str, Any]] = None,
+    include_gil_categories: bool = False,
+    include_item_categories: bool = False,
 ) -> QueryExecution:
     qtype = sparql.validate_query(query)
 
-    meta = ensure_loaded(psid, refresh=refresh, petscan_params=petscan_params)
+    meta = ensure_loaded(
+        psid,
+        refresh=refresh,
+        petscan_params=petscan_params,
+        include_gil_categories=include_gil_categories,
+        include_item_categories=include_item_categories,
+    )
 
     store_instance = _open_query_store(psid)
     raw_result = None

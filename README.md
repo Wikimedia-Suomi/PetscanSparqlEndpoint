@@ -299,7 +299,12 @@ queries should use the shared endpoint.
 - `psid` (required): PetScan ID whose Oxigraph dataset should be queried
 - `query` (required): SPARQL query (for `GET`) or in the request body (for `POST`)
 - `refresh` (optional): `1/true` to force reloading PetScan data before query
-- any additional URL query parameters are forwarded to PetScan JSON fetch (except reserved keys `psid`, `format`, `query`, `refresh`)
+- `include_gil_categories` (optional): `1/true` to include target-page category metadata,
+  including Wikidata IDs and hidden-category flags
+- `include_item_categories` (optional): `1/true` to include category metadata for the PetScan
+  result pages themselves
+- any additional URL query parameters are forwarded to PetScan JSON fetch (except reserved keys
+  `psid`, `format`, `query`, `refresh`, `include_gil_categories`, and `include_item_categories`)
 - `POST /sparql?dataset=petscan&...` supports `Content-Type: application/sparql-query` and `application/x-www-form-urlencoded`
 - In the web UI, use the **PetScan extra GET params** field (example: `category=Turku&language=fi`) to simulate `SERVICE` URI parameters.
 
@@ -473,7 +478,12 @@ dependency `pyproj` is intentionally development-only.
 
 - `psid` (required): PetScan ID whose loaded structure metadata should be returned
 - `refresh` (optional): `1/true` to force reload before returning structure metadata
-- any additional URL query parameters are forwarded to PetScan JSON fetch (except reserved keys `psid`, `format`, `query`, `refresh`)
+- `include_gil_categories` (optional): `1/true` to enrich every `gil` target page with category,
+  Wikidata, and hidden-category metadata
+- `include_item_categories` (optional): `1/true` to enrich each PetScan result page with category,
+  Wikidata, and hidden-category metadata
+- any additional URL query parameters are forwarded to PetScan JSON fetch (except reserved keys
+  `psid`, `format`, `query`, `refresh`, `include_gil_categories`, and `include_item_categories`)
 
 ### Example `GET`
 
@@ -490,6 +500,24 @@ timestamps in batches through the CentralAuth `list=globalusers` API. When
 `centralauth_p.globaluser` with the credentials in `TOOLFORGE_REPLICA_CNF`. Set
 `PETSCAN_USER_REGISTRATION_LOOKUP_BACKEND` explicitly to `api` or `toolforge_sql` to override that
 default.
+
+When `include_gil_categories=1`, every GIL target-page resource receives
+`gil_link_category` links directly to category-page resources. Each category resource receives the
+string `gil_link_category_title` and boolean `gil_link_category_hiddencat`; a category with a Wikidata item also receives
+`gil_link_category_wikidata_id` and `gil_link_category_wikidata_entity`.
+
+Every PetScan row also receives an `item_page` IRI for its source-wiki page when the wiki can be
+resolved. The source wiki is derived from the `project` and `language` parameters in the PetScan
+JSON response's resolved `a.query` URL. When `include_item_categories=1`, the row receives
+`item_category` links directly to category-page resources. Those resources receive
+`item_category_title`, `item_category_hiddencat` and, when available, `item_category_wikidata_id` and
+`item_category_wikidata_entity`.
+
+API mode uses the target wiki's Action API. Replica mode queries `categorylinks` and `linktarget`;
+for Commons these tables come from `links.commonswiki.web.db.svc.wikimedia.cloud`, while category
+properties (`wikibase_item` and `hiddencat`) are queried separately from
+`commonswiki.web.db.svc.wikimedia.cloud`, as required by the
+[2026 Commons links-table split](https://wikitech.wikimedia.org/wiki/News/2026_Commons_links_tables_database_split).
 
 ## Data Model Notes
 

@@ -20,15 +20,25 @@ class ServiceStoreBuilderTests(ServiceTestCase):
             self.skipTest("pyoxigraph is not installed")
 
         link_uri = "https://en.wikipedia.org/wiki/Federalist_No._42"
+        category_uri = "https://en.wikipedia.org/wiki/Category:United_States_history"
         enrichment_map = {
             link_uri: {
                 "wikidata_id": "Q5440615",
                 "page_len": 12345,
                 "rev_timestamp": "2026-03-15T10:00:00Z",
+                "categories": [
+                    {
+                        "title": "Category:United_States_history",
+                        "link_uri": category_uri,
+                        "wikidata_id": "Q8676",
+                        "hiddencat": True,
+                    }
+                ],
             }
         }
 
-        def _mock_build_enrichment(records, backend=None):
+        def _mock_build_enrichment(records, backend=None, include_categories=False):
+            self.assertTrue(include_categories)
             resolved_links_by_row = [
                 store_builder.links.resolve_gil_links(row, gil_link_enrichment_map=enrichment_map)
                 for row in records
@@ -44,7 +54,12 @@ class ServiceStoreBuilderTests(ServiceTestCase):
         self._cleanup_store(psid)
 
         records = [{"id": 1, "title": "Example", "gil": "enwiki:0:Federalist_No._42"}]
-        store_builder.build_store(psid, records, "https://example.invalid")
+        meta = store_builder.build_store(
+            psid,
+            records,
+            "https://example.invalid",
+            include_gil_categories=True,
+        )
         store_instance = store_builder.Store(str(store.store_path(psid)))
 
         ask_query = """
@@ -56,9 +71,83 @@ class ServiceStoreBuilderTests(ServiceTestCase):
           <https://en.wikipedia.org/wiki/Federalist_No._42> petscan:gil_link_wikidata_entity <http://www.wikidata.org/entity/Q5440615> .
           <https://en.wikipedia.org/wiki/Federalist_No._42> petscan:gil_link_page_len "12345"^^xsd:integer .
           <https://en.wikipedia.org/wiki/Federalist_No._42> petscan:gil_link_rev_timestamp "2026-03-15T10:00:00Z"^^xsd:dateTime .
+          <https://en.wikipedia.org/wiki/Federalist_No._42>
+            petscan:gil_link_category
+            <https://en.wikipedia.org/wiki/Category:United_States_history> .
+          <https://en.wikipedia.org/wiki/Category:United_States_history>
+            petscan:gil_link_category_title "Category:United_States_history" ;
+            petscan:gil_link_category_hiddencat true ;
+            petscan:gil_link_category_wikidata_id "Q8676" ;
+            petscan:gil_link_category_wikidata_entity <http://www.wikidata.org/entity/Q8676> .
         }
         """
         self.assertTrue(store_instance.query(ask_query))
+        self.assertEqual(
+            meta["enrichment_options"],
+            {
+                "petscan_store_schema_version": 1,
+                "gil_categories": True,
+                "gil_categories_schema_version": 3,
+            },
+        )
+
+    @patch("petscan.service_links.fetch_category_enrichment_for_site")
+    def test_store_contains_item_page_and_optional_category_triples(
+        self,
+        category_fetch_mock,
+    ):
+        if store_builder.Store is None:
+            self.skipTest("pyoxigraph is not installed")
+
+        category_uri = "https://fi.wikipedia.org/wiki/Category:Turku"
+        category_fetch_mock.return_value = {
+            "Turku": [
+                {
+                    "title": "Category:Turku",
+                    "link_uri": category_uri,
+                    "wikidata_id": "Q8357355",
+                    "hiddencat": True,
+                }
+            ]
+        }
+        psid = STORE_GIL_TEST_PSID + 9
+        self._cleanup_store(psid)
+
+        meta = store_builder.build_store(
+            psid,
+            [{"id": 1240, "title": "Turku", "namespace": 0, "nstext": ""}],
+            "https://example.invalid",
+            petscan_project="wikipedia",
+            petscan_language="fi",
+            include_item_categories=True,
+        )
+        store_instance = store_builder.Store(str(store.store_path(psid)))
+
+        ask_query = """
+        PREFIX petscan: <https://petscan.wmcloud.org/ontology/>
+        ASK {
+          ?item petscan:item_page <https://fi.wikipedia.org/wiki/Turku> ;
+            petscan:item_category <https://fi.wikipedia.org/wiki/Category:Turku> .
+          <https://fi.wikipedia.org/wiki/Category:Turku>
+            petscan:item_category_title "Category:Turku" ;
+            petscan:item_category_hiddencat true ;
+            petscan:item_category_wikidata_id "Q8357355" ;
+            petscan:item_category_wikidata_entity <http://www.wikidata.org/entity/Q8357355> .
+        }
+        """
+        self.assertTrue(store_instance.query(ask_query))
+        self.assertEqual(
+            meta["enrichment_options"],
+            {
+                "petscan_store_schema_version": 1,
+                "item_categories": True,
+                "item_categories_schema_version": 2,
+            },
+        )
+        field_map = {field["source_key"]: field for field in meta["structure"]["fields"]}
+        self.assertEqual(field_map["item_page"]["primary_type"], "iri")
+        self.assertEqual(field_map["item_category"]["row_side_cardinality"], "1")
+        self.assertEqual(field_map["item_category_title"]["primary_type"], "xsd:string")
 
     @patch("petscan.service_store_builder._optimize_store")
     @patch("petscan.service_store_builder.rdf.summarize_structure")
@@ -72,7 +161,8 @@ class ServiceStoreBuilderTests(ServiceTestCase):
         if store_builder.Store is None:
             self.skipTest("pyoxigraph is not installed")
 
-        def _mock_build_enrichment(records, backend=None):
+        def _mock_build_enrichment(records, backend=None, include_categories=False):
+            self.assertFalse(include_categories)
             return links.GilLinkEnrichmentBuildResult(
                 enrichment_by_link={},
                 resolved_links_by_row=[
@@ -226,7 +316,8 @@ class ServiceStoreBuilderTests(ServiceTestCase):
             },
         }
 
-        def _mock_build_enrichment(records, backend=None):
+        def _mock_build_enrichment(records, backend=None, include_categories=False):
+            self.assertFalse(include_categories)
             resolved_links_by_row = [
                 store_builder.links.resolve_gil_links(row, gil_link_enrichment_map=enrichment_map)
                 for row in records

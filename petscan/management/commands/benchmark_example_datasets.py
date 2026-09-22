@@ -678,6 +678,7 @@ def _measure_petscan_bulk_load_result(
                     row=row,
                     context=write_context,
                     resolved_gil_links=resolved_gil_links,
+                    item_page_enrichment={},
                     quad_buffer=quad_buffer,
                 )
                 structure_accumulator.add_row_field_kinds(
@@ -1077,6 +1078,7 @@ def _measure_petscan_bulk_load_gzip_stream_result(
                     row=row,
                     context=write_context,
                     resolved_gil_links=resolved_gil_links,
+                    item_page_enrichment={},
                     quad_buffer=quad_buffer,
                 )
                 structure_accumulator.add_row_field_kinds(

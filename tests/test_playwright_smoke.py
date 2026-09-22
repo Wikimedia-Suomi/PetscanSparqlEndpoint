@@ -1,4 +1,5 @@
 import json
+import re
 from typing import Any, Dict, Iterator
 from urllib.parse import unquote
 
@@ -136,6 +137,44 @@ def test_playwright_smoke_load_data_always_requests_refresh(page: Page, live_ser
     expect(page.locator(".status.is-success")).to_contain_text("Data structure loaded")
     assert seen_urls
     assert "refresh=1" in seen_urls[0]
+
+
+def test_playwright_smoke_category_option_is_sent_only_to_bridge_endpoint(
+    page: Page,
+    live_server: Any,
+) -> None:
+    seen_urls = []
+
+    def _fulfill_structure(route: Route) -> None:
+        seen_urls.append(route.request.url)
+        _fulfill_json(route, STRUCTURE_RESPONSE)
+
+    page.route("**/petscan/api/structure**", _fulfill_structure)
+
+    goto_app(page, live_server)
+    page.get_by_label("PetScan ID (psid)").fill(str(STRUCTURE_RESPONSE["psid"]))
+    page.get_by_role(
+        "checkbox",
+        name="Include target-page category metadata",
+    ).check()
+    page.get_by_role(
+        "checkbox",
+        name="Include result-page category metadata",
+    ).check()
+    expect(page.get_by_role("link", name="Open PetScan JSON")).not_to_have_attribute(
+        "href",
+        re.compile("include_gil_categories"),
+    )
+    expect(page.get_by_role("link", name="Open PetScan JSON")).not_to_have_attribute(
+        "href",
+        re.compile("include_item_categories"),
+    )
+    page.get_by_role("button", name="Load data").click()
+
+    expect(page.locator(".status.is-success")).to_contain_text("Data structure loaded")
+    assert seen_urls
+    assert "include_gil_categories=1" in seen_urls[0]
+    assert "include_item_categories=1" in seen_urls[0]
 
 
 def test_playwright_smoke_can_run_query_and_render_results(page: Page, live_server: Any) -> None:

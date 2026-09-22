@@ -13,7 +13,15 @@ from . import service_rdf as rdf
 from . import service_source as source
 from . import service_store as store
 from .service_errors import PetscanServiceError
-from .service_types import StoreMeta, StoreMetaModel, StructureSummary
+from .service_types import (
+    GIL_CATEGORIES_SCHEMA_VERSION,
+    ITEM_CATEGORIES_SCHEMA_VERSION,
+    PETSCAN_STORE_SCHEMA_VERSION,
+    EnrichmentOptions,
+    StoreMeta,
+    StoreMetaModel,
+    StructureSummary,
+)
 
 __all__ = ["build_store"]
 _QUAD_BUFFER_TARGET = 4_000_000
@@ -79,6 +87,7 @@ def _write_record_quads(
     context: _RecordWriteContext,
     resolved_gil_links: Sequence[Tuple[str, Optional[str]]],
     quad_buffer: List[Any],
+    item_page_enrichment: Optional[Mapping[str, Any]] = None,
 ) -> Tuple[Dict[str, int], Dict[str, int]]:
     row_field_kinds: Dict[str, int] = {}
     row_field_value_counts: Dict[str, int] = {}
@@ -160,6 +169,40 @@ def _write_record_quads(
                     quad_object,
                 )
             )
+        for category_uri, key, value, sparql_type in rdf.iter_typed_gil_link_category_fields(
+            link_uri,
+            gil_link_enrichment_map=context.gil_link_enrichment_map,
+        ):
+            _track_field_kind(key, sparql_type)
+            append_quad(
+                quad_ctor(
+                    NamedNode(category_uri),
+                    predicate_for(key),
+                    object_term_for_typed_value(value, sparql_type),
+                )
+            )
+    for key, value, sparql_type in rdf.iter_typed_item_page_fields(
+        item_page_enrichment,
+    ):
+        _track_field_kind(key, sparql_type)
+        append_quad(
+            quad_ctor(
+                subject,
+                predicate_for(key),
+                object_term_for_typed_value(value, sparql_type),
+            )
+        )
+    for category_uri, key, value, sparql_type in rdf.iter_typed_item_category_fields(
+        item_page_enrichment,
+    ):
+        _track_field_kind(key, sparql_type)
+        append_quad(
+            quad_ctor(
+                NamedNode(category_uri),
+                predicate_for(key),
+                object_term_for_typed_value(value, sparql_type),
+            )
+        )
     return row_field_kinds, row_field_value_counts
 
 
@@ -181,7 +224,26 @@ def _build_store_meta(
     source_params: Optional[Mapping[str, Any]],
     loaded_at: str,
     structure: StructureSummary,
+    include_gil_categories: bool = False,
+    include_item_categories: bool = False,
 ) -> StoreMeta:
+    enrichment_options: EnrichmentOptions = {
+        "petscan_store_schema_version": PETSCAN_STORE_SCHEMA_VERSION,
+    }
+    if include_gil_categories:
+        enrichment_options.update(
+            {
+                "gil_categories": True,
+                "gil_categories_schema_version": GIL_CATEGORIES_SCHEMA_VERSION,
+            }
+        )
+    if include_item_categories:
+        enrichment_options.update(
+            {
+                "item_categories": True,
+                "item_categories_schema_version": ITEM_CATEGORIES_SCHEMA_VERSION,
+            }
+        )
     meta_model = StoreMetaModel(
         psid=psid,
         records=len(records),
@@ -189,6 +251,7 @@ def _build_store_meta(
         source_params=source.normalize_petscan_params(source_params),
         loaded_at=loaded_at,
         structure=structure,
+        enrichment_options=enrichment_options,
     )
     return meta_model.to_dict()
 
@@ -202,6 +265,10 @@ def build_store(
     records: Sequence[Mapping[str, Any]],
     source_url: str,
     source_params: Optional[Mapping[str, Any]] = None,
+    include_gil_categories: bool = False,
+    include_item_categories: bool = False,
+    petscan_project: Optional[str] = None,
+    petscan_language: Optional[str] = None,
 ) -> StoreMeta:
     store_path = _reset_store_directory(psid)
     store_class = _require_store_class()
@@ -210,9 +277,16 @@ def build_store(
         predicates = _build_store_predicates()
         gil_link_result = links.build_gil_link_enrichment(
             records,
+            include_categories=include_gil_categories,
         )
         resolved_gil_links_by_row = gil_link_result.resolved_links_by_row
         gil_link_enrichment_map = gil_link_result.enrichment_by_link
+        item_page_result = links.build_item_page_enrichment(
+            records,
+            project=petscan_project,
+            language=petscan_language,
+            include_categories=include_item_categories,
+        )
         img_user_registration_by_name = file_user_enrichment.build_img_user_registration_by_name(
             records,
         )
@@ -231,11 +305,13 @@ def build_store(
 
         for index, row in enumerate(records):
             resolved_gil_links = resolved_gil_links_by_row[index]
+            item_page_enrichment = item_page_result.enrichment_by_row[index]
             row_field_kinds, row_field_value_counts = _write_record_quads(
                 index=index,
                 row=row,
                 context=write_context,
                 resolved_gil_links=resolved_gil_links,
+                item_page_enrichment=item_page_enrichment,
                 quad_buffer=quad_buffer,
             )
             structure_accumulator.add_row_field_kinds(
@@ -256,6 +332,8 @@ def build_store(
             source_params=source_params,
             loaded_at=loaded_at,
             structure=structure_accumulator.build_summary(row_count=len(records)),
+            include_gil_categories=include_gil_categories,
+            include_item_categories=include_item_categories,
         )
         _persist_store_meta(psid, meta)
         return meta

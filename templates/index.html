@@ -57,7 +57,9 @@
             />
             <p id="petscan-extra-help" class="help">
               Optional query-string pairs forwarded to PetScan (except reserved keys:
-              <code>psid</code>, <code>format</code>, <code>query</code>, <code>refresh</code>, <code>output_limit</code>).
+              <code>psid</code>, <code>format</code>, <code>query</code>, <code>refresh</code>,
+              <code>include_gil_categories</code>, <code>include_item_categories</code>,
+              <code>output_limit</code>).
             </p>
             <label for="petscan-limit">Load data limit</label>
             <input
@@ -71,6 +73,32 @@
             />
             <p id="petscan-limit-help" class="help">
               Default is <code>10</code>. Clear this field to omit <code>output_limit</code> from PetScan requests.
+            </p>
+            <label class="checkbox-row" for="include-gil-categories">
+              <input
+                id="include-gil-categories"
+                type="checkbox"
+                v-model="includeGilCategories"
+              />
+              Include target-page category metadata
+            </label>
+            <p class="help">
+              Adds category URLs, Wikidata IDs, and hidden-category status for pages referenced by
+              PetScan's <code>gil</code> field. This can make loading slower.
+            </p>
+            <label class="checkbox-row" for="include-item-categories">
+              <input
+                id="include-item-categories"
+                type="checkbox"
+                v-model="includeItemCategories"
+              />
+              Include result-page category metadata
+            </label>
+            <p class="help">
+              Adds each result page's categories, their Wikidata IDs, and hidden-category status.
+              The source wiki is read from PetScan's resolved <code>project</code> and
+              <code>language</code> query parameters. Every result also gets an
+              <code>item_page</code> URI when the source wiki can be resolved.
             </p>
             <div class="actions">
               <button type="button" class="primary" :disabled="isBusy" @click="loadStructure">
@@ -371,6 +399,6 @@
 
     <script type="module" src="{% static 'js/example_query_links.js' %}?v=20260919-02"></script>
     <script src="{% static 'vendor/vue.global.prod.min.js' %}?v=3.5.22"></script>
-    <script type="module" src="{% static 'js/app.js' %}?v=20260919-01"></script>
+    <script type="module" src="{% static 'js/app.js' %}?v=20260922-05"></script>
   </body>
 </html>

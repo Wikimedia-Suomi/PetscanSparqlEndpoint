@@ -68,6 +68,8 @@ def test_structure_endpoint_success_snapshot(ensure_loaded, client, snapshot):
         123,
         refresh=True,
         petscan_params={"category": ["Turku"]},
+        include_gil_categories=False,
+        include_item_categories=False,
     )
     assert _response_contract(response) == snapshot
 
@@ -87,7 +89,14 @@ def test_sparql_endpoint_get_success_snapshot(execute_query, client, snapshot):
         data={"query": ASK_QUERY},
     )
 
-    execute_query.assert_called_once_with(123, ASK_QUERY, refresh=False, petscan_params={})
+    execute_query.assert_called_once_with(
+        123,
+        ASK_QUERY,
+        refresh=False,
+        petscan_params={},
+        include_gil_categories=False,
+        include_item_categories=False,
+    )
     assert _response_contract(response) == snapshot
 
 
@@ -111,6 +120,8 @@ def test_sparql_endpoint_form_post_success_snapshot(execute_query, client, snaps
         FEDERATED_SUBQUERY,
         refresh=True,
         petscan_params={"categories": ["Turku"]},
+        include_gil_categories=False,
+        include_item_categories=False,
     )
     assert _response_contract(response) == snapshot
 

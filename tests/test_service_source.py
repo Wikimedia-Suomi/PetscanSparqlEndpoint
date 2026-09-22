@@ -23,6 +23,8 @@ class ServiceSourceTests(ServiceTestCase):
                 "format": "xml",
                 "refresh": "1",
                 "query": "SELECT * WHERE { ?s ?p ?o }",
+                "include_gil_categories": "1",
+                "include_item_categories": "1",
                 " ": "skip",
                 "tags": (" first ", " ", 2),
                 "empty_list": [],
@@ -42,6 +44,28 @@ class ServiceSourceTests(ServiceTestCase):
         payload = self._load_payload(PRIMARY_EXAMPLE_FILE)
         records = source.extract_records(payload)
         self.assertEqual(len(records), PRIMARY_RECORD_COUNT)
+
+    def test_extract_petscan_project_language_from_example_payloads(self):
+        commons_payload = self._load_payload(PRIMARY_EXAMPLE_FILE)
+        wikipedia_payload = self._load_payload(SECONDARY_EXAMPLE_FILE)
+
+        self.assertEqual(
+            source.extract_petscan_project_language(commons_payload),
+            ("wikimedia", "commons"),
+        )
+        self.assertEqual(
+            source.extract_petscan_project_language(wikipedia_payload),
+            ("wikipedia", "fi"),
+        )
+
+    def test_extract_petscan_project_language_rejects_missing_or_non_http_query_url(self):
+        self.assertEqual(source.extract_petscan_project_language({}), (None, None))
+        self.assertEqual(
+            source.extract_petscan_project_language(
+                {"a": {"query": "javascript:alert(1)?project=wikipedia&language=fi"}}
+            ),
+            (None, None),
+        )
 
     def test_extract_records_from_second_example_has_expected_count(self):
         payload = self._load_payload(SECONDARY_EXAMPLE_FILE)

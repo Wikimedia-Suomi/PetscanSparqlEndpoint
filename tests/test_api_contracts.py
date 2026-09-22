@@ -62,6 +62,26 @@ STRUCTURE_RESPONSE_SCHEMA: Dict[str, Any] = {
                         "items": {"type": "string", "minLength": 1},
                     },
                 },
+                "enrichment_options": {
+                    "type": "object",
+                    "properties": {
+                        "petscan_store_schema_version": {
+                            "type": "integer",
+                            "minimum": 1,
+                        },
+                        "gil_categories": {"type": "boolean"},
+                        "gil_categories_schema_version": {
+                            "type": "integer",
+                            "minimum": 1,
+                        },
+                        "item_categories": {"type": "boolean"},
+                        "item_categories_schema_version": {
+                            "type": "integer",
+                            "minimum": 1,
+                        },
+                    },
+                    "additionalProperties": False,
+                },
                 "structure": {
                     "type": "object",
                     "properties": {

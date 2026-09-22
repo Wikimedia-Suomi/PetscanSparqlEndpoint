@@ -20,7 +20,7 @@ import {
   safeExternalHref as safeExternalHrefHelper,
   splitSparqlPrologue as splitSparqlPrologueHelper,
   buildWdqsFederatedQueryViaSophox as buildWdqsFederatedQueryViaSophoxHelper,
-} from "./app_logic.js?v=20260825-06";
+} from "./app_logic.js?v=20260922-05";
 
 (function () {
   if (!window.Vue) {
@@ -40,6 +40,8 @@ import {
         refreshBeforeQuery: false,
         petscanGetParams: "",
         petscanLimit: "10",
+        includeGilCategories: false,
+        includeItemCategories: false,
         isBusy: false,
         statusMessage: "Ready.",
         statusLevel: "neutral",
@@ -105,8 +107,18 @@ import {
       effectivePetscanParams: function () {
         return appendOutputLimitHelper(this.forwardedPetscanParams, this.petscanLimitValue);
       },
+      effectiveServiceParams: function () {
+        var entries = this.effectivePetscanParams.slice();
+        if (this.includeGilCategories) {
+          entries.push(["include_gil_categories", "1"]);
+        }
+        if (this.includeItemCategories) {
+          entries.push(["include_item_categories", "1"]);
+        }
+        return entries;
+      },
       serviceParamPath: function () {
-        return buildServiceParamPathHelper(this.psid, this.effectivePetscanParams, false);
+        return buildServiceParamPathHelper(this.psid, this.effectiveServiceParams, false);
       },
       endpointPreview: function () {
         var base = window.location.origin + petscanSparqlBasePath;
@@ -188,6 +200,14 @@ import {
         this.hasLoadedData = false;
         this.loadExecutionMs = null;
       },
+      includeGilCategories: function () {
+        this.hasLoadedData = false;
+        this.loadExecutionMs = null;
+      },
+      includeItemCategories: function () {
+        this.hasLoadedData = false;
+        this.loadExecutionMs = null;
+      },
     },
     methods: {
       nowMs: function () {
@@ -214,7 +234,7 @@ import {
         if (refresh) {
           params.set("refresh", "1");
         }
-        this.effectivePetscanParams.forEach(function (entry) {
+        this.effectiveServiceParams.forEach(function (entry) {
           params.append(entry[0], entry[1]);
         });
 
@@ -251,7 +271,7 @@ import {
         if (refresh) {
           pathEntries.push(["refresh", "1"]);
         }
-        this.effectivePetscanParams.forEach(function (entry) {
+        this.effectiveServiceParams.forEach(function (entry) {
           pathEntries.push([entry[0], entry[1]]);
         });
 
@@ -406,7 +426,7 @@ import {
         return splitSparqlPrologueHelper(queryText);
       },
       buildSparqlServicePath: function (refresh) {
-        return buildServiceParamPathHelper(this.psid, this.effectivePetscanParams, refresh);
+        return buildServiceParamPathHelper(this.psid, this.effectiveServiceParams, refresh);
       },
       buildPetscanServiceUrl: function (refresh) {
         var servicePath = this.buildSparqlServicePath(refresh);

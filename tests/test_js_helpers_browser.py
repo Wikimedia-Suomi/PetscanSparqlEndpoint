@@ -53,7 +53,10 @@ def test_js_helper_parse_forwarded_petscan_params_filters_reserved_values(page: 
         page,
         live_server,
         "parseForwardedPetscanParams",
-        ["?psid=123&categories=Turku&language=fi&output_limit=10&empty="],
+        [
+            "?psid=123&categories=Turku&language=fi&output_limit=10"
+            "&include_gil_categories=1&include_item_categories=1&empty="
+        ],
     )
 
     assert result == [["categories", "Turku"], ["language", "fi"]]
@@ -88,6 +91,20 @@ def test_js_helper_build_service_param_path_encodes_refresh_and_params(page: Pag
     )
 
     assert result == "psid=43641756&refresh=1&categories=Turku%20%26%20Aura"
+
+
+def test_js_helper_formats_commons_category_uri_with_short_prefix(
+    page: Page,
+    live_server: Any,
+) -> None:
+    result = _call_js_helper(
+        page,
+        live_server,
+        "formatUriText",
+        ["https://commons.wikimedia.org/wiki/Category:Spoken_English_Wikipedia"],
+    )
+
+    assert result == "c:category:Spoken_English_Wikipedia"
 
 
 def test_js_helper_build_named_service_param_path_supports_quarry_ids(page: Page, live_server: Any) -> None:
@@ -183,6 +200,51 @@ def test_js_helper_build_wizard_query_includes_gil_link_enrichment_block(page: P
     assert "?gil_link petscan:gil_link_wikidata_id ?gil_link_wikidata_id ." in result
 
 
+def test_js_helper_build_wizard_query_nests_metadata_under_category_resource(
+    page: Page,
+    live_server: Any,
+) -> None:
+    result = _call_js_helper(
+        page,
+        live_server,
+        "buildWizardQuery",
+        [
+            [
+                {"source_key": "gil_link_category"},
+                {"source_key": "gil_link_category_title"},
+                {"source_key": "gil_link_category_hiddencat"},
+                {"source_key": "gil_link_category_wikidata_id"},
+            ],
+            [
+                "gil_link_category",
+                "gil_link_category_title",
+                "gil_link_category_hiddencat",
+                "gil_link_category_wikidata_id",
+            ],
+        ],
+    )
+
+    assert "SELECT ?item ?gil_link_category ?gil_link_category_title" in result
+    assert "?gil_link_category_hiddencat" in result.splitlines()[1]
+    assert "?gil_link_category_wikidata_id" in result.splitlines()[1]
+    assert "?item petscan:gil_link ?gil_link ." in result
+    assert "?gil_link petscan:gil_link_category ?gil_link_category ." in result
+    assert (
+        "?gil_link_category petscan:gil_link_category_title "
+        "?gil_link_category_title ."
+    ) in result
+    assert (
+        "?gil_link_category petscan:gil_link_category_hiddencat "
+        "?gil_link_category_hiddencat ."
+    ) in result
+    assert (
+        "?gil_link_category petscan:gil_link_category_wikidata_id "
+        "?gil_link_category_wikidata_id ."
+    ) in result
+    assert "gil_link_category_sortkey" not in result
+    assert "gil_link_category_defaultsort" not in result
+
+
 def test_js_helper_build_wizard_query_treats_gil_link_count_as_scalar_field(page: Page, live_server: Any) -> None:
     result = _call_js_helper(
         page,
@@ -201,6 +263,48 @@ def test_js_helper_build_wizard_query_treats_gil_link_count_as_scalar_field(page
     assert "SELECT ?item ?title ?gil_link_count" in result
     assert "?item petscan:gil_link_count ?gil_link_count ." in result
     assert "?item petscan:gil_link ?gil_link ." not in result
+
+
+def test_js_helper_build_wizard_query_nests_item_category_metadata(
+    page: Page,
+    live_server: Any,
+) -> None:
+    result = _call_js_helper(
+        page,
+        live_server,
+        "buildWizardQuery",
+        [
+            [
+                {"source_key": "item_page"},
+                {"source_key": "item_category"},
+                {"source_key": "item_category_title"},
+                {"source_key": "item_category_hiddencat"},
+                {"source_key": "item_category_wikidata_id"},
+            ],
+            [
+                "item_page",
+                "item_category",
+                "item_category_title",
+                "item_category_hiddencat",
+                "item_category_wikidata_id",
+            ],
+        ],
+    )
+
+    assert "SELECT ?item ?item_page ?item_category ?item_category_title" in result
+    assert "?item_category_hiddencat" in result.splitlines()[1]
+    assert "?item_category_wikidata_id" in result.splitlines()[1]
+    assert "?item petscan:item_page ?item_page ." in result
+    assert "?item petscan:item_category ?item_category ." in result
+    assert (
+        "?item_category petscan:item_category_title ?item_category_title ."
+    ) in result
+    assert (
+        "?item_category petscan:item_category_hiddencat ?item_category_hiddencat ."
+    ) in result
+    assert (
+        "?item_category petscan:item_category_wikidata_id ?item_category_wikidata_id ."
+    ) in result
 
 
 def test_js_helper_build_placenames_wizard_query_uses_dataset_predicates(
