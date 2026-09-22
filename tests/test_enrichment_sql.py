@@ -9,6 +9,44 @@ from petscan.service_errors import GilLinkEnrichmentError
 
 class EnrichmentSqlTests(SimpleTestCase):
     @patch("petscan.enrichment_sql.pymysql")
+    def test_fetch_global_user_registrations_uses_centralauth_replica(self, pymysql_mock):
+        cursor = MagicMock()
+        cursor.fetchall.return_value = [
+            (b"New uploader", b"20260315100000"),
+            (b"No registration", None),
+        ]
+
+        connection = MagicMock()
+        cursor_cm = MagicMock()
+        cursor_cm.__enter__.return_value = cursor
+        cursor_cm.__exit__.return_value = None
+        connection.cursor.return_value = cursor_cm
+        pymysql_mock.connect.return_value = connection
+
+        resolved = enrichment_sql.fetch_global_user_registrations_sql(
+            ["New uploader", "No registration"],
+            timeout_seconds=5,
+            replica_cnf="$HOME/replica.my.cnf",
+        )
+
+        self.assertEqual(resolved, {"New uploader": "20260315100000"})
+        connect_kwargs = pymysql_mock.connect.call_args.kwargs
+        self.assertEqual(
+            connect_kwargs["host"],
+            "centralauth.web.db.svc.wikimedia.cloud",
+        )
+        self.assertEqual(connect_kwargs["database"], "centralauth_p")
+        self.assertEqual(
+            connect_kwargs["read_default_file"],
+            os.path.expanduser(os.path.expandvars("$HOME/replica.my.cnf")),
+        )
+        sql, params = cursor.execute.call_args.args
+        self.assertIn("FROM globaluser", sql)
+        self.assertIn("gu_registration", sql)
+        self.assertEqual(params, ["New uploader", "No registration"])
+        connection.close.assert_called_once()
+
+    @patch("petscan.enrichment_sql.pymysql")
     def test_fetch_wikibase_items_raises_on_sql_error(self, pymysql_mock):
         pymysql_mock.connect.side_effect = RuntimeError("db down")
 

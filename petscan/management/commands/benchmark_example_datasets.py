@@ -657,6 +657,7 @@ def _measure_petscan_bulk_load_result(
             predicates=predicates,
             psid=int(spec["source_id"]),
             gil_link_enrichment_map=gil_link_enrichment_map,
+            img_user_registration_by_name={},
             xsd_integer_type=px.NamedNode(shared_rdf.XSD_INTEGER_IRI),
             psid_literal=px.Literal(
                 str(spec["source_id"]),
@@ -747,6 +748,7 @@ def _measure_petscan_bulk_load_direct_file_result(
             predicates=predicates,
             psid=int(spec["source_id"]),
             gil_link_enrichment_map=gil_link_enrichment_map,
+            img_user_registration_by_name={},
             xsd_integer_type=px.NamedNode(shared_rdf.XSD_INTEGER_IRI),
             psid_literal=px.Literal(
                 str(spec["source_id"]),
@@ -1054,6 +1056,7 @@ def _measure_petscan_bulk_load_gzip_stream_result(
             predicates=predicates,
             psid=int(spec["source_id"]),
             gil_link_enrichment_map=gil_link_enrichment_map,
+            img_user_registration_by_name={},
             xsd_integer_type=px.NamedNode(shared_rdf.XSD_INTEGER_IRI),
             psid_literal=px.Literal(
                 str(spec["source_id"]),
@@ -1242,6 +1245,7 @@ def _measure_petscan_bulk_load_stream_result(
                 predicates=predicates,
                 psid=int(spec["source_id"]),
                 gil_link_enrichment_map=gil_link_enrichment_map,
+                img_user_registration_by_name={},
                 xsd_integer_type=px.NamedNode(shared_rdf.XSD_INTEGER_IRI),
                 psid_literal=px.Literal(
                     str(spec["source_id"]),

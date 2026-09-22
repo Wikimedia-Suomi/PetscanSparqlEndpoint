@@ -27,17 +27,23 @@ class CheckReplicaConnectionsCommandTests(SimpleTestCase):
         first_connection = _build_connection_mock()
         second_connection = _build_connection_mock()
         third_connection = _build_connection_mock()
+        fourth_connection = _build_connection_mock()
+        fourth_connection.cursor.return_value.__enter__.return_value.fetchone.side_effect = [
+            (1,),
+            ("HiddenGlobalUser",),
+        ]
         pymysql_mock.connect.side_effect = [
             first_connection,
             second_connection,
             third_connection,
+            fourth_connection,
         ]
         stdout = io.StringIO()
         stderr = io.StringIO()
 
         call_command("check_replica_connections", stdout=stdout, stderr=stderr)
 
-        self.assertEqual(pymysql_mock.connect.call_count, 3)
+        self.assertEqual(pymysql_mock.connect.call_count, 4)
         connect_calls = pymysql_mock.connect.call_args_list
         self.assertEqual(
             [call.kwargs["host"] for call in connect_calls],
@@ -45,11 +51,12 @@ class CheckReplicaConnectionsCommandTests(SimpleTestCase):
                 "fiwiki.web.db.svc.wikimedia.cloud",
                 "wikidatawiki.web.db.svc.wikimedia.cloud",
                 "commonswiki.web.db.svc.wikimedia.cloud",
+                "centralauth.web.db.svc.wikimedia.cloud",
             ],
         )
         self.assertEqual(
             [call.kwargs["database"] for call in connect_calls],
-            ["fiwiki_p", "wikidatawiki_p", "commonswiki_p"],
+            ["fiwiki_p", "wikidatawiki_p", "commonswiki_p", "centralauth_p"],
         )
         self.assertTrue(all("user" not in call.kwargs for call in connect_calls))
         self.assertTrue(all("password" not in call.kwargs for call in connect_calls))
@@ -60,14 +67,25 @@ class CheckReplicaConnectionsCommandTests(SimpleTestCase):
             )
         )
 
-        for connection in (first_connection, second_connection, third_connection):
+        for index, connection in enumerate(
+            (first_connection, second_connection, third_connection, fourth_connection)
+        ):
             cursor = connection.cursor.return_value.__enter__.return_value
             self.assertEqual(
                 [call.args[0] for call in cursor.execute.call_args_list],
-                ["SELECT 1", "SELECT page_title FROM page LIMIT 1"],
+                [
+                    "SELECT 1",
+                    (
+                        "SELECT 1 FROM globaluser LIMIT 1"
+                        if index == 3
+                        else "SELECT page_title FROM page LIMIT 1"
+                    ),
+                ],
             )
 
         self.assertIn("sample_page_title=Main_Page", stdout.getvalue())
+        self.assertNotIn("sample_global_user", stdout.getvalue())
+        self.assertNotIn("HiddenGlobalUser", stdout.getvalue())
         self.assertIn("Replica connectivity check passed for all sites.", stdout.getvalue())
         self.assertEqual(stderr.getvalue(), "")
 
@@ -88,6 +106,7 @@ class CheckReplicaConnectionsCommandTests(SimpleTestCase):
             _build_connection_mock(),
             RuntimeError("boom"),
             _build_connection_mock(),
+            _build_connection_mock(),
         ]
         stdout = io.StringIO()
         stderr = io.StringIO()
@@ -97,4 +116,4 @@ class CheckReplicaConnectionsCommandTests(SimpleTestCase):
 
         self.assertIn("wikidatawiki", str(ctx.exception))
         self.assertIn("[FAIL] site=wikidatawiki", stderr.getvalue())
-        self.assertEqual(pymysql_mock.connect.call_count, 3)
+        self.assertEqual(pymysql_mock.connect.call_count, 4)

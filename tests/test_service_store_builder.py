@@ -4,7 +4,7 @@ from petscan import service_links as links
 from petscan import service_store as store
 from petscan import service_store_builder as store_builder
 from petscan.service_errors import GilLinkEnrichmentError, PetscanServiceError
-from tests.service_test_support import STORE_GIL_TEST_PSID, ServiceTestCase
+from tests.service_test_support import PRIMARY_EXAMPLE_FILE, STORE_GIL_TEST_PSID, ServiceTestCase
 
 
 class ServiceStoreBuilderTests(ServiceTestCase):
@@ -154,6 +154,54 @@ class ServiceStoreBuilderTests(ServiceTestCase):
         field_map = {field["source_key"]: field for field in meta["structure"]["fields"]}
         self.assertEqual(field_map["img_timestamp"]["primary_type"], "xsd:dateTime")
         self.assertEqual(field_map["touched"]["primary_type"], "xsd:dateTime")
+
+    @patch("petscan.file_user_enrichment._fetch_registrations")
+    def test_extended_file_data_adds_img_user_registration(
+        self,
+        fetch_registrations_mock,
+    ):
+        if store_builder.Store is None:
+            self.skipTest("pyoxigraph is not installed")
+
+        source_records = store_builder.source.extract_records(
+            self._load_payload(PRIMARY_EXAMPLE_FILE)
+        )
+        records = [source_records[2], source_records[13]]
+        self.assertEqual(
+            [record["img_user_text"] for record in records],
+            ["Amgine", "Dirtyliberal~commonswiki"],
+        )
+        fetch_registrations_mock.return_value = {
+            "Amgine": "2004-12-31T23:59:59Z",
+            "Dirtyliberal~commonswiki": "2005-01-02T00:00:00Z",
+        }
+
+        psid = STORE_GIL_TEST_PSID + 8
+        self._cleanup_store(psid)
+        meta = store_builder.build_store(
+            psid,
+            records,
+            "https://example.invalid",
+        )
+        store_instance = store_builder.Store(str(store.store_path(psid)))
+
+        ask_query = """
+        PREFIX petscan: <https://petscan.wmcloud.org/ontology/>
+        PREFIX xsd: <http://www.w3.org/2001/XMLSchema#>
+        ASK {
+          <https://commons.wikimedia.org/entity/M117734>
+            petscan:img_user_registration "2004-12-31T23:59:59Z"^^xsd:dateTime .
+          <https://commons.wikimedia.org/entity/M280450>
+            petscan:img_user_registration "2005-01-02T00:00:00Z"^^xsd:dateTime .
+        }
+        """
+        self.assertTrue(store_instance.query(ask_query))
+
+        field_map = {field["source_key"]: field for field in meta["structure"]["fields"]}
+        self.assertEqual(
+            field_map["img_user_registration"]["primary_type"],
+            "xsd:dateTime",
+        )
 
     @patch("petscan.service_store_builder.links.build_gil_link_enrichment")
     def test_build_store_persists_row_side_cardinality_metadata(self, gil_map_mock):

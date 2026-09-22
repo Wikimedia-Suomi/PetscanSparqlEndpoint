@@ -483,6 +483,14 @@ curl --get 'http://127.0.0.1:8000/petscan/api/structure' \
   --data-urlencode 'category=Turku'
 ```
 
+PetScan “Extended data for files” rows are automatically enriched with the uploader's CentralAuth
+`gu_registration` timestamp under the RDF field `img_user_registration`. Local development resolves
+timestamps in batches through the CentralAuth `list=globalusers` API. When
+`TOOLFORGE_USE_REPLICA=1`, the default backend uses a parameterized query against
+`centralauth_p.globaluser` with the credentials in `TOOLFORGE_REPLICA_CNF`. Set
+`PETSCAN_USER_REGISTRATION_LOOKUP_BACKEND` explicitly to `api` or `toolforge_sql` to override that
+default.
+
 ## Data Model Notes
 
 Each PetScan row becomes one RDF resource:

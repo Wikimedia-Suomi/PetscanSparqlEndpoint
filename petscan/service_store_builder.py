@@ -7,6 +7,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Mapping, Optional, Sequence, Tuple
 
+from . import file_user_enrichment
 from . import service_links as links
 from . import service_rdf as rdf
 from . import service_source as source
@@ -40,6 +41,7 @@ class _RecordWriteContext:
     predicates: _StorePredicates
     psid: int
     gil_link_enrichment_map: Mapping[str, Mapping[str, Any]]
+    img_user_registration_by_name: Mapping[str, str]
     xsd_integer_type: Any
     psid_literal: Any
     loaded_at_literal: Any
@@ -116,9 +118,21 @@ def _write_record_quads(
             context.loaded_at_literal,
         )
     )
+    scalar_row = row
+    img_user_registration = file_user_enrichment.img_user_registration_for_record(
+        row,
+        context.img_user_registration_by_name,
+    )
+    if (
+        img_user_registration is not None
+        and file_user_enrichment.IMG_USER_REGISTRATION_FIELD not in row
+    ):
+        scalar_row = dict(row)
+        scalar_row[file_user_enrichment.IMG_USER_REGISTRATION_FIELD] = img_user_registration
+
     rdf.append_scalar_field_quads(
         subject=subject,
-        record=row,
+        record=scalar_row,
         quad_buffer=quad_buffer,
         row_field_kinds=row_field_kinds,
         row_field_value_counts=row_field_value_counts,
@@ -199,12 +213,16 @@ def build_store(
         )
         resolved_gil_links_by_row = gil_link_result.resolved_links_by_row
         gil_link_enrichment_map = gil_link_result.enrichment_by_link
+        img_user_registration_by_name = file_user_enrichment.build_img_user_registration_by_name(
+            records,
+        )
         loaded_at = datetime.now(timezone.utc).replace(microsecond=0).isoformat()
         structure_accumulator = rdf.StructureAccumulator()
         write_context = _RecordWriteContext(
             predicates=predicates,
             psid=psid,
             gil_link_enrichment_map=gil_link_enrichment_map,
+            img_user_registration_by_name=img_user_registration_by_name,
             xsd_integer_type=NamedNode(rdf.XSD_INTEGER_IRI),
             psid_literal=Literal(str(psid), datatype=NamedNode(rdf.XSD_INTEGER_IRI)),
             loaded_at_literal=Literal(loaded_at, datatype=NamedNode(rdf.XSD_DATE_TIME_IRI)),

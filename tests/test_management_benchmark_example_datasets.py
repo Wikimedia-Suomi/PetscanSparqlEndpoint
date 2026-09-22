@@ -449,6 +449,7 @@ class BenchmarkExampleDatasetsCommandTests(SimpleTestCase):
             predicates=store_builder._build_store_predicates(),
             psid=77,
             gil_link_enrichment_map={},
+            img_user_registration_by_name={},
             xsd_integer_type=NamedNode(rdf.XSD_INTEGER_IRI),
             psid_literal=Literal("77", datatype=NamedNode(rdf.XSD_INTEGER_IRI)),
             loaded_at_literal=Literal(loaded_at, datatype=NamedNode(rdf.XSD_DATE_TIME_IRI)),

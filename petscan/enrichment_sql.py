@@ -2,12 +2,15 @@ import os
 import re
 from time import perf_counter
 from types import ModuleType
-from typing import Any, Dict, List, MutableMapping, Optional, Sequence, Tuple, cast
+from typing import Any, Dict, Iterable, List, MutableMapping, Optional, Sequence, Tuple, cast
 
 from .normalization import normalize_page_title, normalize_qid
-from .service_errors import GilLinkEnrichmentError
+from .service_errors import GilLinkEnrichmentError, PetscanServiceError
 
 _REPLICA_ENRICHMENT_PUBLIC_MESSAGE = "Failed to enrich linked pages from the replica database."
+_USER_REGISTRATION_PUBLIC_MESSAGE = (
+    "Failed to enrich file uploader registration data from CentralAuth."
+)
 _pymysql_module: Optional[ModuleType]
 try:
     import pymysql as _pymysql_module
@@ -17,6 +20,75 @@ except ImportError:  # pragma: no cover - optional dependency
 pymysql = cast(Any, _pymysql_module)
 _SITE_TOKEN_RE = re.compile(r"^[a-z0-9_-]+$")
 _REPLICA_DOMAIN_SUFFIX = "web.db.svc.wikimedia.cloud"
+_GLOBAL_USER_SQL_BATCH_SIZE = 500
+
+
+def _chunked(values: Sequence[str], size: int) -> Iterable[List[str]]:
+    for index in range(0, len(values), size):
+        yield list(values[index : index + size])
+
+
+def _normalize_text(value: object) -> str:
+    if isinstance(value, (bytes, bytearray)):
+        value = value.decode("utf-8", errors="replace")
+    return str(value or "").strip()
+
+
+def fetch_global_user_registrations_sql(
+    user_names: Sequence[str],
+    timeout_seconds: int,
+    replica_cnf: Optional[str] = None,
+) -> Dict[str, str]:
+    if not user_names:
+        return {}
+    if pymysql is None:
+        raise PetscanServiceError(
+            "PyMySQL is required for CentralAuth registration enrichment.",
+            public_message=_USER_REGISTRATION_PUBLIC_MESSAGE,
+        )
+
+    connect_kwargs = {
+        "host": "centralauth.{}".format(_REPLICA_DOMAIN_SUFFIX),
+        "database": "centralauth_p",
+        "charset": "utf8mb4",
+        "connect_timeout": timeout_seconds,
+        "read_timeout": timeout_seconds,
+        "write_timeout": timeout_seconds,
+        "autocommit": True,
+    }
+    if replica_cnf:
+        connect_kwargs["read_default_file"] = os.path.expanduser(os.path.expandvars(replica_cnf))
+
+    registrations: Dict[str, str] = {}
+    connection = None
+    try:
+        connection = pymysql.connect(**cast(Any, connect_kwargs))
+        with connection.cursor() as cursor:
+            for batch in _chunked(user_names, _GLOBAL_USER_SQL_BATCH_SIZE):
+                placeholders = ", ".join(["%s"] * len(batch))
+                sql = (  # nosec B608
+                    "SELECT gu_name, gu_registration "
+                    "FROM globaluser "
+                    "WHERE gu_name IN ({})"
+                ).format(placeholders)
+                cursor.execute(sql, list(batch))
+                for row in cursor.fetchall():
+                    if not isinstance(row, (tuple, list)) or len(row) < 2:
+                        continue
+                    user_name = _normalize_text(row[0])
+                    registration = _normalize_text(row[1])
+                    if user_name and registration:
+                        registrations[user_name] = registration
+    except Exception as exc:
+        raise PetscanServiceError(
+            "CentralAuth globaluser SQL query failed: {}".format(exc),
+            public_message=_USER_REGISTRATION_PUBLIC_MESSAGE,
+        ) from exc
+    finally:
+        if connection is not None:
+            connection.close()
+
+    return registrations
 
 
 def _normalize_db_title(value: object) -> str:

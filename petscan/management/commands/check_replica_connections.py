@@ -8,14 +8,15 @@ from django.core.management.base import BaseCommand, CommandError
 
 from petscan import enrichment_sql
 
-_REPLICA_SITES = ("fiwiki", "wikidatawiki", "commonswiki")
+_REPLICA_SITES = ("fiwiki", "wikidatawiki", "commonswiki", "centralauth")
 _PAGE_SAMPLE_QUERY = "SELECT page_title FROM page LIMIT 1"
+_CENTRALAUTH_SAMPLE_QUERY = "SELECT 1 FROM globaluser LIMIT 1"
 
 
 class Command(BaseCommand):  # type: ignore[misc]
     help = (
         "Check Toolforge replica connectivity for fiwiki_p, "
-        "wikidatawiki_p and commonswiki_p."
+        "wikidatawiki_p, commonswiki_p and centralauth_p."
     )
 
     def add_arguments(self, parser: ArgumentParser) -> None:
@@ -67,18 +68,24 @@ class Command(BaseCommand):  # type: ignore[misc]
                 with connection.cursor() as cursor:
                     cursor.execute("SELECT 1")
                     cursor.fetchone()
-                    cursor.execute(_PAGE_SAMPLE_QUERY)
-                    page_row = cursor.fetchone()
-                    if not page_row:
-                        raise RuntimeError("No rows returned by page sample query.")
-                    if isinstance(page_row, (tuple, list)):
-                        page_title = page_row[0]
-                    else:
-                        page_title = page_row
-                    if isinstance(page_title, bytes):
-                        page_title = page_title.decode("utf-8", errors="replace")
-                    if not str(page_title or "").strip():
-                        raise RuntimeError("Empty page title returned by page sample query.")
+                    sample_query = (
+                        _CENTRALAUTH_SAMPLE_QUERY
+                        if site == "centralauth"
+                        else _PAGE_SAMPLE_QUERY
+                    )
+                    cursor.execute(sample_query)
+                    sample_row = cursor.fetchone()
+                    if not sample_row:
+                        raise RuntimeError("No rows returned by replica sample query.")
+                    if site != "centralauth":
+                        if isinstance(sample_row, (tuple, list)):
+                            page_title = sample_row[0]
+                        else:
+                            page_title = sample_row
+                        if isinstance(page_title, bytes):
+                            page_title = page_title.decode("utf-8", errors="replace")
+                        if not str(page_title or "").strip():
+                            raise RuntimeError("Empty value returned by replica sample query.")
             except Exception as exc:
                 elapsed_ms = (perf_counter() - started_at) * 1000.0
                 failed_sites.append(site)
@@ -105,7 +112,8 @@ class Command(BaseCommand):  # type: ignore[misc]
                         )
                     )
                 )
-                self.stdout.write("     sample_page_title={}".format(page_title))
+                if site != "centralauth":
+                    self.stdout.write("     sample_page_title={}".format(page_title))
             finally:
                 if connection is not None:
                     try:

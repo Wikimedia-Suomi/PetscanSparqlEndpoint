@@ -1,13 +1,99 @@
 import json
 from time import perf_counter
-from typing import Any, Dict, Mapping, MutableMapping, Optional, Sequence
+from typing import Any, Dict, Iterable, List, Mapping, MutableMapping, Optional, Sequence
 from urllib.parse import urlencode
 from urllib.request import Request, urlopen
 
 from .normalization import normalize_page_title, normalize_qid
-from .service_errors import GilLinkEnrichmentError
+from .service_errors import GilLinkEnrichmentError, PetscanServiceError
 
 _UPSTREAM_ENRICHMENT_PUBLIC_MESSAGE = "Failed to enrich linked pages from an upstream service."
+_USER_REGISTRATION_PUBLIC_MESSAGE = (
+    "Failed to enrich file uploader registration data from CentralAuth."
+)
+_MAX_GLOBAL_USERS_PER_REQUEST = 50
+
+
+def _chunked(values: Sequence[str], size: int) -> Iterable[List[str]]:
+    for index in range(0, len(values), size):
+        yield list(values[index : index + size])
+
+
+def fetch_global_user_registrations_api(
+    api_url: str,
+    user_names: Sequence[str],
+    user_agent: str,
+    timeout_seconds: int,
+) -> Dict[str, str]:
+    registrations: Dict[str, str] = {}
+    for batch in _chunked(user_names, _MAX_GLOBAL_USERS_PER_REQUEST):
+        params = {
+            "action": "query",
+            "list": "globalusers",
+            "gususers": "|".join(batch),
+            "gusprop": "registration",
+            "format": "json",
+            "formatversion": "2",
+        }
+        request_url = "{}?{}".format(api_url, urlencode(params))
+        request = Request(
+            request_url,
+            headers={
+                "Accept": "application/json",
+                "User-Agent": user_agent,
+            },
+        )
+
+        try:
+            with urlopen(request, timeout=timeout_seconds) as response:  # nosec B310
+                raw = response.read()
+            payload = json.loads(raw.decode("utf-8"))
+        except Exception as exc:
+            raise PetscanServiceError(
+                "CentralAuth globalusers API request failed for {}: {}".format(api_url, exc),
+                public_message=_USER_REGISTRATION_PUBLIC_MESSAGE,
+            ) from exc
+
+        if not isinstance(payload, dict):
+            raise PetscanServiceError(
+                "CentralAuth globalusers API returned an unexpected payload for {}.".format(
+                    api_url
+                ),
+                public_message=_USER_REGISTRATION_PUBLIC_MESSAGE,
+            )
+
+        error_payload = payload.get("error")
+        if isinstance(error_payload, Mapping):
+            error_code = str(error_payload.get("code", "")).strip() or "unknown"
+            error_info = str(error_payload.get("info", "")).strip() or "unknown"
+            raise PetscanServiceError(
+                "CentralAuth globalusers API returned error {} for {}: {}".format(
+                    error_code,
+                    api_url,
+                    error_info,
+                ),
+                public_message=_USER_REGISTRATION_PUBLIC_MESSAGE,
+            )
+
+        query = payload.get("query")
+        global_users = query.get("globalusers") if isinstance(query, Mapping) else None
+        if not isinstance(global_users, list):
+            raise PetscanServiceError(
+                "CentralAuth globalusers API returned no globalusers payload for {}.".format(
+                    api_url
+                ),
+                public_message=_USER_REGISTRATION_PUBLIC_MESSAGE,
+            )
+
+        for global_user in global_users:
+            if not isinstance(global_user, Mapping):
+                continue
+            user_name = str(global_user.get("name", "") or "").strip()
+            registration = str(global_user.get("registration", "") or "").strip()
+            if user_name and registration:
+                registrations[user_name] = registration
+
+    return registrations
 
 
 def _resolve_title_alias(title: str, alias_map: Mapping[str, str]) -> str:

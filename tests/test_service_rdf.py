@@ -192,6 +192,7 @@ class ServiceRdfTests(ServiceTestCase):
                     "title": "Example",
                     "img_timestamp": "20260315123456",
                     "touched": "2026-03-15T12:35:30+02:00",
+                    "img_user_registration": "20040101000000",
                 }
             )
         )
@@ -199,6 +200,10 @@ class ServiceRdfTests(ServiceTestCase):
         self.assertIn(("title", "Example", "xsd:string"), fields)
         self.assertIn(("img_timestamp", "2026-03-15T12:34:56Z", "xsd:dateTime"), fields)
         self.assertIn(("touched", "2026-03-15T10:35:30Z", "xsd:dateTime"), fields)
+        self.assertIn(
+            ("img_user_registration", "2004-01-01T00:00:00Z", "xsd:dateTime"),
+            fields,
+        )
 
     def test_append_scalar_field_quads_uses_default_graph(self) -> None:
         if rdf.NamedNode is None:

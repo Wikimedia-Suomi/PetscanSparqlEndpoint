@@ -23,6 +23,57 @@ class _FakeHttpResponse:
 
 class EnrichmentApiTests(SimpleTestCase):
     @patch("petscan.enrichment_api.urlopen")
+    def test_fetch_global_user_registrations_uses_batched_centralauth_query(
+        self,
+        urlopen_mock,
+    ):
+        payload = {
+            "query": {
+                "globalusers": [
+                    {
+                        "name": "New uploader",
+                        "registration": "2026-03-15T10:00:00Z",
+                    },
+                    {"name": "Missing registration"},
+                ]
+            }
+        }
+        urlopen_mock.return_value = _FakeHttpResponse(json.dumps(payload).encode("utf-8"))
+
+        resolved = enrichment_api.fetch_global_user_registrations_api(
+            "https://meta.wikimedia.org/w/api.php",
+            ["New uploader", "Missing registration"],
+            user_agent="test-agent",
+            timeout_seconds=5,
+        )
+
+        self.assertEqual(resolved, {"New uploader": "2026-03-15T10:00:00Z"})
+        request = urlopen_mock.call_args.args[0]
+        self.assertIn("list=globalusers", request.full_url)
+        self.assertIn("gusprop=registration", request.full_url)
+        self.assertIn("gususers=New+uploader%7CMissing+registration", request.full_url)
+
+    @patch("petscan.enrichment_api.urlopen")
+    def test_fetch_global_user_registrations_sanitizes_transport_errors(self, urlopen_mock):
+        urlopen_mock.side_effect = RuntimeError("private upstream detail")
+
+        with self.assertRaisesMessage(
+            enrichment_api.PetscanServiceError,
+            "CentralAuth globalusers API request failed",
+        ) as captured:
+            enrichment_api.fetch_global_user_registrations_api(
+                "https://meta.wikimedia.org/w/api.php",
+                ["Uploader"],
+                user_agent="test-agent",
+                timeout_seconds=5,
+            )
+
+        self.assertEqual(
+            captured.exception.public_message,
+            "Failed to enrich file uploader registration data from CentralAuth.",
+        )
+
+    @patch("petscan.enrichment_api.urlopen")
     def test_fetch_wikibase_items_raises_on_transport_error(self, urlopen_mock):
         urlopen_mock.side_effect = RuntimeError("boom")
 

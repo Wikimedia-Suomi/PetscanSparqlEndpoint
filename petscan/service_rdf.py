@@ -38,7 +38,9 @@ XSD_DOUBLE_IRI = "http://www.w3.org/2001/XMLSchema#double"
 XSD_BOOLEAN_IRI = "http://www.w3.org/2001/XMLSchema#boolean"
 XSD_DATE_TIME_IRI = "http://www.w3.org/2001/XMLSchema#dateTime"
 SPARQL_IRI_TYPE = "iri"
-_XSD_DATETIME_SCALAR_FIELDS = frozenset({"img_timestamp", "touched", "gil_link_rev_timestamp"})
+_XSD_DATETIME_SCALAR_FIELDS = frozenset(
+    {"img_timestamp", "touched", "gil_link_rev_timestamp", "img_user_registration"}
+)
 _SCALAR_VALUE_TYPES = (str, int, float, bool)
 __all__ = [
     "ITEM_BASE",
