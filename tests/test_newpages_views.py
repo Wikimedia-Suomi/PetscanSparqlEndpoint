@@ -201,6 +201,7 @@ class NewpagesViewTests(SimpleTestCase):
             timestamp="20260400000000",
             user_list_page=":w:fi:Wikipedia:Users",
             include_edited_pages=False,
+            stream_select_results=True,
         )
 
     @patch("newpages.views.newpages_service.execute_query")
@@ -221,6 +222,7 @@ class NewpagesViewTests(SimpleTestCase):
             timestamp="20260400000000",
             user_list_page=":w:fi:Wikipedia:Users",
             include_edited_pages=True,
+            stream_select_results=True,
         )
 
     @patch("newpages.views.newpages_service.execute_query")
@@ -243,6 +245,7 @@ class NewpagesViewTests(SimpleTestCase):
             timestamp=None,
             user_list_page=None,
             include_edited_pages=False,
+            stream_select_results=True,
         )
 
     @patch("newpages.views.newpages_service.execute_query")

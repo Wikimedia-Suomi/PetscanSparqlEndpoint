@@ -298,6 +298,7 @@ class ApiViewTests(SimpleTestCase):
             petscan_params={},
             include_gil_categories=False,
             include_item_categories=False,
+            stream_select_results=True,
         )
 
     @patch("petscan.views.petscan_service.execute_query")
@@ -319,6 +320,7 @@ class ApiViewTests(SimpleTestCase):
             petscan_params={},
             include_gil_categories=False,
             include_item_categories=False,
+            stream_select_results=True,
         )
 
     @patch("petscan.views.petscan_service.execute_query")
@@ -370,6 +372,7 @@ class ApiViewTests(SimpleTestCase):
             petscan_params={},
             include_gil_categories=False,
             include_item_categories=False,
+            stream_select_results=True,
         )
 
     def test_sparql_endpoint_rejects_non_sparql_query_post_content_type(self):
@@ -427,6 +430,7 @@ class ApiViewTests(SimpleTestCase):
             petscan_params={"category": ["Turku"], "language": ["fi"]},
             include_gil_categories=False,
             include_item_categories=False,
+            stream_select_results=True,
         )
 
     @patch("petscan.views.petscan_service.execute_query")
@@ -446,6 +450,7 @@ class ApiViewTests(SimpleTestCase):
             petscan_params={"category": ["Turku"]},
             include_gil_categories=True,
             include_item_categories=False,
+            stream_select_results=True,
         )
 
     @patch("petscan.views.petscan_service.execute_query")
@@ -487,6 +492,7 @@ class ApiViewTests(SimpleTestCase):
             petscan_params={"categories": ["Turku"]},
             include_gil_categories=False,
             include_item_categories=False,
+            stream_select_results=True,
         )
 
     @patch("petscan.views.petscan_service.execute_query")
@@ -506,4 +512,5 @@ class ApiViewTests(SimpleTestCase):
             petscan_params={"category": ["Turku"]},
             include_gil_categories=False,
             include_item_categories=True,
+            stream_select_results=True,
         )

@@ -96,6 +96,7 @@ def test_sparql_endpoint_get_success_snapshot(execute_query, client, snapshot):
         petscan_params={},
         include_gil_categories=False,
         include_item_categories=False,
+        stream_select_results=True,
     )
     assert _response_contract(response) == snapshot
 
@@ -122,6 +123,7 @@ def test_sparql_endpoint_form_post_success_snapshot(execute_query, client, snaps
         petscan_params={"categories": ["Turku"]},
         include_gil_categories=False,
         include_item_categories=False,
+        stream_select_results=True,
     )
     assert _response_contract(response) == snapshot
 

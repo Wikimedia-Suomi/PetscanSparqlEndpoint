@@ -1,3 +1,7 @@
+import gc
+import json
+import weakref
+
 from pyoxigraph import BlankNode, Literal, NamedNode
 
 from petscan import service_sparql as sparql
@@ -303,6 +307,52 @@ class ServiceSparqlTests(ServiceTestCase):
                 },
             },
         )
+
+    def test_serialize_select_stream_matches_materialized_json_across_batches(self):
+        solutions = [
+            MappingSolution(
+                [
+                    ("?item", NamedNode("https://example.org/item/{}".format(index))),
+                    ("?label", Literal("Ääkkönen {}".format(index), language="fi")),
+                ]
+            )
+            for index in range(513)
+        ]
+        materialized = SelectResult(["?item", "?label"], solutions)
+        streamed = SelectResult(["?item", "?label"], solutions)
+
+        expected = json.dumps(sparql.serialize_select(materialized))
+        actual = "".join(sparql.serialize_select_stream(streamed))
+
+        self.assertEqual(actual, expected)
+
+    def test_serialize_select_stream_matches_empty_materialized_result(self):
+        materialized = SelectResult(["?item"], [])
+        streamed = SelectResult(["?item"], [])
+
+        self.assertEqual(
+            "".join(sparql.serialize_select_stream(streamed)),
+            json.dumps(sparql.serialize_select(materialized)),
+        )
+
+    def test_serialize_select_stream_releases_keepalive_when_closed(self):
+        class Keepalive:
+            pass
+
+        keepalive = Keepalive()
+        keepalive_reference = weakref.ref(keepalive)
+        stream = sparql.serialize_select_stream(
+            SelectResult(["?item"], []),
+            keepalive=keepalive,
+        )
+        del keepalive
+
+        next(stream)
+        self.assertIsNotNone(keepalive_reference())
+
+        stream.close()
+        gc.collect()
+        self.assertIsNone(keepalive_reference())
 
     def test_serialize_ask_accepts_query_boolean_wrapper(self):
         self.assertEqual(

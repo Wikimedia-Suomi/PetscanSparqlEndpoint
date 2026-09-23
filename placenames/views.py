@@ -5,7 +5,7 @@ from typing import Callable, TypeVar, cast
 from urllib.parse import parse_qs
 
 from django.conf import settings
-from django.http import HttpRequest, HttpResponse, JsonResponse
+from django.http import HttpRequest, HttpResponse, JsonResponse, StreamingHttpResponse
 from django.shortcuts import render
 from django.views.decorators.csrf import csrf_exempt
 
@@ -129,12 +129,24 @@ def sparql_endpoint(request: HttpRequest, service_params: str) -> HttpResponse:
         return _add_cors_headers(HttpResponse("Method not allowed. Use GET or POST.", status=405))
     try:
         parsed = _parse_sparql_request(request, service_params)
-        execution = service.execute_query(parsed.dataset, parsed.query)
+        execution = service.execute_query(
+            parsed.dataset,
+            parsed.query,
+            stream_select_results=True,
+        )
     except ValueError as exc:
         return _add_cors_headers(_text_error(str(exc), status=400))
     except service.PetscanServiceError as exc:
         message = _public_service_error_message(exc, request.path)
         return _add_cors_headers(_text_error(message, status=503))
+
+    if execution["result_format"] == "sparql-json-stream":
+        response = StreamingHttpResponse(
+            execution["sparql_json_stream"],
+            content_type="application/sparql-results+json; charset=utf-8",
+        )
+        response["X-Accel-Buffering"] = "no"
+        return _add_cors_headers(response)
 
     if execution["result_format"] == "sparql-json":
         response = HttpResponse(

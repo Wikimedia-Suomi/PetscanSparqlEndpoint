@@ -237,6 +237,7 @@ def execute_query(
     petscan_params: Optional[Mapping[str, Any]] = None,
     include_gil_categories: bool = False,
     include_item_categories: bool = False,
+    stream_select_results: bool = False,
 ) -> QueryExecution:
     qtype = sparql.validate_query(query)
 
@@ -262,12 +263,23 @@ def execute_query(
             raise PetscanServiceError("SPARQL query failed: {}".format(exc)) from exc
 
         if qtype == "SELECT":
-            result = QueryExecutionModel(
-                query_type=qtype,
-                result_format="sparql-json",
-                sparql_json=sparql.serialize_select(raw_result),
-                meta=meta,
-            )
+            if stream_select_results:
+                result = QueryExecutionModel(
+                    query_type=qtype,
+                    result_format="sparql-json-stream",
+                    sparql_json_stream=sparql.serialize_select_stream(
+                        raw_result,
+                        keepalive=store_instance,
+                    ),
+                    meta=meta,
+                )
+            else:
+                result = QueryExecutionModel(
+                    query_type=qtype,
+                    result_format="sparql-json",
+                    sparql_json=sparql.serialize_select(raw_result),
+                    meta=meta,
+                )
             execution = result.to_dict()
         elif qtype == "ASK":
             result = QueryExecutionModel(
@@ -286,8 +298,8 @@ def execute_query(
             )
             execution = result.to_dict()
     finally:
-        # Drop query iterators before closing the store so pyoxigraph cleanup stays
-        # on the request thread that created them.
+        # A stream retains both objects in its generator until completion or close;
+        # materialized results release them here.
         raw_result = None
         store_instance = None
 

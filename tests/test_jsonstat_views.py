@@ -109,7 +109,12 @@ class JsonstatViewTests(SimpleTestCase):
         self.assertEqual(response.status_code, 200)
         self.assertIn("application/sparql-results+json", response["Content-Type"])
         self.assertTrue(json.loads(response.content.decode("utf-8"))["boolean"])
-        execute_query.assert_called_once_with(EXAMPLE_URL, ASK_QUERY, refresh=True)
+        execute_query.assert_called_once_with(
+            EXAMPLE_URL,
+            ASK_QUERY,
+            refresh=True,
+            stream_select_results=True,
+        )
 
     @patch("jsonstat.views.jsonstat_service.execute_query")
     def test_sparql_endpoint_accepts_get(self, execute_query: Any) -> None:
@@ -118,7 +123,12 @@ class JsonstatViewTests(SimpleTestCase):
         response = self.client.get(SPARQL_PATH, data={"query": ASK_QUERY})
 
         self.assertEqual(response.status_code, 200)
-        execute_query.assert_called_once_with(EXAMPLE_URL, ASK_QUERY, refresh=False)
+        execute_query.assert_called_once_with(
+            EXAMPLE_URL,
+            ASK_QUERY,
+            refresh=False,
+            stream_select_results=True,
+        )
 
     def test_sparql_endpoint_rejects_invalid_source_token(self) -> None:
         response = self.client.get(

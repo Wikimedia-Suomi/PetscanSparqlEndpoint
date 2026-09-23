@@ -241,6 +241,7 @@ class IncubatorApiViewTests(SimpleTestCase):
             page_latest=None,
             page_prefixes=[],
             recentchanges_only=False,
+            stream_select_results=True,
         )
 
     @patch("incubator.views.incubator_service.execute_query")
@@ -266,6 +267,7 @@ class IncubatorApiViewTests(SimpleTestCase):
             page_latest=None,
             page_prefixes=[],
             recentchanges_only=False,
+            stream_select_results=True,
         )
 
     @patch("incubator.views.incubator_service.execute_query")
@@ -287,6 +289,7 @@ class IncubatorApiViewTests(SimpleTestCase):
             page_latest=None,
             page_prefixes=["Wp/sms/", "Wt/sms/"],
             recentchanges_only=False,
+            stream_select_results=True,
         )
 
     @patch("incubator.views.incubator_service.execute_query")
@@ -308,6 +311,7 @@ class IncubatorApiViewTests(SimpleTestCase):
             page_latest=123456789,
             page_prefixes=[],
             recentchanges_only=False,
+            stream_select_results=True,
         )
 
     @patch("incubator.views.incubator_service.execute_query")
@@ -329,6 +333,7 @@ class IncubatorApiViewTests(SimpleTestCase):
             page_latest=None,
             page_prefixes=[],
             recentchanges_only=True,
+            stream_select_results=True,
         )
 
     @patch("incubator.views.incubator_service.execute_query")
@@ -351,6 +356,7 @@ class IncubatorApiViewTests(SimpleTestCase):
             page_latest=None,
             page_prefixes=[],
             recentchanges_only=False,
+            stream_select_results=True,
         )
 
     @patch("incubator.views.incubator_service.execute_query")

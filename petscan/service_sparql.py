@@ -1,5 +1,6 @@
 """SPARQL query validation and result serialization."""
 
+import json
 from dataclasses import dataclass
 from typing import Any, Dict, Iterator, Optional, Set
 
@@ -32,8 +33,11 @@ __all__ = [
     "serialize_ask",
     "serialize_graph",
     "serialize_select",
+    "serialize_select_stream",
     "validate_query",
 ]
+
+_SELECT_STREAM_BATCH_SIZE = 512
 
 _QUERY_TYPES = {"SELECT", "ASK", "CONSTRUCT", "DESCRIBE"}
 _QUERY_NAME_TO_TYPE = {
@@ -295,33 +299,65 @@ def _term_to_ntriples(term: Any) -> str:
     return '"{}"'.format(str(term).replace('"', '\\"'))
 
 
+def _select_solution_bindings(solution: Any, variables: list[str]) -> Dict[str, Any]:
+    bindings = {}  # type: Dict[str, Any]
+    items = []
+    if hasattr(solution, "items"):
+        items = list(solution.items())
+
+    if items:
+        for variable, term in items:
+            bindings[_variable_name(variable)] = _term_to_sparql_binding(term)
+        return bindings
+
+    for variable in variables:
+        try:
+            term = solution[variable]
+        except (KeyError, TypeError, IndexError):
+            continue
+        bindings[variable] = _term_to_sparql_binding(term)
+    return bindings
+
+
 def serialize_select(result: Any) -> Dict[str, Any]:
     variables = [_variable_name(v) for v in getattr(result, "variables", [])]
-    rows = []  # type: list[Dict[str, Any]]
-
-    for solution in result:
-        bindings = {}  # type: Dict[str, Any]
-        items = []
-        if hasattr(solution, "items"):
-            items = list(solution.items())
-
-        if items:
-            for variable, term in items:
-                bindings[_variable_name(variable)] = _term_to_sparql_binding(term)
-        else:
-            for variable in variables:
-                try:
-                    term = solution[variable]
-                except (KeyError, TypeError, IndexError):
-                    continue
-                bindings[variable] = _term_to_sparql_binding(term)
-
-        rows.append(bindings)
+    rows = [_select_solution_bindings(solution, variables) for solution in result]
 
     return {
         "head": {"vars": variables},
         "results": {"bindings": rows},
     }
+
+
+def serialize_select_stream(result: Any, keepalive: Any = None) -> Iterator[str]:
+    """Yield SPARQL Results JSON while retaining query resources until completion."""
+    try:
+        variables = [_variable_name(v) for v in getattr(result, "variables", [])]
+        yield '{"head": {"vars": ' + json.dumps(variables) + '}, "results": {"bindings": ['
+
+        batch = []  # type: list[Dict[str, Any]]
+        first_batch = True
+        for solution in result:
+            batch.append(_select_solution_bindings(solution, variables))
+            if len(batch) < _SELECT_STREAM_BATCH_SIZE:
+                continue
+
+            serialized_batch = json.dumps(batch)[1:-1]
+            if not first_batch:
+                yield ", "
+            yield serialized_batch
+            first_batch = False
+            batch.clear()
+
+        if batch:
+            serialized_batch = json.dumps(batch)[1:-1]
+            if not first_batch:
+                yield ", "
+            yield serialized_batch
+        yield "]}}"
+    finally:
+        result = None
+        del keepalive
 
 
 def serialize_ask(result: Any) -> Dict[str, Any]:

@@ -156,6 +156,7 @@ class PagepileApiViewTests(SimpleTestCase):
             ASK_QUERY,
             refresh=False,
             limit=25,
+            stream_select_results=True,
         )
 
     @patch("pagepile.views.pagepile_service.execute_query")
@@ -241,6 +242,7 @@ class PagepileApiViewTests(SimpleTestCase):
             ASK_QUERY,
             refresh=True,
             limit=25,
+            stream_select_results=True,
         )
 
     def test_sparql_endpoint_rejects_non_sparql_query_post_content_type(self) -> None:
@@ -295,4 +297,5 @@ class PagepileApiViewTests(SimpleTestCase):
             "CONSTRUCT { ?s ?p ?o } WHERE { ?s ?p ?o }",
             refresh=False,
             limit=25,
+            stream_select_results=True,
         )

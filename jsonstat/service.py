@@ -189,7 +189,12 @@ def ensure_loaded(source_url: Any, refresh: bool = False) -> StoreMeta:
         )
 
 
-def execute_query(source_url: Any, query: str, refresh: bool = False) -> QueryExecution:
+def execute_query(
+    source_url: Any,
+    query: str,
+    refresh: bool = False,
+    stream_select_results: bool = False,
+) -> QueryExecution:
     query_type = sparql.validate_query(query)
     normalized_url = source.normalize_source_url(source_url)
     store_id = internal_store_id(normalized_url)
@@ -207,12 +212,23 @@ def execute_query(source_url: Any, query: str, refresh: bool = False) -> QueryEx
             raise PetscanServiceError("SPARQL query failed: {}".format(exc)) from exc
 
         if query_type == "SELECT":
-            execution = QueryExecutionModel(
-                query_type=query_type,
-                result_format="sparql-json",
-                sparql_json=sparql.serialize_select(raw_result),
-                meta=meta,
-            ).to_dict()
+            if stream_select_results:
+                execution = QueryExecutionModel(
+                    query_type=query_type,
+                    result_format="sparql-json-stream",
+                    sparql_json_stream=sparql.serialize_select_stream(
+                        raw_result,
+                        keepalive=store_instance,
+                    ),
+                    meta=meta,
+                ).to_dict()
+            else:
+                execution = QueryExecutionModel(
+                    query_type=query_type,
+                    result_format="sparql-json",
+                    sparql_json=sparql.serialize_select(raw_result),
+                    meta=meta,
+                ).to_dict()
         elif query_type == "ASK":
             execution = QueryExecutionModel(
                 query_type=query_type,

@@ -70,7 +70,11 @@ class PlacenamesViewTests(SimpleTestCase):
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response["Access-Control-Allow-Origin"], "*")
         self.assertEqual(response.json()["boolean"], True)
-        execute_query.assert_called_once_with("saami", "ASK { ?s ?p ?o }")
+        execute_query.assert_called_once_with(
+            "saami",
+            "ASK { ?s ?p ?o }",
+            stream_select_results=True,
+        )
 
     def test_unknown_path_parameter_is_rejected(self) -> None:
         response = self.client.get(

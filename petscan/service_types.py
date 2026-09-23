@@ -1,7 +1,7 @@
 """Typed payload models for service responses and metadata."""
 
 from dataclasses import dataclass
-from typing import Any, Dict, List, Literal, NotRequired, Optional, TypedDict
+from typing import Any, Dict, Iterable, List, Literal, NotRequired, Optional, TypedDict
 
 GIL_CATEGORIES_SCHEMA_VERSION = 3
 ITEM_CATEGORIES_SCHEMA_VERSION = 2
@@ -45,6 +45,7 @@ class QueryExecution(TypedDict, total=False):
     query_type: str
     result_format: str
     sparql_json: Dict[str, Any]
+    sparql_json_stream: Iterable[str]
     ntriples: str
     meta: StoreMeta
 
@@ -109,6 +110,7 @@ class QueryExecutionModel:
     result_format: str
     meta: StoreMeta
     sparql_json: Optional[Dict[str, Any]] = None
+    sparql_json_stream: Optional[Iterable[str]] = None
     ntriples: Optional[str] = None
 
     def to_dict(self) -> QueryExecution:
@@ -119,6 +121,10 @@ class QueryExecutionModel:
         }
         if self.result_format == "sparql-json":
             payload["sparql_json"] = self.sparql_json if self.sparql_json is not None else {}
+        elif self.result_format == "sparql-json-stream":
+            payload["sparql_json_stream"] = (
+                self.sparql_json_stream if self.sparql_json_stream is not None else ()
+            )
         else:
             payload["ntriples"] = self.ntriples if self.ntriples is not None else ""
         return payload

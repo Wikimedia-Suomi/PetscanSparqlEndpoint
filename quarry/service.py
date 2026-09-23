@@ -230,6 +230,7 @@ def execute_query(
     query: str,
     refresh: bool = False,
     limit: Optional[int] = None,
+    stream_select_results: bool = False,
 ) -> QueryExecution:
     qtype = sparql.validate_query(query)
     store_id = internal_store_id(quarry_id)
@@ -249,12 +250,23 @@ def execute_query(
             raise PetscanServiceError("SPARQL query failed: {}".format(exc)) from exc
 
         if qtype == "SELECT":
-            result = QueryExecutionModel(
-                query_type=qtype,
-                result_format="sparql-json",
-                sparql_json=sparql.serialize_select(raw_result),
-                meta=meta,
-            )
+            if stream_select_results:
+                result = QueryExecutionModel(
+                    query_type=qtype,
+                    result_format="sparql-json-stream",
+                    sparql_json_stream=sparql.serialize_select_stream(
+                        raw_result,
+                        keepalive=store_instance,
+                    ),
+                    meta=meta,
+                )
+            else:
+                result = QueryExecutionModel(
+                    query_type=qtype,
+                    result_format="sparql-json",
+                    sparql_json=sparql.serialize_select(raw_result),
+                    meta=meta,
+                )
             execution = result.to_dict()
         elif qtype == "ASK":
             result = QueryExecutionModel(

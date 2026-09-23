@@ -4,7 +4,7 @@ from dataclasses import dataclass
 from typing import Any, Callable, TypeVar, cast
 from urllib.parse import parse_qs
 
-from django.http import HttpRequest, HttpResponse, JsonResponse
+from django.http import HttpRequest, HttpResponse, JsonResponse, StreamingHttpResponse
 from django.shortcuts import render
 from django.views.decorators.csrf import csrf_exempt
 
@@ -262,11 +262,20 @@ def sparql_endpoint(request: HttpRequest, service_params: str = "") -> HttpRespo
             timestamp=parsed_request.timestamp,
             user_list_page=parsed_request.user_list_page,
             include_edited_pages=parsed_request.include_edited_pages,
+            stream_select_results=True,
         )
     except ValueError as exc:
         return _add_cors_headers(_text_error(str(exc), status=400))
     except newpages_service.PetscanServiceError as exc:
         return _add_cors_headers(_text_error(_public_service_error_message(exc, request.path), status=502))
+
+    if execution["result_format"] == "sparql-json-stream":
+        response = StreamingHttpResponse(
+            execution["sparql_json_stream"],
+            content_type="application/sparql-results+json; charset=utf-8",
+        )
+        response["X-Accel-Buffering"] = "no"
+        return _add_cors_headers(response)
 
     if execution["result_format"] == "sparql-json":
         body = json.dumps(execution["sparql_json"])

@@ -116,7 +116,13 @@ class QuarryApiViewTests(SimpleTestCase):
         self.assertEqual(response.status_code, 200)
         self.assertIn("application/sparql-results+json", response["Content-Type"])
         self.assertEqual(json.loads(response.content.decode("utf-8"))["boolean"], True)
-        execute_query.assert_called_once_with(103479, ASK_QUERY, refresh=False, limit=25)
+        execute_query.assert_called_once_with(
+            103479,
+            ASK_QUERY,
+            refresh=False,
+            limit=25,
+            stream_select_results=True,
+        )
 
     @patch("quarry.views.quarry_service.execute_query")
     def test_sparql_endpoint_accepts_protocol_post(self, execute_query: Any) -> None:
@@ -130,7 +136,13 @@ class QuarryApiViewTests(SimpleTestCase):
 
         self.assertEqual(response.status_code, 200)
         self.assertIn("application/sparql-results+json", response["Content-Type"])
-        execute_query.assert_called_once_with(103479, ASK_QUERY, refresh=True, limit=10)
+        execute_query.assert_called_once_with(
+            103479,
+            ASK_QUERY,
+            refresh=True,
+            limit=10,
+            stream_select_results=True,
+        )
 
     @patch("quarry.views.quarry_service.execute_query")
     def test_sparql_endpoint_rejects_invalid_utf8_protocol_post(self, execute_query: Any) -> None:

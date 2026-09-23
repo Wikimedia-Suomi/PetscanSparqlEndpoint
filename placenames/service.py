@@ -39,7 +39,11 @@ def ensure_loaded(dataset: str) -> dict[str, Any]:
     return service_store.ensure_loaded(spec)
 
 
-def execute_query(dataset: str, query: str) -> dict[str, Any]:
+def execute_query(
+    dataset: str,
+    query: str,
+    stream_select_results: bool = False,
+) -> dict[str, Any]:
     query_form = sparql.validate_query(query)
     spec = get_dataset(dataset)
     meta = service_store.ensure_loaded(spec)
@@ -59,6 +63,16 @@ def execute_query(dataset: str, query: str) -> dict[str, Any]:
                 public_message=_QUERY_FAILURE_PUBLIC_MESSAGE,
             ) from exc
         if query_form == "SELECT":
+            if stream_select_results:
+                return {
+                    "query_type": query_form,
+                    "result_format": "sparql-json-stream",
+                    "sparql_json_stream": sparql.serialize_select_stream(
+                        raw_result,
+                        keepalive=store_instance,
+                    ),
+                    "meta": meta,
+                }
             return {
                 "query_type": query_form,
                 "result_format": "sparql-json",
