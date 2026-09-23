@@ -16,6 +16,7 @@ data/oxigraph/
 data/oxigraph-bench*/
 data/oxigraph-opt-bench*/
 data/benchmarks/results/
+data/debug/
 source-data/*.nq
 # Full Statistics Finland harvests and matching research are maintained outside
 # this application. Only the reviewed runtime subset and its documentation ship.

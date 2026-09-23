@@ -2,7 +2,7 @@
 
 import json
 import shutil
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Mapping, Optional, Sequence, Tuple
@@ -53,6 +53,7 @@ class _RecordWriteContext:
     xsd_integer_type: Any
     psid_literal: Any
     loaded_at_literal: Any
+    category_metadata_quads_seen: set[Any] = field(default_factory=set)
 
 
 def _reset_store_directory(psid: int) -> Path:
@@ -106,6 +107,18 @@ def _write_record_quads(
     gil_link_uris = [link_uri for link_uri, _qid in resolved_gil_links] if "gil" in row else None
     gil_link_predicate = predicate_for("gil_link")
     append_quad(quad_ctor(subject, predicates.rdf_type, predicates.page_class))
+
+    def _append_category_metadata_quad(category_uri: str, key: str, value: Any, kind: str) -> None:
+        quad = quad_ctor(
+            NamedNode(category_uri),
+            predicate_for(key),
+            object_term_for_typed_value(value, kind),
+        )
+        if quad in context.category_metadata_quads_seen:
+            return
+        context.category_metadata_quads_seen.add(quad)
+        append_quad(quad)
+
     append_quad(
         quad_ctor(
             subject,
@@ -174,13 +187,7 @@ def _write_record_quads(
             gil_link_enrichment_map=context.gil_link_enrichment_map,
         ):
             _track_field_kind(key, sparql_type)
-            append_quad(
-                quad_ctor(
-                    NamedNode(category_uri),
-                    predicate_for(key),
-                    object_term_for_typed_value(value, sparql_type),
-                )
-            )
+            _append_category_metadata_quad(category_uri, key, value, sparql_type)
     for key, value, sparql_type in rdf.iter_typed_item_page_fields(
         item_page_enrichment,
     ):
@@ -196,13 +203,7 @@ def _write_record_quads(
         item_page_enrichment,
     ):
         _track_field_kind(key, sparql_type)
-        append_quad(
-            quad_ctor(
-                NamedNode(category_uri),
-                predicate_for(key),
-                object_term_for_typed_value(value, sparql_type),
-            )
-        )
+        _append_category_metadata_quad(category_uri, key, value, sparql_type)
     return row_field_kinds, row_field_value_counts
 
 

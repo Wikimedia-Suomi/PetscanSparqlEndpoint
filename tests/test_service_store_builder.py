@@ -149,6 +149,105 @@ class ServiceStoreBuilderTests(ServiceTestCase):
         self.assertEqual(field_map["item_category"]["row_side_cardinality"], "1")
         self.assertEqual(field_map["item_category_title"]["primary_type"], "xsd:string")
 
+    def test_record_writer_globally_deduplicates_exact_category_metadata_quads(self):
+        if store_builder.Quad is None:
+            self.skipTest("pyoxigraph is not installed")
+
+        gil_link_uri = "https://en.wikipedia.org/wiki/Example"
+        gil_category_uri = "https://en.wikipedia.org/wiki/Category:Shared"
+        item_category_uri = "https://fi.wikipedia.org/wiki/Category:Shared"
+        context = store_builder._RecordWriteContext(
+            predicates=store_builder._build_store_predicates(),
+            psid=123,
+            gil_link_enrichment_map={
+                gil_link_uri: {
+                    "categories": [
+                        {
+                            "link_uri": gil_category_uri,
+                            "title": "Category:Shared",
+                            "hiddencat": False,
+                        }
+                    ]
+                }
+            },
+            img_user_registration_by_name={},
+            xsd_integer_type=store_builder.NamedNode(store_builder.rdf.XSD_INTEGER_IRI),
+            psid_literal=store_builder.Literal(
+                "123",
+                datatype=store_builder.NamedNode(store_builder.rdf.XSD_INTEGER_IRI),
+            ),
+            loaded_at_literal=store_builder.Literal(
+                "2026-09-23T00:00:00Z",
+                datatype=store_builder.NamedNode(store_builder.rdf.XSD_DATE_TIME_IRI),
+            ),
+        )
+        shared_item_category = {
+            "categories": [
+                {
+                    "link_uri": item_category_uri,
+                    "title": "Category:Shared",
+                    "hiddencat": False,
+                }
+            ]
+        }
+        quad_buffer = []
+
+        for index in range(2):
+            row_kinds, _row_counts = store_builder._write_record_quads(
+                index=index,
+                row={"id": index + 1, "title": "Example", "gil": "enwiki:0:Example"},
+                context=context,
+                resolved_gil_links=[(gil_link_uri, None)],
+                item_page_enrichment=shared_item_category,
+                quad_buffer=quad_buffer,
+            )
+
+        gil_category_node = store_builder.NamedNode(gil_category_uri)
+        item_category_node = store_builder.NamedNode(item_category_uri)
+        self.assertEqual(sum(quad.subject == gil_category_node for quad in quad_buffer), 2)
+        self.assertEqual(sum(quad.subject == item_category_node for quad in quad_buffer), 2)
+        self.assertEqual(
+            sum(
+                quad.predicate == store_builder.rdf.predicate_for("gil_link_category")
+                for quad in quad_buffer
+            ),
+            2,
+        )
+        self.assertEqual(
+            sum(
+                quad.predicate == store_builder.rdf.predicate_for("item_category")
+                for quad in quad_buffer
+            ),
+            2,
+        )
+        self.assertIn("gil_link_category_title", row_kinds)
+        self.assertIn("item_category_title", row_kinds)
+
+        renamed_item_category = {
+            "categories": [
+                {
+                    "link_uri": item_category_uri,
+                    "title": "Category:Renamed",
+                    "hiddencat": False,
+                }
+            ]
+        }
+        store_builder._write_record_quads(
+            index=2,
+            row={"id": 3, "title": "Example"},
+            context=context,
+            resolved_gil_links=[],
+            item_page_enrichment=renamed_item_category,
+            quad_buffer=quad_buffer,
+        )
+
+        item_metadata_quads = [quad for quad in quad_buffer if quad.subject == item_category_node]
+        self.assertEqual(len(item_metadata_quads), 3)
+        self.assertEqual(
+            {str(quad.object) for quad in item_metadata_quads if "_title" in str(quad.predicate)},
+            {'"Category:Renamed"', '"Category:Shared"'},
+        )
+
     @patch("petscan.service_store_builder._optimize_store")
     @patch("petscan.service_store_builder.rdf.summarize_structure")
     @patch("petscan.service_store_builder.links.build_gil_link_enrichment")
