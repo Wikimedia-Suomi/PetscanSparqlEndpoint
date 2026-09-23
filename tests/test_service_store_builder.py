@@ -8,6 +8,10 @@ from tests.service_test_support import PRIMARY_EXAMPLE_FILE, STORE_GIL_TEST_PSID
 
 
 class ServiceStoreBuilderTests(ServiceTestCase):
+    def test_quad_buffer_target_uses_benchmarked_memory_bound(self):
+        self.assertEqual(store_builder._QUAD_BUFFER_TARGET, 100_000)
+        self.assertEqual(store_builder._CATEGORY_METADATA_DEDUPE_LIMIT, 250_000)
+
     @patch("petscan.service_store_builder.Store", None)
     def test_build_store_raises_clear_error_when_pyoxigraph_missing(self):
         with self.assertRaises(PetscanServiceError) as context:
@@ -247,6 +251,59 @@ class ServiceStoreBuilderTests(ServiceTestCase):
             {str(quad.object) for quad in item_metadata_quads if "_title" in str(quad.predicate)},
             {'"Category:Renamed"', '"Category:Shared"'},
         )
+
+    @patch.object(store_builder, "_CATEGORY_METADATA_DEDUPE_LIMIT", 2)
+    def test_category_metadata_dedupe_set_stops_growing_at_limit(self):
+        if store_builder.Quad is None:
+            self.skipTest("pyoxigraph is not installed")
+
+        context = store_builder._RecordWriteContext(
+            predicates=store_builder._build_store_predicates(),
+            psid=123,
+            gil_link_enrichment_map={},
+            img_user_registration_by_name={},
+            xsd_integer_type=store_builder.NamedNode(store_builder.rdf.XSD_INTEGER_IRI),
+            psid_literal=store_builder.Literal(
+                "123",
+                datatype=store_builder.NamedNode(store_builder.rdf.XSD_INTEGER_IRI),
+            ),
+            loaded_at_literal=store_builder.Literal(
+                "2026-09-23T00:00:00Z",
+                datatype=store_builder.NamedNode(store_builder.rdf.XSD_DATE_TIME_IRI),
+            ),
+        )
+        quad_buffer = []
+
+        def _write_category(index, category_uri, title):
+            store_builder._write_record_quads(
+                index=index,
+                row={"id": index + 1, "title": "Example"},
+                context=context,
+                resolved_gil_links=[],
+                item_page_enrichment={
+                    "categories": [
+                        {
+                            "link_uri": category_uri,
+                            "title": title,
+                            "hiddencat": False,
+                        }
+                    ]
+                },
+                quad_buffer=quad_buffer,
+            )
+
+        tracked_uri = "https://fi.wikipedia.org/wiki/Category:Tracked"
+        overflow_uri = "https://fi.wikipedia.org/wiki/Category:Overflow"
+        _write_category(0, tracked_uri, "Category:Tracked")
+        _write_category(1, overflow_uri, "Category:Overflow")
+        _write_category(2, overflow_uri, "Category:Overflow")
+        _write_category(3, tracked_uri, "Category:Tracked")
+
+        self.assertEqual(len(context.category_metadata_quads_seen), 2)
+        tracked_node = store_builder.NamedNode(tracked_uri)
+        overflow_node = store_builder.NamedNode(overflow_uri)
+        self.assertEqual(sum(quad.subject == tracked_node for quad in quad_buffer), 2)
+        self.assertEqual(sum(quad.subject == overflow_node for quad in quad_buffer), 4)
 
     @patch("petscan.service_store_builder._optimize_store")
     @patch("petscan.service_store_builder.rdf.summarize_structure")

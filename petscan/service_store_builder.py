@@ -24,7 +24,11 @@ from .service_types import (
 )
 
 __all__ = ["build_store"]
-_QUAD_BUFFER_TARGET = 4_000_000
+# Keep transient PyO3 Quad objects bounded during large category-enriched imports.
+_QUAD_BUFFER_TARGET = 100_000
+# Beyond this build-scoped limit, preserve correctness by letting Oxigraph
+# deduplicate new category metadata instead of retaining more Python objects.
+_CATEGORY_METADATA_DEDUPE_LIMIT = 250_000
 
 try:
     from pyoxigraph import Literal, NamedNode, Quad, Store
@@ -114,9 +118,11 @@ def _write_record_quads(
             predicate_for(key),
             object_term_for_typed_value(value, kind),
         )
-        if quad in context.category_metadata_quads_seen:
+        seen_quads = context.category_metadata_quads_seen
+        if quad in seen_quads:
             return
-        context.category_metadata_quads_seen.add(quad)
+        if len(seen_quads) < _CATEGORY_METADATA_DEDUPE_LIMIT:
+            seen_quads.add(quad)
         append_quad(quad)
 
     append_quad(
